@@ -86,7 +86,7 @@ test('solve guards bidHours === 0 (no labor on the job): rateCents 0, price = fi
   assert.strictEqual(byMargin.rateCents, 0);
   assert.strictEqual(byMargin.priceCents, s3.fixedPrice);
 });
-test('belowFloor and impliedRate', () => {
+test('belowFloor', () => {
   assert.strictEqual(B.belowFloor(6400, 6500), true);
   assert.strictEqual(B.belowFloor(6500, 6500), false);
 });
@@ -98,4 +98,70 @@ test('atYourRate: labor at the Settings rate vs the bid labor line', () => {
 test('fmt: cents → $ string', () => {
   assert.strictEqual(B.fmt(460995), '$4,609.95');
   assert.strictEqual(B.fmt(0), '$0.00');
+});
+
+test('fractional day inputs round to whole cents on every line (equipment, truck, price)', () => {
+  const settings2 = { ...settings, truckDayCents: 9501 };
+  const bid2 = {
+    ...bid,
+    labor: { crewIds: ['c1', 'c2'], days: 0.5, tasks: null },
+    equipment: [{ days: 0.5, dayCents: 5001 }],
+  };
+  const stack = B.costStack(bid2, settings2);
+  assert.ok(Number.isInteger(stack.fixedPrice));
+  assert.ok(Number.isInteger(stack.truck));
+  assert.ok(Number.isInteger(B.solve(stack, 'rate', 6500).priceCents));
+});
+
+test('solve margin clamps at/above 100% instead of returning Infinity/NaN', () => {
+  const s = B.costStack(bid, settings);
+  const at100 = B.solve(s, 'margin', 100);
+  const at150 = B.solve(s, 'margin', 150);
+  for (const res of [at100, at150]) {
+    assert.ok(Number.isFinite(res.rateCents) && Number.isInteger(res.rateCents));
+    assert.ok(Number.isFinite(res.priceCents) && Number.isInteger(res.priceCents));
+    assert.strictEqual(res.priceCents, s.fixedPrice + res.rateCents * s.bidHours);
+  }
+});
+
+test('rentals honor the bid-level markup override, same as materials', () => {
+  const bid3 = {
+    ...bid,
+    pricing: { ...bid.pricing, markupPct: 30 },
+    rentals: [{ days: 1, cents: 10000, markup: true }],
+  };
+  const s = B.costStack(bid3, settings);
+  assert.strictEqual(s.rentalsPrice, 13000);
+});
+
+test('laborReal flags unknown crewIds but still bills their hours at $0', () => {
+  const b4 = { ...bid, labor: { crewIds: ['c1', 'ghost'], days: 2, tasks: null } };
+  const l = B.laborReal(b4, settings);
+  assert.deepStrictEqual(l.unknownCrewIds, ['ghost']);
+  assert.strictEqual(l.hours, 32);
+  const s = B.costStack(b4, settings);
+  assert.deepStrictEqual(s.unknownCrewIds, ['ghost']);
+});
+
+test('fmt handles negative cents, non-finite input, and fractional cents', () => {
+  assert.strictEqual(B.fmt(-460995), '-$4,609.95');
+  assert.strictEqual(B.fmt(NaN), '—');
+  assert.strictEqual(B.fmt(1234.5), '$12.35');
+});
+
+test('solve clamps a -0 rate (typed price 1 cent under fixedPrice) to +0', () => {
+  const s = B.costStack(bid, settings);
+  const res = B.solve(s, 'price', s.fixedPrice - 1);
+  assert.ok(Object.is(res.rateCents, 0));
+});
+
+test('costStack and laborReal tolerate a missing labor block', () => {
+  const b5 = { ...bid, labor: undefined };
+  const l = B.laborReal(b5, settings);
+  assert.strictEqual(l.hours, 0);
+  assert.strictEqual(l.wageCents, 0);
+  assert.deepStrictEqual(l.unknownCrewIds, []);
+  const s = B.costStack(b5, settings);
+  assert.strictEqual(s.truck, 0);
+  assert.strictEqual(s.laborCost, 0);
 });

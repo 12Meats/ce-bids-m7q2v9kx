@@ -23,21 +23,32 @@
     }, 0);
   }
 
-  function crewWage(ids, settings) {
-    return ids.map((id) => (settings.crew.find((c) => c.id === id) || { wageCents: 0 }).wageCents);
+  const EMPTY_LABOR = { crewIds: [], days: 0, tasks: null };
+  function getLabor(bid) { return bid.labor || EMPTY_LABOR; }
+
+  // Resolves crew ids to wages; unknown ids bill at $0 (never throw on a stale/edited bid)
+  // but are reported back so the UI can flag them instead of silently under-billing.
+  function crewWage(ids, settings, unknown) {
+    return ids.map((id) => {
+      const c = settings.crew.find((c) => c.id === id);
+      if (!c && unknown) unknown.add(id);
+      return c ? c.wageCents : 0;
+    });
   }
 
   function laborReal(bid, settings) {
+    const labor = getLabor(bid);
     const hpd = settings.hoursPerDay || 8;
-    const lines = bid.labor.tasks && bid.labor.tasks.length ? bid.labor.tasks : [bid.labor];
+    const lines = labor.tasks && labor.tasks.length ? labor.tasks : [labor];
     let hours = 0, wageCents = 0;
+    const unknown = new Set();
     for (const ln of lines) {
-      const wages = crewWage(ln.crewIds || [], settings);
+      const wages = crewWage(ln.crewIds || [], settings, unknown);
       const h = ln.days * hpd;
       hours += h * wages.length;
       wageCents += wages.reduce((s, w) => s + r(w * h), 0);
     }
-    return { hours, wageCents };
+    return { hours, wageCents, unknownCrewIds: Array.from(unknown) };
   }
 
   function bidHours(realHours, cushionPct) {
@@ -47,30 +58,37 @@
 
   function costStack(bid, settings) {
     const p = bid.pricing;
+    const mk = p.markupPct != null ? p.markupPct : settings.markupPct;
     const mc = materialCost(bid);
-    const mp = materialPrice(bid, p.markupPct != null ? p.markupPct : settings.markupPct);
+    const mp = materialPrice(bid, mk);
     const rentalsCost = (bid.rentals || []).reduce((s, x) => s + x.cents, 0);
-    const rentalsPrice = (bid.rentals || []).reduce((s, x) => s + (x.markup ? unitPrice(x.cents, settings.markupPct) : x.cents), 0);
-    const equipmentCost = (bid.equipment || []).reduce((s, x) => s + x.days * x.dayCents, 0);
+    const rentalsPrice = (bid.rentals || []).reduce((s, x) => s + (x.markup ? unitPrice(x.cents, mk) : x.cents), 0);
+    // Round each equipment/truck line individually — fractional days (0.5, 1.5, …) must never
+    // leak fractional cents into the customer-facing price.
+    const equipmentCost = (bid.equipment || []).reduce((s, x) => s + r(x.days * x.dayCents), 0);
     const equipmentPrice = equipmentCost;
     const misc = (bid.misc && bid.misc.cents) || 0;
     const lab = laborReal(bid, settings);
     const laborCost = r(lab.wageCents * (1 + settings.burdenPct / 100));
-    const days = bid.labor.tasks && bid.labor.tasks.length ? bid.labor.tasks.reduce((s, t) => s + t.days, 0) : bid.labor.days;
-    const truck = days * settings.truckDayCents;
+    const labor = getLabor(bid);
+    const days = labor.tasks && labor.tasks.length ? labor.tasks.reduce((s, t) => s + t.days, 0) : labor.days;
+    const truck = r(days * settings.truckDayCents);
     const consumables = r(mc * settings.consumablesPct / 100);
     const base = mc + rentalsCost + equipmentCost + misc + laborCost + truck + consumables;
     const trueCost = r(base * (1 + settings.overheadPct / 100));
     const bh = bidHours(lab.hours, p.cushionPct != null ? p.cushionPct : 0);
     return {
       materialCost: mc, materialPrice: mp, rentalsCost, rentalsPrice, equipmentCost, equipmentPrice, misc,
-      laborCost, realHours: lab.hours, wageCents: lab.wageCents, truck, consumables, overhead: trueCost - base,
+      laborCost, realHours: lab.hours, wageCents: lab.wageCents, unknownCrewIds: lab.unknownCrewIds,
+      truck, consumables, overhead: trueCost - base,
       trueCost, bidHours: bh, fixedPrice: mp + rentalsPrice + equipmentPrice + misc,
     };
   }
 
   function marginPctOf(priceCents, costCents) { return priceCents > 0 ? (priceCents - costCents) / priceCents * 100 : 0; }
 
+  // The returned {rateCents, priceCents, marginPct} triple is authoritative; callers must display
+  // these values, never echo the typed input (e.g. a typed price below fixedPrice clamps the rate to 0).
   function solve(stack, handle, value) {
     let rateCents;
     if (handle === 'rate') {
@@ -81,13 +99,14 @@
       if (stack.bidHours === 0) {
         rateCents = 0;
       } else {
-        const price = r(stack.trueCost / (1 - value / 100));
+        const m = Math.min(value, 99.9); // avoid divide-by-zero/Infinity at or above 100% margin
+        const price = r(stack.trueCost / (1 - m / 100));
         rateCents = r((price - stack.fixedPrice) / stack.bidHours);
       }
     } else {
       throw new Error('bad handle');
     }
-    if (rateCents < 0) rateCents = 0;
+    if (!(rateCents > 0)) rateCents = 0; // also catches -0 and NaN, not just negatives
     const priceCents = stack.fixedPrice + rateCents * stack.bidHours;
     return { rateCents, priceCents, marginPct: marginPctOf(priceCents, stack.trueCost) };
   }
@@ -99,8 +118,9 @@
   }
 
   function fmt(cents) {
+    if (!Number.isFinite(cents)) return '—'; // last line of defense: never render NaN/Infinity to a user
     const neg = cents < 0 ? '-' : '';
-    const v = Math.abs(cents);
+    const v = Math.abs(Math.round(cents));
     const d = Math.floor(v / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return `${neg}$${d}.${(v % 100).toString().padStart(2, '0')}`;
   }
