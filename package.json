@@ -1,0 +1,5 @@
+{
+  "name": "ce-bids",
+  "private": true,
+  "scripts": { "test": "node --test tests/*.test.js" }
+}
