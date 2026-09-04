@@ -98,6 +98,17 @@ function emptyNote(text) {
   return p;
 }
 
+// inlineWarn(text) -> the yellow strip that sits under the thing it is about.
+// Not a banner: a banner is an event that just happened and times out, this is
+// a condition the row underneath it is still in (a bid number already in use,
+// a crew member the settings no longer have).
+function inlineWarn(text) {
+  const d = document.createElement('div');
+  d.className = 'inline-warn';
+  d.textContent = text;
+  return d;
+}
+
 // chip(text, selected, onTap) -> a pill-shaped toggle (detail level, job type,
 // crew members). Selected chips fill with the accent color.
 function chip(text, selected, onTap) {

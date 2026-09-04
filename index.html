@@ -740,6 +740,48 @@
     .walk-forget-actions .btn { min-height: 56px; padding: 0 16px; font-size: 0.95rem; }
     .walk-forget-tick { padding-right: 8px; font-size: 1.3rem; font-weight: 800; color: var(--color-confirm); }
 
+    /* ---------- Labor ---------- */
+    /* One line — crew chips and a day count — or the same pair once per task.
+       The readout under it is the only place on the screen that is not a
+       control, so it is deliberately plain. */
+    .labor-head { margin-bottom: var(--space-3); }
+    .labor-head-title { font-size: var(--font-lg); font-weight: 800; }
+    .labor-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+
+    .labor-caption {
+      margin: 2px 0 var(--space-1);
+      font-size: 0.9rem;
+      color: var(--color-text-muted);
+    }
+
+    /* Chips wrap: a five-man crew must not push the fifth name off the edge. */
+    .labor-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+
+    /* The number he came here to type, at the size of the answer it gives. */
+    .labor-days .row-value { font-size: var(--font-xl); font-weight: 800; }
+
+    /* The captions sit between the rows, so :last-child never lands on the
+       bottom row and its divider would otherwise hang under nothing. */
+    .labor-readout .row { border-bottom: none; }
+    .labor-readout .row-value { font-weight: 800; }
+
+    .labor-warn-actions { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
+    .labor-warn-actions .btn { min-height: 44px; padding: 0 18px; font-size: 0.95rem; }
+
+    /* Quieter than "Edit details": this is a setting, not a step. */
+    .labor-hpd {
+      margin-top: var(--space-1);
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--color-text-muted);
+    }
+
+    .labor-task-actions { display: flex; margin-top: var(--space-2); }
+    .labor-task-actions .btn { flex: 1; min-height: 48px; }
+    /* The task he just added, for about a second — same flash the walk uses on
+       a part, for the same reason: "did that go in?" answered without reading. */
+    .labor-task-new { animation: walk-flash 1s ease-out; }
+
     /* ---------- Utilities ---------- */
     .mt-3 { margin-top: var(--space-3); }
 
@@ -920,12 +962,9 @@
              accept="image/*" capture="environment" aria-hidden="true" tabindex="-1">
     </section>
 
-    <!-- ---------- Labor -- Task 9 ---------- -->
+    <!-- ---------- Labor -- Task 8 ---------- -->
     <section id="screen-labor" class="screen" hidden>
-      <div id="laborContent" class="screen-content">
-        <h2 class="section-heading">Labor</h2>
-        <p class="screen-placeholder">Crew, days, and equipment.</p>
-      </div>
+      <div id="laborContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- Price -- Task 10 ---------- -->

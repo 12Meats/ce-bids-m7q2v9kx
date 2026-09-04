@@ -79,13 +79,6 @@ function toggleRow(options, current, onPick) {
   return wrap;
 }
 
-function inlineWarn(text) {
-  const d = document.createElement('div');
-  d.className = 'inline-warn';
-  d.textContent = text;
-  return d;
-}
-
 // Customers matching what he has typed so far, best guess first. Three keys,
 // in this order:
 //

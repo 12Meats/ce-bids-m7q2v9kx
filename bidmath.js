@@ -63,6 +63,50 @@
     return { hours, wageCents, unknownCrewIds: Array.from(unknown) };
   }
 
+  // Merging a task list back into one line has to leave the job the same size:
+  // total hours is what the price is built on, so total hours is what is kept.
+  // The merged line carries every crew member who appeared on any task (the
+  // union), and its day count is how long THAT crew would take to work those
+  // same hours:
+  //
+  //   days = Σ(task.days × hoursPerDay × task crew count)
+  //          ────────────────────────────────────────────
+  //                 hoursPerDay × union crew count
+  //
+  // rounded to the nearest half day, because half a day is the smallest thing
+  // this app lets anyone type — so the merged number is one he could have
+  // typed himself, at the cost of a few minutes either way.
+  //
+  // Hours, not the wage split: collapsing two tasks onto one line puts the
+  // whole union crew on the whole job, so an expensive man who only worked one
+  // task now bills for all of it (or the reverse). Total hours — what the bid
+  // hours and the price are built on — comes through unchanged; the wage line
+  // can move by a few dollars. That is the trade the confirmation is warning
+  // about when it says the task names are lost.
+  //
+  // With nobody on any task there are no hours to divide by a crew of zero, so
+  // the days simply add up and the line stays crewless (0 hours either way).
+  //
+  // Returns { crewIds, days }; the caller writes them onto the bid and clears
+  // labor.tasks, so nothing here mutates what it was handed.
+  function mergeTasks(labor, hoursPerDay) {
+    const tasks = (labor && labor.tasks) || [];
+    const hpd = hoursPerDay || 8;
+    const crewIds = [];
+    let personHours = 0;
+    let plainDays = 0;
+    for (const t of tasks) {
+      const ids = t.crewIds || [];
+      for (const id of ids) if (crewIds.indexOf(id) === -1) crewIds.push(id);
+      personHours += t.days * hpd * ids.length;
+      plainDays += t.days;
+    }
+    const days = crewIds.length
+      ? Math.round(personHours / (hpd * crewIds.length) * 2) / 2
+      : plainDays;
+    return { crewIds, days };
+  }
+
   function bidHours(realHours, cushionPct) {
     // + 0 normalizes the -0 that Math.ceil produces for realHours === 0 (ceil(-1e-9) is -0).
     return Math.ceil(realHours * (1 + cushionPct / 100) - 1e-9) + 0;
@@ -138,7 +182,7 @@
   }
 
   return {
-    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, bidHours, costStack, solve,
+    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, bidHours, mergeTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };

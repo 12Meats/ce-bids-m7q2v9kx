@@ -45,6 +45,30 @@ test('bidHours rounds UP after cushion: 32 × 1.10 = 35.2 → 36', () => {
   assert.strictEqual(B.bidHours(32, 10), 36);
   assert.strictEqual(B.bidHours(32, 0), 32);
 });
+test('mergeTasks keeps the total hours: 2 guys 2 days + 1 guy 1 day = 2.5 days for 2 guys', () => {
+  const labor = { crewIds: [], days: 0, tasks: [
+    { name: 'Main work', crewIds: ['c1', 'c2'], days: 2 },
+    { name: 'Trim out', crewIds: ['c1'], days: 1 } ] };
+  const m = B.mergeTasks(labor, 8);
+  assert.deepStrictEqual(m.crewIds, ['c1', 'c2']);
+  assert.strictEqual(m.days, 2.5);
+  // 40 person-hours before the merge, 40 after
+  assert.strictEqual(B.laborReal({ labor }, settings).hours, 40);
+  assert.strictEqual(B.laborReal({ labor: { crewIds: m.crewIds, days: m.days, tasks: null } }, settings).hours, 40);
+});
+test('mergeTasks rounds to the nearest half day: 20 hours over 2 guys = 1.25 → 1.5', () => {
+  const m = B.mergeTasks({ tasks: [
+    { name: 'a', crewIds: ['c1', 'c2'], days: 1 },
+    { name: 'b', crewIds: ['c1'], days: 0.5 } ] }, 8);
+  assert.strictEqual(m.days, 1.5);
+});
+test('mergeTasks with nobody on any task adds the days up and stays crewless', () => {
+  const m = B.mergeTasks({ tasks: [
+    { name: 'a', crewIds: [], days: 2 },
+    { name: 'b', crewIds: [], days: 1 } ] }, 8);
+  assert.deepStrictEqual(m.crewIds, []);
+  assert.strictEqual(m.days, 3);
+});
 test('costStack: true cost carries burden, truck, consumables, overhead', () => {
   const s = B.costStack(bid, settings);
   assert.strictEqual(s.materialCost, 171254);
