@@ -735,7 +735,9 @@
     .walk-forget:last-child { border-bottom: none; }
     .walk-forget-label { flex: 1; min-width: 0; }
     .walk-forget-actions { display: flex; gap: var(--space-1); }
-    .walk-forget-actions .btn { min-height: 44px; padding: 0 16px; font-size: 0.95rem; }
+    /* Two buttons on one line still get a full-size target: he is answering
+       seven of these in a row with a work glove half off. */
+    .walk-forget-actions .btn { min-height: 56px; padding: 0 16px; font-size: 0.95rem; }
     .walk-forget-tick { padding-right: 8px; font-size: 1.3rem; font-weight: 800; color: var(--color-confirm); }
 
     /* ---------- Utilities ---------- */

@@ -4,7 +4,8 @@
 // navigation, banners, the three overlay panels, the PIN screen, and boot.
 // Screens live one-per-file in screens/*.js and register themselves; shared
 // DOM helpers live in ui.js. Depends on globals BidMath, Store, DocModel,
-// Keypad, Photos, DocGen and the ui.js helpers, all loaded before this file.
+// Keypad, Dates, Photos, DocGen and the ui.js helpers, all loaded before this
+// file.
 //
 // Sections, in order:
 //   STATE     — the single app state object and the screen registry
@@ -42,6 +43,11 @@ const state = { data: Store.load(), screen: 'pin', bidId: null, unlocked: false 
 //   show(key, arg); a plain show(key) — what the Back button and the tab bar
 //   do — passes undefined, which a screen should read as "coming back, keep
 //   what's on the glass".
+//
+//   leave(): optional; called on the screen being left, before the switch. For
+//   the resources a renderer hands out and a re-render would normally take
+//   back — object URLs, timers — because the last render before a navigation
+//   never gets a next render to clean up after it.
 const SCREENS = {
   pin: { id: 'screen-pin', title: '', back: null, tab: null, render: null },
 };
@@ -465,6 +471,14 @@ function show(screenId, arg) {
   const key = SCREENS[screenId] ? screenId : String(screenId).replace(/^screen-/, '');
   const cfg = SCREENS[key];
   if (!cfg) return;
+
+  // The screen being left gets to put its resources back first. Nothing that
+  // happens in here may navigate, so a throwing leave() is contained rather
+  // than being allowed to strand the app between two screens.
+  const leaving = SCREENS[state.screen];
+  if (leaving && leaving.leave && key !== state.screen) {
+    try { leaving.leave(); } catch (err) { console.error('leave() failed for ' + state.screen, err); }
+  }
 
   state.screen = key;
   Object.keys(SCREENS).forEach((k) => {

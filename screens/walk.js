@@ -70,7 +70,8 @@ let walkPhotoOpenId = null;      // the photo showing full-size
 let walkPhotoUrls = [];          // object URLs handed out by the last render
 let walkRenderToken = 0;         // async thumbnail fills from an older render are dropped
 let walkPhotoWired = false;
-let walkPhotoBusy = false;       // one photo at a time; a double tap must not add two
+let walkPhotoBusy = false;       // a photo is being shrunk and written right now
+let walkPhotoQueue = [];         // the ones behind it, in the order they were taken
 
 function walkResetView() {
   walkView = 'areas';
@@ -125,6 +126,17 @@ function walkCatLabel(key) {
 }
 
 function walkPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+// The rentals the catalog already knows about, offered as chips on the rental
+// name prompt. They are deliberately kept out of the material lists, so this is
+// the one place they are reachable — and reaching them here is on purpose.
+function walkRentalNames() {
+  return state.data.catalog
+    .filter((p) => p.hidden === false && p.category === 'rentals')
+    .slice()
+    .sort((a, b) => (b.uses - a.uses) || a.name.localeCompare(b.name))
+    .map((p) => p.name);
+}
 
 function walkCatalogPart(it) {
   return it.catalogId ? (state.data.catalog.find((p) => p.id === it.catalogId) || null) : null;
@@ -218,7 +230,7 @@ function renderWalkAreas(bid, host) {
   // The handful of dollars nobody itemizes and everybody spends. One tap, one
   // number, and it is in the cost stack.
   const miscBox = card();
-  const label = (bid.misc && bid.misc.label) || WALK_MISC_LABEL;
+  const label = bid.misc.label || WALK_MISC_LABEL;
   miscBox.appendChild(row(label, BidMath.fmt(bid.misc.cents), () => {
     promptMoney(bid.misc.cents, {
       label,
@@ -320,7 +332,44 @@ function renderWalkArea(bid, area, host) {
     walkItemMenu = null;
     render();
   }));
+  // The destructive one goes last, where a thumb reaching for + Add item never
+  // lands on it by accident.
+  nav.appendChild(textButton('Delete this area', 'btn btn-danger-outline btn-block',
+    () => walkDeleteArea(bid, area)));
   host.appendChild(nav);
+}
+
+async function walkDeleteArea(bid, area) {
+  const items = (area.items || []).length;
+  const photos = (area.photoIds || []).length;
+  const carrying = (items || photos)
+    ? ' It has ' + walkPlural(items, 'item', 'items') + ' and ' + walkPlural(photos, 'photo', 'photos') + '.'
+    : '';
+  const ok = await confirmPanel(
+    'Delete ' + (area.name || 'this area') + '?' + carrying + " This can't be undone.",
+    { ok: 'Delete', danger: true }
+  );
+  if (!ok) { render(); return; }
+
+  // Photos first, and only carry on if they actually went: dropping the area
+  // while its photos survive strands blobs in IndexedDB that nothing will ever
+  // point at again, and he has no way to find or clear them.
+  const photosGone = await Photos.delMany(area.photoIds || []);
+  if (!photosGone) {
+    showBanner("Couldn't remove the photos — area kept", 'danger');
+    render();
+    return;
+  }
+
+  const i = bid.areas.indexOf(area);
+  if (i !== -1) {
+    bid.areas.splice(i, 1);
+    if (!persistOr(() => { bid.areas.splice(i, 0, area); })) { render(); return; }
+  }
+  walkView = 'areas';
+  walkAreaId = null;
+  walkItemMenu = null;
+  render();
 }
 
 function buildItemActions(area, it) {
@@ -534,6 +583,13 @@ function walkCreatePart(bid, area, unit) {
 // last time as one button, because typing the same $3.40 for the fortieth
 // length of EMT is the kind of friction that gets an app put down.
 function walkPickPart(bid, area, part) {
+  // The catalog carries a rentals category, and a lift is not a material line:
+  // priced as one it would take material markup and be counted in the material
+  // total. It goes where rentals go, whatever list he found it in.
+  if (part.category === 'rentals') {
+    walkAddRental(bid, part.name, 'add', null);
+    return;
+  }
   promptNumber(null, {
     label: 'How many ' + (part.unit || 'ea') + '?',
     allowDecimal: true,
@@ -562,8 +618,10 @@ function buildPriceAnswer(bid, area) {
     'btn btn-primary btn-block',
     () => walkCommitItem(bid, area, part, qty, part.lastCostCents)
   ));
+  // The pending state is NOT cleared here: walkCommitItem owns clearing it. If
+  // he cancels the cost keypad, this view is still what is on the glass and
+  // Back still walks one step, rather than the screen and the state disagreeing.
   nav.appendChild(textButton('Different price', 'btn btn-block', () => {
-    walkAddPending = null;
     walkAskCost(bid, area, part, qty);
   }));
   box.appendChild(nav);
@@ -632,24 +690,39 @@ function buildPhotoCard(area) {
     const strip = document.createElement('div');
     strip.className = 'walk-thumbs';
     const token = walkRenderToken;
-    ids.forEach((id) => strip.appendChild(walkThumb(id, token)));
+    ids.forEach((id, i) => strip.appendChild(walkThumb(id, token, i + 1, ids.length)));
     box.appendChild(strip);
   }
+
+  // Shrinking a 12-megapixel photo takes long enough to be a moment of doubt,
+  // and the button has to answer "did that work?" rather than sit there looking
+  // ready. Anything he takes while it is working is queued, never dropped, and
+  // the count says so.
   const bar = document.createElement('div');
   bar.className = 'bid-nav';
-  bar.appendChild(textButton('+ Photo', 'btn btn-block', () => {
-    const input = el('walkPhotoInput');
-    if (input) input.click();
-  }));
+  const waiting = walkPhotoQueue.length;
+  const photoBtn = textButton(
+    walkPhotoBusy ? ('Saving photo…' + (waiting ? ' (' + (waiting + 1) + ')' : '')) : '+ Photo',
+    'btn btn-block',
+    () => {
+      const input = el('walkPhotoInput');
+      if (input) input.click();
+    }
+  );
+  if (walkPhotoBusy) {
+    photoBtn.disabled = true;
+    photoBtn.setAttribute('aria-busy', 'true');
+  }
+  bar.appendChild(photoBtn);
   box.appendChild(bar);
   return box;
 }
 
-function walkThumb(id, token) {
+function walkThumb(id, token, n, total) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'walk-thumb';
-  btn.setAttribute('aria-label', 'Open photo');
+  btn.setAttribute('aria-label', 'Open photo ' + n + ' of ' + total);
   const img = document.createElement('img');
   img.alt = '';
   btn.appendChild(img);
@@ -713,42 +786,65 @@ function walkWirePhotoInput() {
   if (!input) return;
   walkPhotoWired = true;
   input.addEventListener('change', () => {
-    const file = input.files && input.files[0];
+    const files = input.files ? Array.prototype.slice.call(input.files) : [];
     // Cleared before the work starts, so photographing the same thing twice in
     // a row still fires a change event the second time.
     input.value = '';
-    if (file) walkAddPhoto(file);
+    const bid = walkBid();
+    const area = bid && walkCurrentArea(bid);
+    if (!area) return;
+    // The area is pinned now rather than read later: the queue is drained
+    // asynchronously and he may well have walked into the next room by then.
+    files.forEach((file) => walkQueuePhoto(file, area.id));
   });
 }
 
-async function walkAddPhoto(file) {
+function walkQueuePhoto(file, areaId) {
+  walkPhotoQueue.push({ file, areaId });
+  // A second photo taken while the first is still compressing used to be
+  // dropped on the floor without a word. Now it waits its turn.
+  if (walkPhotoBusy) { render(); return; }
+  walkDrainPhotos();
+}
+
+async function walkDrainPhotos() {
   if (walkPhotoBusy) return;
-  const bid = walkBid();
-  const area = bid && walkCurrentArea(bid);
-  if (!area) return;
-
   walkPhotoBusy = true;
+  render();
   try {
-    const blob = await walkShrink(file);
-    if (!blob) { showBanner("Couldn't read that photo", 'danger'); return; }
-
-    const id = Store.uid();
-    // The blob goes first: an id in the bid with no file behind it is a
-    // permanently grey tile, and IndexedDB is much the likelier half to refuse
-    // (a full phone) than localStorage is.
-    const stored = await Photos.put(id, blob, 'photo');
-    if (!stored) { showBanner("Photo didn't save (storage full?)", 'danger'); return; }
-
-    area.photoIds.push(id);
-    if (!persistOr(() => {
-      const i = area.photoIds.indexOf(id);
-      if (i !== -1) area.photoIds.splice(i, 1);
-      Photos.del(id);
-    })) { render(); return; }
-    render();
+    while (walkPhotoQueue.length) {
+      const next = walkPhotoQueue.shift();
+      await walkStorePhoto(next.file, next.areaId);
+    }
   } finally {
     walkPhotoBusy = false;
+    render();
   }
+}
+
+async function walkStorePhoto(file, areaId) {
+  const bid = walkBid();
+  // The area this photo was taken in, not whichever one is on screen now.
+  const area = bid && (bid.areas || []).find((a) => a.id === areaId);
+  if (!area) return;
+
+  const blob = await walkShrink(file);
+  if (!blob) { showBanner("Couldn't read that photo", 'danger'); return; }
+
+  const id = Store.uid();
+  // The blob goes first: an id in the bid with no file behind it is a
+  // permanently grey tile, and IndexedDB is much the likelier half to refuse
+  // (a full phone) than localStorage is.
+  const stored = await Photos.put(id, blob, 'photo');
+  if (!stored) { showBanner("Photo didn't save (storage full?)", 'danger'); return; }
+
+  area.photoIds.push(id);
+  if (!persistOr(() => {
+    const i = area.photoIds.indexOf(id);
+    if (i !== -1) area.photoIds.splice(i, 1);
+    Photos.del(id);
+  })) { render(); return; }
+  render();
 }
 
 // A phone camera hands back 3-12 megapixels. Storing that is seconds of
@@ -770,35 +866,45 @@ function walkLoadImage(file) {
 async function walkShrink(file) {
   let src = null;
   if (typeof createImageBitmap === 'function') {
-    try { src = await createImageBitmap(file); } catch (e) { src = null; }
+    // A phone writes which way up it was held into EXIF rather than rotating
+    // the pixels, and a canvas only ever sees the pixels. Asking for the
+    // orientation to be applied is the difference between a readable nameplate
+    // and one lying on its side; older browsers throw on the options argument,
+    // so the bare call is still there behind it.
+    try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { src = null; }
+    if (!src) { try { src = await createImageBitmap(file); } catch (e) { src = null; } }
   }
   if (!src) src = await walkLoadImage(file);
   if (!src) return null;
 
-  const w0 = src.naturalWidth || src.width;
-  const h0 = src.naturalHeight || src.height;
-  if (!w0 || !h0) return null;
-
-  const scale = Math.min(1, WALK_MAX_EDGE / Math.max(w0, h0));
-  const w = Math.max(1, Math.round(w0 * scale));
-  const h = Math.max(1, Math.round(h0 * scale));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
+  // An ImageBitmap holds decoded pixels — tens of megabytes for a phone photo —
+  // until it is closed, so every way out of here goes past the finally.
   try {
-    ctx.drawImage(src, 0, 0, w, h);
-  } catch (e) {
-    return null;
-  }
-  if (typeof src.close === 'function') src.close();
+    const w0 = src.naturalWidth || src.width;
+    const h0 = src.naturalHeight || src.height;
+    if (!w0 || !h0) return null;
+    const scale = Math.min(1, WALK_MAX_EDGE / Math.max(w0, h0));
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
 
-  return new Promise((resolve) => {
-    try { canvas.toBlob((b) => resolve(b || null), 'image/jpeg', WALK_JPEG_QUALITY); }
-    catch (e) { resolve(null); }
-  });
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(src, 0, 0, w, h);
+    } catch (e) {
+      return null;
+    }
+
+    return await new Promise((resolve) => {
+      try { canvas.toBlob((b) => resolve(b || null), 'image/jpeg', WALK_JPEG_QUALITY); }
+      catch (e) { resolve(null); }
+    });
+  } finally {
+    if (typeof src.close === 'function') src.close();
+  }
 }
 
 // Object URLs are held open until they are revoked, and a walk with forty
@@ -823,6 +929,10 @@ function buildWalkSheet(bid) {
   const wrap = document.createElement('div');
   wrap.className = 'walk-sheet';
 
+  // Read now, not in the callbacks: the sheet is torn down before they run.
+  const from = walkSheet.from;
+  const forgetRow = walkForgetRow;
+
   if (walkSheet.kind === 'equip') {
     const box = card('Which piece of equipment?');
     const own = state.data.settings.equipment.filter((e) => e.hidden === false);
@@ -832,7 +942,7 @@ function buildWalkSheet(bid) {
       const chips = document.createElement('div');
       chips.className = 'walk-thumbs'; // the same wrap-and-gap the thumbnails use
       own.forEach((e) => {
-        const c = chip(e.name, false, () => walkAddEquipment(bid, e));
+        const c = chip(e.name, false, () => walkAddEquipment(bid, e, from, forgetRow));
         c.style.width = 'auto';
         chips.appendChild(c);
       });
@@ -849,9 +959,9 @@ function buildWalkSheet(bid) {
   const box = card('Rented, or your own?');
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
-  nav.appendChild(textButton('Rental', 'btn btn-block', () => walkAddRental(bid, '')));
+  nav.appendChild(textButton('Rental', 'btn btn-block', () => walkAddRental(bid, '', from, forgetRow)));
   nav.appendChild(textButton('Owned equipment', 'btn btn-block', () => {
-    walkSheet = { kind: 'equip', from: walkSheet.from };
+    walkSheet = { kind: 'equip', from };
     render();
   }));
   nav.appendChild(textButton('Cancel', 'btn btn-block', walkCloseSheet));
@@ -866,10 +976,15 @@ function walkCloseSheet() {
   render();
 }
 
-function walkAddRental(bid, prefill) {
+// from and forgetRow travel as arguments rather than as module state, because
+// promptText's Cancel calls nothing at all: state set on the way in would have
+// no way to be cleared on the way out, and would still be sitting there the
+// next time something read it.
+function walkAddRental(bid, prefill, from, forgetRow) {
   promptText(prefill || '', {
     label: 'Rental',
     placeholder: 'What you are renting',
+    suggestions: walkRentalNames(),
     done: (name) => {
       if (!name) return;
       const line = { name, days: 1, cents: 0, markup: false };
@@ -878,24 +993,23 @@ function walkAddRental(bid, prefill) {
         const i = bid.rentals.indexOf(line);
         if (i !== -1) bid.rentals.splice(i, 1);
       })) { render(); return; }
-      walkAfterPlaceholder();
+      walkAfterPlaceholder(from, forgetRow);
     },
   });
 }
 
-function walkAddEquipment(bid, equip) {
+function walkAddEquipment(bid, equip, from, forgetRow) {
   const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents: 0 };
   bid.equipment.push(line);
   if (!persistOr(() => {
     const i = bid.equipment.indexOf(line);
     if (i !== -1) bid.equipment.splice(i, 1);
   })) { render(); return; }
-  walkAfterPlaceholder();
+  walkAfterPlaceholder(from, forgetRow);
 }
 
-function walkAfterPlaceholder() {
-  const from = walkSheet ? walkSheet.from : 'forget';
-  if (walkForgetRow) walkForgetAnswered.add(walkForgetRow);
+function walkAfterPlaceholder(from, forgetRow) {
+  if (forgetRow) walkForgetAnswered.add(forgetRow);
   walkForgetRow = null;
   walkSheet = null;
   // Coming out of the add-item flow, the area he was working in is where he
@@ -933,6 +1047,9 @@ function buildForgetCard(bid) {
     if (walkForgetAnswered.has(name)) {
       const tick = document.createElement('span');
       tick.className = 'walk-forget-tick';
+      // A bare checkmark glyph reads as punctuation, or as nothing at all, to a
+      // screen reader; as an image with a name it reads as the answer it is.
+      tick.setAttribute('role', 'img');
       tick.setAttribute('aria-label', 'Answered');
       tick.textContent = '✓';
       line.appendChild(tick);
@@ -955,15 +1072,21 @@ function buildForgetCard(bid) {
 function walkForgetAdd(bid, name) {
   const key = name.trim().toLowerCase();
 
-  // Two of the rows are not material at all, so they go where their money
-  // actually gets priced.
-  if (key === 'lift rental') {
+  // Two of these rows are not material at all, so they go where their money
+  // actually gets priced. The match is a rule rather than the two seed strings
+  // because Settings lets him edit this list: "Lift rental" may well become
+  // "Boom lift" or "Lift / scaffold", and it still has to reach the rentals
+  // side of the bid. Rental is tested first, so a row reading "equipment
+  // rental" is a rental. Renaming a row far enough (to "Scaffolding", say) does
+  // change where Add it puts it — it becomes a General line, which is the
+  // safe direction to be wrong in.
+  if (key.indexOf('rental') !== -1 || key.indexOf('lift') !== -1) {
     walkSheet = null;
-    walkForgetRow = name;
-    walkAddRental(bid, name);
+    walkForgetRow = null;
+    walkAddRental(bid, name, 'forget', name);
     return;
   }
-  if (key === 'equipment') {
+  if (key.indexOf('equipment') !== -1) {
     walkForgetRow = name;
     walkSheet = { kind: 'equip', from: 'forget' };
     render();
@@ -972,7 +1095,6 @@ function walkForgetAdd(bid, name) {
 
   // Everything else becomes a zero-cost line in an area called General, so it
   // is visible on the bid — and on the Price screen — until it has a number.
-  const prevAreaCount = bid.areas.length;
   let area = bid.areas.find((a) => (a.name || '').trim().toLowerCase() === WALK_GENERAL_AREA.toLowerCase());
   const created = !area;
   if (!area) {
@@ -985,7 +1107,10 @@ function walkForgetAdd(bid, name) {
   if (!persistOr(() => {
     const i = area.items.indexOf(item);
     if (i !== -1) area.items.splice(i, 1);
-    if (created) bid.areas.length = prevAreaCount;
+    if (created) {
+      const a = bid.areas.indexOf(area);
+      if (a !== -1) bid.areas.splice(a, 1);
+    }
   })) { render(); return; }
 
   walkForgetAnswered.add(name);
@@ -1026,4 +1151,9 @@ function renderWalk() {
   if (walkPhotoOpenId && area) host.appendChild(buildPhotoView(area, walkPhotoOpenId));
 }
 
-registerScreen('walk', { id: 'screen-walk', title: 'Walkthrough', back: 'bid', tab: 'bids', enter: enterWalk, render: renderWalk });
+// leave(): the last render before a navigation never gets a next render to
+// take its object URLs back, so the shell asks for them on the way out.
+registerScreen('walk', {
+  id: 'screen-walk', title: 'Walkthrough', back: 'bid', tab: 'bids',
+  enter: enterWalk, leave: walkReleasePhotoUrls, render: renderWalk,
+});
