@@ -86,11 +86,19 @@ function inlineWarn(text) {
   return d;
 }
 
-// Customers matching what he has typed so far, best guess first: the customer
-// on the most recent bid is the one he is most likely bidding again, and the
-// rest follow alphabetically so a long list stays scannable. With sixty
-// customers an unfiltered list is a wall, which is how the same company ends
-// up in the file twice under two spellings.
+// Customers matching what he has typed so far, best guess first. Three keys,
+// in this order:
+//
+//   1. A name that STARTS with what he typed beats one that merely contains
+//      it. Typing "des" is aiming at "Desert Dairy", not at "Sunrise Design" —
+//      and the chips are only eight long, so an interior match sitting on top
+//      is a chip he has to scroll past.
+//   2. The customer on the most recent bid: the one he is most likely bidding
+//      again.
+//   3. Alphabetical, so a long list stays scannable.
+//
+// With sixty customers an unfiltered list is a wall, which is how the same
+// company ends up in the file twice under two spellings.
 function customerSuggestions(query) {
   const q = String(query || '').trim().toLowerCase();
   const matches = state.data.customers.filter((c) => {
@@ -101,9 +109,13 @@ function customerSuggestions(query) {
   const newest = state.data.bids.slice().sort(Dates.bidsSortCompare)[0];
   const topId = newest ? newest.customerId : null;
 
-  const top = matches.filter((c) => c.id === topId);
-  const rest = matches.filter((c) => c.id !== topId).sort((a, b) => a.name.localeCompare(b.name));
-  return top.concat(rest).map((c) => c.name);
+  // An empty query makes every name a prefix match, which lands this back on
+  // the old ordering: most recent first, then alphabetical.
+  const rank = (c) => (c.name.toLowerCase().indexOf(q) === 0 ? 0 : 1) * 2 + (c.id === topId ? 0 : 1);
+  return matches
+    .slice()
+    .sort((a, b) => (rank(a) - rank(b)) || a.name.localeCompare(b.name))
+    .map((c) => c.name);
 }
 
 // ---------------------------------------------------------------------------

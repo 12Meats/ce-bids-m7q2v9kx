@@ -87,9 +87,11 @@ function buildNudges() {
   const backupAge = daysSince(state.data.settings.lastBackupAt);
   const parts = [];
   if (unsaved) parts.push(`${unsaved} proposal${unsaved === 1 ? '' : 's'} not saved to Files`);
-  // A fresh install has nothing to back up. Opening the app for the first
-  // time to a red warning teaches him to ignore red warnings.
-  else if (backupAge === null && state.data.bids.length > 0) parts.push('no backup yet');
+  // Two different holes, and having one is no reason to stop saying the other:
+  // filing a proposal to Files does nothing for a phone that has never been
+  // backed up. A fresh install has nothing to back up, though — opening the
+  // app for the first time to a red warning teaches him to ignore red warnings.
+  if (backupAge === null && state.data.bids.length > 0) parts.push('no backup yet');
   if (backupAge !== null && backupAge > NUDGE_DAYS) parts.push(`last backup ${backupAge} days ago`);
   if (parts.length) {
     wrap.appendChild(nudgeBand(parts.join(' · ') + ' — Settings › Backup', 'danger', () => show('settings')));
