@@ -159,7 +159,22 @@ function pricePromptPct(current, label, node, apply) {
 // node is what to shake, when there is something on the glass to shake: the
 // chip he tapped. Mid-flow there is nothing yet (the line does not exist until
 // the last panel closes), so the banner carries the refusal on its own.
+//
+// A refused number RE-OPENS the same prompt rather than returning. Mid-flow
+// there is nothing behind the panel to go back to: the "+ Rental" flow has
+// already taken the name, and dropping out here would throw that name away and
+// make him start over for a mistyped day count. The banner says what was
+// wrong and the keypad is waiting underneath it. Cancel is still how he
+// leaves — this only re-asks the question he answered badly.
+//
+// Safe to call from inside done(): keypadDone/keypadClear close the panel
+// before they call it, so anyPanelOpen() is false by the time we ask again.
 function pricePromptDays(current, label, node, apply) {
+  const refuse = (message) => {
+    showBanner(message);
+    if (node) shake(node);
+    pricePromptDays(current, label, node, apply);
+  };
   promptNumber(current, {
     label,
     allowDecimal: true,
@@ -169,10 +184,9 @@ function pricePromptDays(current, label, node, apply) {
     maxChars: PRICE_DAY_KEYS,
     done: (v) => {
       if (v === null) return;
-      if (!(v > 0)) { showBanner('A day count has to be more than zero'); if (node) shake(node); return; }
+      if (!(v > 0)) { refuse('A day count has to be more than zero'); return; }
       if (v > PRICE_MAX_DAYS) {
-        showBanner('That is more than a year — check the number of days');
-        if (node) shake(node);
+        refuse('That is more than a year — check the number of days');
         return;
       }
       apply(v);
