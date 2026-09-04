@@ -32,29 +32,32 @@
 // ---------------------------------------------------------------------------
 // There is no view to remember here: the chips, the day count and the task
 // list are all read straight off the bid, so a re-render rebuilds the screen
-// exactly as it was. The only screen-local state is two things that are true
-// for one render and then gone.
+// exactly as it was. The one piece of screen-local state is the flash on a
+// just-added task, true for a render and then gone.
+//
+// A rejected number doesn't need state either: nothing was written, so there
+// is nothing to re-render — the row that was tapped is still on the glass and
+// gets shaken where it stands.
 
 const LABOR_HPD_MIN = 1;
 const LABOR_HPD_MAX = 16;
+// A year on one bid. Not a real limit on the work, a limit on the typo: 22
+// meant as 2 is a day count he might not read twice, 2222 is one he will.
+const LABOR_MAX_DAYS = 365;
 const LABOR_FIRST_TASK = 'Main work';
 
 let laborNewTask = null;    // the task just added, flashed for a second
-let laborShakeHpd = false;  // the hours-per-day row got a number it can't use
-let laborHpdAsked = false;  // he has already agreed to change it once this session
 
 function laborClearTransient() {
   laborNewTask = null;
-  laborShakeHpd = false;
 }
 
 // The screen's enter hook. show('labor', id) opens that bid; show('labor') —
 // what the bid screen and the Back button do — keeps the bid we already had.
 // The walk compares the incoming bid id against the one its view state belongs
 // to; this screen has no such view state to keep, so there is nothing to
-// compare — the two transient flags are dropped on every entry, whichever bid
-// we land on. A flash left over from another bid's task list would point at
-// nothing.
+// compare — the flash is dropped on every entry, whichever bid we land on. One
+// left over from another bid's task list would point at nothing.
 function enterLabor(bidId) {
   if (typeof bidId === 'string' && bidId) state.bidId = bidId;
   laborClearTransient();
@@ -70,14 +73,9 @@ function laborSettings() { return state.data.settings; }
 
 function laborHoursPerDay() { return laborSettings().hoursPerDay || 8; }
 
-function laborCaption(text) {
-  const p = document.createElement('p');
-  p.className = 'labor-caption';
-  p.textContent = text;
-  return p;
-}
-
-function laborPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+// numText, not String(n): 0.1 + 0.2 days is 0.30000000000000004, and "two
+// guys × 0.30000000000000004 days" is not a sentence anyone should read.
+function laborPlural(n, one, many) { return numText(n) + ' ' + (n === 1 ? one : many); }
 
 // ---------------------------------------------------------------------------
 // CREW
@@ -126,7 +124,11 @@ function laborCrewChips(bid, holder) {
 // there is no name left to show, and the id is what he'd hunt for in a backup.
 function laborUnknownWarn(bid, unknownIds) {
   const box = document.createElement('div');
-  box.appendChild(inlineWarn('Crew member no longer in Settings: ' + unknownIds.join(', ')));
+  // Not just a display problem: Store.save validates crew ids against Settings
+  // and refuses the whole document, so every other edit on this screen is
+  // bouncing off the disk until this is cleared. He has to be told that.
+  box.appendChild(inlineWarn('Crew member no longer in Settings: ' + unknownIds.join(', ')
+    + '. Nothing on this bid will save until this is fixed.'));
 
   const actions = document.createElement('div');
   actions.className = 'labor-warn-actions';
@@ -134,10 +136,10 @@ function laborUnknownWarn(bid, unknownIds) {
     const gone = new Set(unknownIds);
     const labor = bid.labor;
     const prevCrew = (labor.crewIds || []).slice();
-    const prevTasks = labor.tasks ? labor.tasks.map((t) => t.crewIds.slice()) : null;
+    const prevTasks = labor.tasks ? labor.tasks.map((t) => (t.crewIds || []).slice()) : null;
 
     labor.crewIds = prevCrew.filter((id) => !gone.has(id));
-    (labor.tasks || []).forEach((t) => { t.crewIds = t.crewIds.filter((id) => !gone.has(id)); });
+    (labor.tasks || []).forEach((t) => { t.crewIds = (t.crewIds || []).filter((id) => !gone.has(id)); });
 
     persistOr(() => {
       labor.crewIds = prevCrew;
@@ -154,7 +156,7 @@ function buildCrewCard(bid) {
   const box = card('Crew');
   box.appendChild(laborCrewChips(bid, bid.labor));
   if ((bid.labor.crewIds || []).length === 0) {
-    box.appendChild(laborCaption("Pick who's on this job."));
+    box.appendChild(caption("Pick who's on this job."));
   }
   return box;
 }
@@ -175,6 +177,13 @@ function laborDaysRow(label, holder) {
       maxDigits: 5,
       done: (v) => {
         if (v === null) return;
+        if (v > LABOR_MAX_DAYS) {
+          // Nothing was written, so there is nothing to re-render: the row he
+          // tapped is still on the glass, and it is the thing that is wrong.
+          showBanner('That is more than a year — check the number of days');
+          shake(line);
+          return;
+        }
         const prev = holder.days;
         holder.days = v;
         persistOr(() => { holder.days = prev; });
@@ -190,73 +199,80 @@ function laborDaysRow(label, holder) {
 // costs him; bid hours is what the customer is quoted, cushion included. Both
 // are on screen because pricing off the wrong one is the mistake this whole
 // app is trying to stop.
-function buildReadout(bid) {
-  const settings = laborSettings();
-  const real = BidMath.laborReal(bid, settings);
-  const cushionPct = bid.pricing.cushionPct;
+function buildReadout(bid, real) {
+  // costStack reads the cushion the same defensive way; a bid that somehow
+  // arrived without one is quoted at its real hours, not at NaN.
+  const cushionPct = bid.pricing.cushionPct != null ? bid.pricing.cushionPct : 0;
 
   const box = card();
   box.className += ' labor-readout';
   box.appendChild(row('Real hours', numText(real.hours)));
   box.appendChild(row('Wages', moneyText(real.wageCents)));
-  box.appendChild(laborCaption('at real wages, before burden'));
+  box.appendChild(caption('at real wages, before burden'));
   box.appendChild(row('Bid hours', numText(BidMath.bidHours(real.hours, cushionPct))));
-  box.appendChild(laborCaption('includes ' + numText(cushionPct) + '% cushion'));
+  box.appendChild(caption('includes ' + numText(cushionPct) + '% cushion'));
   return box;
 }
 
-// The quiet row that decides what "a day" means everywhere in the app. It
-// lives here because this is the screen where the answer matters, but it is a
-// Settings value and it changes every bid he writes after today, so the first
-// change of a session asks before the keypad opens.
+// The row that decides what "a day" means everywhere in the app. It lives here
+// because this is the screen where the answer matters, but it is a Settings
+// value: it re-figures the hours, and therefore the price, on every bid in the
+// file — including ones already in a customer's inbox. So it asks EVERY time,
+// not once a session: the second change of the day is exactly as far-reaching
+// as the first, and a screen that stops asking has stopped telling the truth.
 function buildHoursPerDayRow() {
-  const btn = textButton(
-    laborPlural(laborHoursPerDay(), 'hour', 'hours') + ' per day · change',
-    'link-btn labor-hpd',
-    async () => {
-      if (!laborHpdAsked) {
-        const ok = await confirmPanel('Change hours per day for all future bids?');
-        if (!ok) { render(); return; }
-        laborHpdAsked = true;
-      }
-      promptNumber(laborHoursPerDay(), {
-        label: 'Hours in a work day',
-        done: (v) => {
-          if (v === null) return;
-          if (!Number.isInteger(v) || v < LABOR_HPD_MIN || v > LABOR_HPD_MAX) {
-            laborShakeHpd = true;
-            showBanner('A work day is between ' + LABOR_HPD_MIN + ' and ' + LABOR_HPD_MAX + ' whole hours');
-            render();
-            return;
-          }
-          const settings = laborSettings();
-          const prev = settings.hoursPerDay;
-          settings.hoursPerDay = v;
-          persistOr(() => { settings.hoursPerDay = prev; });
-          render();
-        },
-      });
-    }
-  );
-  return btn;
+  const box = card();
+  const line = row('Hours per day', laborPlural(laborHoursPerDay(), 'hour', 'hours'), async () => {
+    const ok = await confirmPanel(
+      'Change hours per day? This re-figures the hours and price on EVERY bid, including ones already sent.'
+    );
+    if (!ok) return;
+    promptNumber(laborHoursPerDay(), {
+      label: 'Hours in a work day',
+      done: (v) => {
+        if (v === null) return;
+        if (!Number.isInteger(v) || v < LABOR_HPD_MIN || v > LABOR_HPD_MAX) {
+          showBanner('A work day is between ' + LABOR_HPD_MIN + ' and ' + LABOR_HPD_MAX + ' whole hours');
+          shake(line);
+          return;
+        }
+        const settings = laborSettings();
+        const prev = settings.hoursPerDay;
+        settings.hoursPerDay = v;
+        persistOr(() => { settings.hoursPerDay = prev; });
+        render();
+      },
+    });
+  });
+  line.classList.add('labor-hpd');
+
+  const chevron = document.createElement('span');
+  chevron.className = 'labor-hpd-chevron';
+  chevron.textContent = '›';
+  chevron.setAttribute('aria-hidden', 'true');
+  line.appendChild(chevron);
+
+  box.appendChild(line);
+  box.appendChild(caption('Changes every bid, not just this one.'));
+  return box;
 }
 
 // ---------------------------------------------------------------------------
 // TASKS
 // ---------------------------------------------------------------------------
 
-// What one task is worth on its own, in the words he would use: the crew, the
-// days, and the hours those two make. BidMath adds the same numbers up for the
-// readout, so a task's caption and the total can never disagree.
+// What one task is worth on its own, in the words he would use. The hours come
+// from BidMath.lineHours — the same function laborReal sums for the readout, so
+// the captions and the total are the same arithmetic by construction and can
+// never drift apart.
 function laborTaskHoursText(task) {
   const crew = (task.crewIds || []).length;
-  const hours = task.days * laborHoursPerDay() * crew;
   if (crew === 0) return '0 hours — nobody on this task yet';
-  return numText(hours) + ' hours (' + laborPlural(crew, 'guy', 'guys')
-    + ' × ' + laborPlural(task.days, 'day', 'days') + ')';
+  return numText(BidMath.lineHours(task, laborHoursPerDay())) + ' hours ('
+    + laborPlural(crew, 'guy', 'guys') + ' × ' + laborPlural(task.days, 'day', 'days') + ')';
 }
 
-function buildTaskCard(bid, task) {
+function buildTaskCard(bid, task, only) {
   const box = card();
   if (laborNewTask === task) box.classList.add('labor-task-new');
 
@@ -276,12 +292,19 @@ function buildTaskCard(bid, task) {
 
   box.appendChild(laborCrewChips(bid, task));
   box.appendChild(laborDaysRow('Days', task));
-  box.appendChild(laborCaption(laborTaskHoursText(task)));
+  box.appendChild(caption(laborTaskHoursText(task)));
 
   const actions = document.createElement('div');
   actions.className = 'labor-task-actions';
-  actions.appendChild(textButton('Delete', 'btn btn-danger-outline', () => laborDeleteTask(bid, task)));
+  const del = textButton('Delete', 'btn btn-danger-outline', only ? null : () => laborDeleteTask(bid, task));
+  // Deleting the last task would leave labor.tasks as [], which BidMath reads
+  // as "no tasks at all" — the readout would silently fall back to the bid's
+  // own line and start quoting a day count nothing on screen shows. There is
+  // already a door out of task mode, so this one is closed and points at it.
+  del.disabled = !!only;
+  actions.appendChild(del);
   box.appendChild(actions);
+  if (only) box.appendChild(caption('Use Merge back to return to one line.'));
 
   return box;
 }
@@ -294,20 +317,14 @@ async function laborDeleteTask(bid, task) {
   const i = labor.tasks.indexOf(task);
   if (i === -1) { render(); return; }
 
+  // The button that got us here is disabled on the last task, so this can only
+  // ever leave a non-empty list. Belt and braces, because tasks:[] is a state
+  // the rest of the app would read as "no tasks" and quietly mis-price.
+  if (labor.tasks.length < 2) { render(); return; }
+
   const prevTasks = labor.tasks;
-  const prevDays = labor.days;
-  const rest = labor.tasks.filter((t) => t !== task);
-  // An empty task list is not a state this screen may leave behind: BidMath
-  // reads tasks:[] as "no tasks", falls back to the single line, and the
-  // readout would quietly start reporting a day count nothing on screen shows.
-  // Deleting the last task means there is no labor left, so say exactly that.
-  if (rest.length === 0) {
-    labor.tasks = null;
-    labor.days = 0;
-  } else {
-    labor.tasks = rest;
-  }
-  persistOr(() => { labor.tasks = prevTasks; labor.days = prevDays; });
+  labor.tasks = labor.tasks.filter((t) => t !== task);
+  persistOr(() => { labor.tasks = prevTasks; });
   laborNewTask = null;
   render();
 }
@@ -343,18 +360,42 @@ function laborAddTask(bid) {
   });
 }
 
+// The merge is exact on hours and NOT exact on money: the union crew now
+// covers the whole job (an expensive man who worked one task bills for all of
+// it), and the truck bills off one day count instead of the sum of the tasks'.
+// So the question shows the shape he is about to get, says the hours are safe,
+// and puts the two true-cost numbers side by side. Both come from costStack —
+// the after figure off a clone, so asking is never a change.
 async function laborMergeBack(bid) {
-  const ok = await confirmPanel('Combine tasks into one line? Task names are lost.', { ok: 'Combine' });
+  const settings = laborSettings();
+  const merged = BidMath.mergeTasks(bid.labor);
+  const mergedLabor = { crewIds: merged.crewIds, days: merged.days, tasks: null };
+
+  const before = BidMath.costStack(bid, settings);
+  const after = BidMath.costStack(Object.assign({}, bid, { labor: mergedLabor }), settings);
+
+  const crewCount = merged.crewIds.length;
+  const shape = crewCount === 0
+    ? 'one line of ' + laborPlural(merged.days, 'day', 'days') + ' with nobody on it'
+    : laborPlural(crewCount, 'guy', 'guys') + ' × ' + laborPlural(merged.days, 'day', 'days');
+  const money = before.trueCost === after.trueCost
+    ? 'True cost stays ' + moneyText(after.trueCost) + '.'
+    : 'True cost ' + moneyText(before.trueCost) + ' → ' + moneyText(after.trueCost) + '.';
+
+  const ok = await confirmPanel(
+    'Combine into ' + shape + '? Labor hours stay ' + numText(after.realHours) + '. '
+      + money + ' Task names are lost.',
+    { ok: 'Combine' }
+  );
   if (!ok) { render(); return; }
 
   const labor = bid.labor;
-  const merged = BidMath.mergeTasks(labor, laborHoursPerDay());
   const prevCrew = labor.crewIds;
   const prevDays = labor.days;
   const prevTasks = labor.tasks;
 
-  labor.crewIds = merged.crewIds;
-  labor.days = merged.days;
+  labor.crewIds = mergedLabor.crewIds;
+  labor.days = mergedLabor.days;
   labor.tasks = null;
   persistOr(() => { labor.crewIds = prevCrew; labor.days = prevDays; labor.tasks = prevTasks; });
   laborNewTask = null;
@@ -374,7 +415,8 @@ function buildTasksSection(bid, host) {
   heading.textContent = 'Tasks';
   host.appendChild(heading);
 
-  labor.tasks.forEach((task) => host.appendChild(buildTaskCard(bid, task)));
+  const only = labor.tasks.length === 1;
+  labor.tasks.forEach((task) => host.appendChild(buildTaskCard(bid, task, only)));
 
   const actions = document.createElement('div');
   actions.className = 'bid-nav';
@@ -409,11 +451,15 @@ function renderLabor() {
   head.appendChild(cust);
   host.appendChild(head);
 
+  // Read once and passed down: the readout wants the hours and the wages, the
+  // warning wants the unknown ids, and they must be the same reading of the
+  // same bid — not two calls a mutation could land between.
+  const real = BidMath.laborReal(bid, laborSettings());
+
   // Above everything, in both modes: an unknown crew id can be sitting on a
   // task just as easily as on the bid's own line, and it is under-pricing the
-  // job either way.
-  const unknown = BidMath.laborReal(bid, laborSettings()).unknownCrewIds;
-  if (unknown.length) host.appendChild(laborUnknownWarn(bid, unknown));
+  // job — and blocking every save — either way.
+  if (real.unknownCrewIds.length) host.appendChild(laborUnknownWarn(bid, real.unknownCrewIds));
 
   // The crew/days pair is the single line. Once it has been split, the tasks
   // own both, and showing a second set here would be two answers to the same
@@ -425,12 +471,8 @@ function renderLabor() {
     host.appendChild(daysBox);
   }
 
-  host.appendChild(buildReadout(bid));
-
-  const hpd = buildHoursPerDayRow();
-  host.appendChild(hpd);
-  if (laborShakeHpd) shake(hpd);
-  laborShakeHpd = false;
+  host.appendChild(buildReadout(bid, real));
+  host.appendChild(buildHoursPerDayRow());
 
   buildTasksSection(bid, host);
 

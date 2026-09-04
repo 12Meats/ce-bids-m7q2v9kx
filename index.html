@@ -368,6 +368,14 @@
       text-align: center;
     }
 
+    /* The muted line under the thing it explains. Sits beside real content,
+       where .empty-state stands in for content that isn't there. */
+    .caption {
+      margin: 2px 0 var(--space-1);
+      font-size: 0.9rem;
+      color: var(--color-text-muted);
+    }
+
     /* ---------- Shared components (built by ui.js) ---------- */
     .card {
       display: block;
@@ -624,12 +632,6 @@
     .walk-head-title { font-size: var(--font-lg); font-weight: 800; }
     .walk-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
 
-    .walk-caption {
-      margin: -4px 0 var(--space-1);
-      font-size: 0.9rem;
-      color: var(--color-text-muted);
-    }
-
     /* A two-line version of .row: a name and its money on the first line, the
        counts underneath. The whole block is the tap target. */
     .walk-row {
@@ -748,12 +750,6 @@
     .labor-head-title { font-size: var(--font-lg); font-weight: 800; }
     .labor-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
 
-    .labor-caption {
-      margin: 2px 0 var(--space-1);
-      font-size: 0.9rem;
-      color: var(--color-text-muted);
-    }
-
     /* Chips wrap: a five-man crew must not push the fifth name off the edge. */
     .labor-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
@@ -766,14 +762,18 @@
     .labor-readout .row-value { font-weight: 800; }
 
     .labor-warn-actions { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
-    .labor-warn-actions .btn { min-height: 44px; padding: 0 18px; font-size: 0.95rem; }
+    /* The one way out of a state that is blocking every save on the bid — a
+       full-size target, not a 44px afterthought. */
+    .labor-warn-actions .btn { min-height: 56px; padding: 0 18px; }
 
-    /* Quieter than "Edit details": this is a setting, not a step. */
-    .labor-hpd {
-      margin-top: var(--space-1);
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--color-text-muted);
+    /* A real row that goes somewhere, not grey text: it opens a confirmation
+       and then a keypad, and it changes every bid in the file. */
+    .labor-hpd .row-value { color: var(--color-accent); font-weight: 700; }
+    .labor-hpd-chevron {
+      padding-left: 8px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--color-accent);
     }
 
     .labor-task-actions { display: flex; margin-top: var(--space-2); }

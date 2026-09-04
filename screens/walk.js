@@ -175,13 +175,6 @@ function walkRow(name, sub, value, onTap) {
   return node;
 }
 
-function walkCaption(text) {
-  const p = document.createElement('p');
-  p.className = 'walk-caption';
-  p.textContent = text;
-  return p;
-}
-
 // The local Back — the one that moves between this screen's own views. The
 // shell's Back button, which leaves the walk entirely, is separate on purpose.
 function walkBackLink(label, onTap) {
@@ -206,7 +199,7 @@ function renderWalkAreas(bid, host) {
   host.appendChild(head);
 
   const box = card('Areas');
-  box.appendChild(walkCaption('At cost — what the material costs you, not the price.'));
+  box.appendChild(caption('At cost — what the material costs you, not the price.'));
   const areas = bid.areas || [];
   if (areas.length === 0) {
     box.appendChild(emptyNote('No areas yet — add the room you are standing in.'));

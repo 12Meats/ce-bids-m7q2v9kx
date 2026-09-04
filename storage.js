@@ -394,7 +394,11 @@
     const b = { id: uid(), number: s.nextNumber, customerId: cust.id, title: title || '', dateISO: dateISO || todayISO(),
       status: 'draft', detail, jobType: jt,
       areas: [], misc: { label: 'Supports, anchors, and hardware', cents: 0 },
-      labor: { crewIds: s.crew.slice(0, 2).map((c) => c.id), days: 0, tasks: null }, rentals: [], equipment: [],
+      // Hidden crew are people who don't work here any more: seeding them onto
+      // a new bid would put a chip on the Labor screen for someone he'd have to
+      // notice and take off, and would bill their wage until he did.
+      labor: { crewIds: s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id), days: 0, tasks: null },
+      rentals: [], equipment: [],
       // No stored priceCents here: the sell price is always derived from the
       // (rounded) rate below, never persisted as its own independent number.
       pricing: { marginPct: s.marginPct, rateCents: s.rateCents, cushionPct: s.cushionPct[jt], markupPct: s.markupPct },

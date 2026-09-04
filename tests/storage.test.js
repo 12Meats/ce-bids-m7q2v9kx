@@ -66,6 +66,15 @@ test('validateImport: bids must reference existing customers, catalog, crew; sta
   const bad3 = JSON.parse(JSON.stringify(d)); bad3.bids[0].labor.crewIds = ['ghost'];
   assert.strictEqual(S.validateImport(JSON.stringify(bad3)), null);
 });
+test('newBid seeds the labor line from VISIBLE crew only', () => {
+  const d = S.emptyData();
+  assert.deepStrictEqual(S.newBid(d, { customerName: 'UDA', title: 'x', jobType: 'service' }).labor.crewIds,
+    d.settings.crew.slice(0, 2).map((c) => c.id));
+  // Retiring the first man must not put him on tomorrow's bids.
+  d.settings.crew[0].hidden = true;
+  assert.deepStrictEqual(S.newBid(d, { customerName: 'UDA', title: 'y', jobType: 'service' }).labor.crewIds,
+    [d.settings.crew[1].id]);
+});
 test('newBid: takes the next number, increments the counter, creates the customer if new, copies pricing defaults', () => {
   const d = S.emptyData(); d.settings.nextNumber = 3052;
   const b = S.newBid(d, { customerName: 'UDA', title: 'Warehouse lights', jobType: 'service' });

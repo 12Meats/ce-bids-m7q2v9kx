@@ -48,6 +48,14 @@
     });
   }
 
+  // days × hours-per-day × how many men are on the line. The ONE place that
+  // multiplication is written, so the total in the readout and a single task's
+  // own caption cannot drift apart — they are the same function, not two
+  // copies of the same arithmetic. hoursPerDay comes in already resolved.
+  function lineHours(line, hoursPerDay) {
+    return line.days * hoursPerDay * ((line.crewIds || []).length);
+  }
+
   function laborReal(bid, settings) {
     const labor = getLabor(bid);
     const hpd = settings.hoursPerDay || 8;
@@ -56,54 +64,53 @@
     const unknown = new Set();
     for (const ln of lines) {
       const wages = crewWage(ln.crewIds || [], settings, unknown);
-      const h = ln.days * hpd;
-      hours += h * wages.length;
+      const h = ln.days * hpd;   // hours ONE man works on this line
+      hours += lineHours(ln, hpd);
       wageCents += wages.reduce((s, w) => s + r(w * h), 0);
     }
     return { hours, wageCents, unknownCrewIds: Array.from(unknown) };
   }
 
-  // Merging a task list back into one line has to leave the job the same size:
-  // total hours is what the price is built on, so total hours is what is kept.
-  // The merged line carries every crew member who appeared on any task (the
-  // union), and its day count is how long THAT crew would take to work those
-  // same hours:
+  // Merging a task list back into one line preserves the person-hours EXACTLY.
+  // No rounding: the day count that comes back can be 1.25, and the hours on
+  // the bid do not move by a minute. Hours are what bid hours and the price
+  // are built on, and a merge is a different way of looking at the same job,
+  // not a chance to re-estimate it.
   //
-  //   days = Σ(task.days × hoursPerDay × task crew count)
-  //          ────────────────────────────────────────────
-  //                 hoursPerDay × union crew count
+  //   days = Σ(task.days × task crew count) ÷ union crew count   ← crewed tasks
+  //        + Σ task.days                                          ← crewless tasks
   //
-  // rounded to the nearest half day, because half a day is the smallest thing
-  // this app lets anyone type — so the merged number is one he could have
-  // typed himself, at the cost of a few minutes either way.
+  // Hours-per-day cancels out of that division, which is why it is not a
+  // parameter here: the answer is the same for a 6-hour day and a 12-hour one.
   //
-  // Hours, not the wage split: collapsing two tasks onto one line puts the
-  // whole union crew on the whole job, so an expensive man who only worked one
-  // task now bills for all of it (or the reverse). Total hours — what the bid
-  // hours and the price are built on — comes through unchanged; the wage line
-  // can move by a few dollars. That is the trade the confirmation is warning
-  // about when it says the task names are lost.
+  // A task nobody is on contributes no person-hours, so it cannot go through
+  // the division — its days are ADDED instead, which is the only reading that
+  // doesn't quietly delete work he wrote down.
   //
-  // With nobody on any task there are no hours to divide by a crew of zero, so
-  // the days simply add up and the line stays crewless (0 hours either way).
+  // Two things DO move when the crews differ from task to task, and the screen
+  // says so, with the numbers, before it asks:
   //
-  // Returns { crewIds, days }; the caller writes them onto the bid and clears
-  // labor.tasks, so nothing here mutates what it was handed.
-  function mergeTasks(labor, hoursPerDay) {
+  //   Wages — the merged line puts the whole union crew on the whole job, so
+  //   an expensive man who only worked one task now bills for all of it.
+  //
+  //   Truck days — costStack bills the truck per day: summed across the tasks
+  //   before the merge, taken off the single day count after it. Three men on
+  //   three one-day tasks is 3 truck days before and 1 after.
+  //
+  // Nothing here mutates what it was handed; the caller writes the result onto
+  // the bid and clears labor.tasks.
+  function mergeTasks(labor) {
     const tasks = (labor && labor.tasks) || [];
-    const hpd = hoursPerDay || 8;
     const crewIds = [];
-    let personHours = 0;
-    let plainDays = 0;
+    let crewDayUnits = 0;   // Σ days × men, over the tasks that have men on them
+    let plainDays = 0;      // Σ days over the tasks that don't
     for (const t of tasks) {
       const ids = t.crewIds || [];
+      if (ids.length === 0) { plainDays += t.days; continue; }
       for (const id of ids) if (crewIds.indexOf(id) === -1) crewIds.push(id);
-      personHours += t.days * hpd * ids.length;
-      plainDays += t.days;
+      crewDayUnits += t.days * ids.length;
     }
-    const days = crewIds.length
-      ? Math.round(personHours / (hpd * crewIds.length) * 2) / 2
-      : plainDays;
+    const days = crewIds.length ? crewDayUnits / crewIds.length + plainDays : plainDays;
     return { crewIds, days };
   }
 
@@ -182,7 +189,7 @@
   }
 
   return {
-    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, bidHours, mergeTasks, costStack, solve,
+    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, bidHours, mergeTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };

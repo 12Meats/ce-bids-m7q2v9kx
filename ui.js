@@ -109,6 +109,16 @@ function inlineWarn(text) {
   return d;
 }
 
+// caption(text) -> the muted line under the thing it explains: what a number
+// means, what a list is measured in, what a card is for. Unlike emptyNote it
+// sits beside real content rather than standing in for missing content.
+function caption(text) {
+  const p = document.createElement('p');
+  p.className = 'caption';
+  p.textContent = text;
+  return p;
+}
+
 // chip(text, selected, onTap) -> a pill-shaped toggle (detail level, job type,
 // crew members). Selected chips fill with the accent color.
 function chip(text, selected, onTap) {
