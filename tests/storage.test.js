@@ -66,6 +66,25 @@ test('validateImport: bids must reference existing customers, catalog, crew; sta
   const bad3 = JSON.parse(JSON.stringify(d)); bad3.bids[0].labor.crewIds = ['ghost'];
   assert.strictEqual(S.validateImport(JSON.stringify(bad3)), null);
 });
+test('validateImport: clauseIds accepts null and [], rejects non-strings and unknown ids', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Test', jobType: 'project' });
+  d.bids.push(b);
+  // Both empties are legal: null is "not asked", [] is "he wants none".
+  assert.ok(S.validateImport(JSON.stringify(d)));
+  const none = JSON.parse(JSON.stringify(d)); none.bids[0].clauseIds = [];
+  assert.ok(S.validateImport(JSON.stringify(none)));
+  const some = JSON.parse(JSON.stringify(d)); some.bids[0].clauseIds = ['k01'];
+  assert.ok(S.validateImport(JSON.stringify(some)));
+  const num = JSON.parse(JSON.stringify(d)); num.bids[0].clauseIds = [7];
+  assert.strictEqual(S.validateImport(JSON.stringify(num)), null);
+  const nested = JSON.parse(JSON.stringify(d)); nested.bids[0].clauseIds = [['k01']];
+  assert.strictEqual(S.validateImport(JSON.stringify(nested)), null);
+  const ghost = JSON.parse(JSON.stringify(d)); ghost.bids[0].clauseIds = ['nope'];
+  assert.strictEqual(S.validateImport(JSON.stringify(ghost)), null);
+  const notList = JSON.parse(JSON.stringify(d)); notList.bids[0].clauseIds = 'k01';
+  assert.strictEqual(S.validateImport(JSON.stringify(notList)), null);
+});
 test('newBid seeds the labor line from VISIBLE crew only', () => {
   const d = S.emptyData();
   assert.deepStrictEqual(S.newBid(d, { customerName: 'UDA', title: 'x', jobType: 'service' }).labor.crewIds,
@@ -87,6 +106,9 @@ test('newBid: takes the next number, increments the counter, creates the custome
   assert.strictEqual(b.misc.cents, 0);
   assert.strictEqual(b.status, 'draft');
   assert.strictEqual(b.scope, null);
+  // null, not []: nobody has been asked about clauses yet. The proposal
+  // screen seeds the Always group off exactly this, once.
+  assert.strictEqual(b.clauseIds, null);
   const b2 = S.newBid(d, { customerName: 'uda', title: 'x', jobType: 'project' });
   assert.strictEqual(d.customers.length, 1);              // case-insensitive match
   assert.strictEqual(b2.pricing.cushionPct, 15);
@@ -106,6 +128,11 @@ test('duplicateBid: copies content, fresh number/date/status, no job data or sen
   assert.deepStrictEqual(c.areas[0].photoIds, []);        // photos are not copied
   assert.strictEqual(c.areas[0].items[0].costCents, 100);
   assert.notStrictEqual(c.id, b.id);
+  // The answer copies with the bid: an untouched original stays unasked,
+  // and a bid he ticked clauses on hands them to its duplicate.
+  assert.strictEqual(c.clauseIds, null);
+  b.clauseIds = ['k01'];
+  assert.deepStrictEqual(S.duplicateBid(d, b.id, '2026-09-20').clauseIds, ['k01']);
 });
 test('recordCatalogUse: bumps uses and lastCost; addCatalogItem creates', () => {
   const d = S.emptyData();

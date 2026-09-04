@@ -308,7 +308,11 @@
         if (!isFiniteGte0(b.pricing.cushionPct) || !isFiniteGte0(b.pricing.markupPct)) return null;
         if (b.scope !== null && !strArr(b.scope)) return null;
         if (!strArr(b.notes)) return null;
-        if (!isArr(b.clauseIds) || !b.clauseIds.every((id) => clauseIds.has(id))) return null;
+        // null means he has not been asked yet — the proposal screen seeds the
+        // Always group on that and only that. An empty array is an answer: he
+        // looked at the library and wants none of it, and nothing re-seeds it.
+        if (b.clauseIds !== null
+          && (!strArr(b.clauseIds) || !b.clauseIds.every((id) => clauseIds.has(id)))) return null;
         if (!isIntGte0(b.validityDays)) return null;
         if (b.sentAt !== null && !isISO(b.sentAt)) return null;
         if (b.savedToFilesAt !== null && !isISO(b.savedToFilesAt)) return null;
@@ -413,7 +417,10 @@
       // which is what the price screen displays. Reports must compute it that
       // way and never read this field.
       pricing: { marginPct: s.marginPct, rateCents: s.rateCents, cushionPct: s.cushionPct[jt], markupPct: s.markupPct },
-      scope: null, notes: s.notePhrases.length ? [s.notePhrases[0]] : [], clauseIds: [], validityDays: s.validityDays,
+      // clauseIds starts null, not empty: "not chosen yet" is what lets the
+      // proposal screen offer the Always group once and never argue with him
+      // about it again. [] is his answer, and it sticks.
+      scope: null, notes: s.notePhrases.length ? [s.notePhrases[0]] : [], clauseIds: null, validityDays: s.validityDays,
       sentAt: null, savedToFilesAt: null, lostReason: null, job: null };
     s.nextNumber += 1; return b;
   }

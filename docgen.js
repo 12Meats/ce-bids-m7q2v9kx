@@ -409,6 +409,10 @@
   // Full detail — his UDA format. One table, a styled band per section, the
   // $0.00 tax line the plant's accounts payable expects to see, then the total.
   function drawFull(ctx, doc) {
+    // Optional here, and only ever his own words (DocModel drafts no scope at
+    // this level). It sits above the table for the same reason it does on
+    // Summary: the sentence that says what the job is comes before the money.
+    drawScopeList(ctx, doc);
     const accent = accentOf(doc);
     const body = [];
     const keepWith = [];

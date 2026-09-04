@@ -101,6 +101,25 @@ test('rows reproduce the stack to the cent with markup override, marked-up renta
   assertRowsMatchStack(b, d);
 });
 
+// Full is the one level with no drafted scope: the line items describe the
+// work. A scope he typed himself is different, and it prints.
+test('full level: prints an explicit scope, drafts none, and the total is untouched either way', () => {
+  const { d, b } = fixture();
+  const bare = D.build(b, d, 'full');
+  assert.strictEqual(bare.scope, null);
+
+  b.scope = ['Replace the four bay fixtures on the north wall.'];
+  const doc = D.build(b, d, 'full');
+  assert.deepStrictEqual(doc.scope, ['Replace the four bay fixtures on the north wall.']);
+  assert.strictEqual(doc.totalCents, bare.totalCents);
+  assert.deepStrictEqual(doc.sections.map((s) => s.title), bare.sections.map((s) => s.title));
+
+  // An empty list is not a scope: it goes back to printing nothing rather
+  // than a heading with no bullets under it.
+  b.scope = [];
+  assert.strictEqual(D.build(b, d, 'full').scope, null);
+});
+
 // -------------------------------------------------------------------------
 // Refinement 2: hidden clauses excluded
 // -------------------------------------------------------------------------
@@ -112,6 +131,18 @@ test('a hidden clause is excluded from the document even when referenced by id',
   b.clauseIds = ['k01', 'k02'];
   const doc = D.build(b, d, 'scope');
   assert.deepStrictEqual(doc.clauses.map((c) => c.id), ['k01']);
+});
+
+// A bid he has never opened the proposal screen on carries null, not []. The
+// document is the same either way: no clauses on the paper.
+test('clauseIds null reads as no clauses at every level', () => {
+  const { d, b } = fixture();
+  assert.strictEqual(b.clauseIds, null);
+  ['full', 'summary', 'scope'].forEach((level) => {
+    assert.deepStrictEqual(D.build(b, d, level).clauses, []);
+  });
+  b.clauseIds = [];
+  assert.deepStrictEqual(D.build(b, d, 'scope').clauses, []);
 });
 
 // -------------------------------------------------------------------------

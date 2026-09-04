@@ -170,6 +170,8 @@
       customer: cust, contact: custContact, title: bid.title, detail: level,
     };
 
+    // Summary and Scope & price always carry a scope: with nothing of his own
+    // written, the walk drafts one. Full is the exception — see below.
     const scope = bid.scope && bid.scope.length ? bid.scope : draftScope(bid);
 
     const terms = [
@@ -202,7 +204,11 @@
         { title: 'Labor', rows: laborRows },
         ...coSections,
       ];
-      return { ...baseDoc, sections, summary: null, scope: null };
+      // Full prints a scope only when he wrote one. The line items already
+      // describe the work, so there is no draft here: an auto-drafted
+      // paragraph would say the same thing as the table directly under it.
+      // What he types is different — it is the sentence the table can't say.
+      return { ...baseDoc, sections, summary: null, scope: bid.scope && bid.scope.length ? bid.scope : null };
     }
 
     if (level === 'summary') {

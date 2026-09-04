@@ -159,6 +159,27 @@ function tableRows(doc) {
   return passes[passes.length - 1] || [];
 }
 
+// Scope is optional at Full and drafted at neither: what he typed is the only
+// thing that can be there, and it has to be there ABOVE the price, the way it
+// is on Summary. A heading drawn after the table would be a scope the customer
+// reads once he has already seen the number.
+test('full level with an explicit scope renders, and the scope lands above the line items', () => {
+  const { d, b } = bidWith(6, {});
+  b.scope = ['Replace the four bay fixtures on the north wall.'];
+  const doc = DM.build(b, d, 'full');
+  assert.deepStrictEqual(doc.scope, b.scope);
+
+  let pdf = null;
+  assert.doesNotThrow(() => { pdf = DocGen.render(doc, {}); });
+  const first = pageTexts(pdf)[0].map((i) => i.text);
+  const head = first.indexOf('Scope of work');
+  assert.ok(head !== -1, 'the scope heading is not on the paper');
+  assert.ok(first.some((t) => t.indexOf('Replace the four bay fixtures') !== -1),
+    'the scope line is not on the paper');
+  const table = first.indexOf('Description');
+  assert.ok(table !== -1 && head < table, 'the scope printed under the line items');
+});
+
 test('1 to 40 items: no section band is ever the last row on its page', () => {
   for (let n = 1; n <= 40; n += 1) {
     const rows = tableRows(docFor(n, 'full', { rentals: true }));

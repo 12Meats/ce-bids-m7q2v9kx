@@ -83,12 +83,12 @@ let proposalToken = 0;            // async list fills from an older render are d
 // second document that might not be identical (a price edited in between).
 let proposalLast = null;          // { bidId, id, blob, name }
 
-// Bids whose Always clauses have already been offered this session. Without
-// it, un-ticking every clause and coming back would silently tick them all
-// again — the emptiness IS the answer, and re-seeding would overrule him.
-const proposalSeeded = new Set();
-
 function proposalBid() { return state.data.bids.find((b) => b.id === state.bidId) || null; }
+
+// bid.clauseIds is null until he has been asked — see proposalSeedClauses.
+// Everything that only READS the list treats that as no clauses, so nothing on
+// this screen has to know which of the two empties it is looking at.
+function proposalClauseIds(bid) { return bid.clauseIds || []; }
 
 function proposalCustomer(bid) {
   return state.data.customers.find((c) => c.id === bid.customerId) || null;
@@ -107,7 +107,7 @@ function enterProposal(bidId) {
   const bid = proposalBid();
   // Terms are on for a service bid the moment it has any clause on it — he
   // turned them on last time and the document still says so.
-  proposalTermsOn = !!(bid && bid.clauseIds.length);
+  proposalTermsOn = !!(bid && proposalClauseIds(bid).length);
   if (proposalLast && (!bid || proposalLast.bidId !== bid.id)) proposalLast = null;
 
   // Spent NOW, not out of the share tap. loadLogo() caches, and the first
@@ -128,14 +128,19 @@ function proposalLeave() { proposalToken += 1; }
 // puts on every project he has ever bid, and starting from an empty list means
 // the one bid he forgets is the one that goes to court. A service call gets
 // nothing: a two-hour troubleshoot does not need nineteen numbered clauses.
+//
+// Once, and only once. null on the bid is the question "has he been asked?",
+// and this is the only thing that answers it — so un-ticking every clause
+// leaves [], which is HIS answer, and reopening the bid (or the app) never
+// argues with it. The seed is written like every other mutation on this
+// screen, so a refused save puts the bid back to unasked rather than to a
+// choice he never made.
 function proposalSeedClauses(bid) {
-  if (!bid || bid.jobType !== 'project') return;
-  if (bid.clauseIds.length || proposalSeeded.has(bid.id)) return;
-  proposalSeeded.add(bid.id);
+  if (!bid || bid.jobType !== 'project' || bid.clauseIds !== null) return;
   const ids = state.data.settings.clauses.filter((c) => c.group === 'always' && !c.hidden).map((c) => c.id);
   if (!ids.length) return;
   bid.clauseIds = ids;
-  persistOr(() => { bid.clauseIds = []; });
+  if (!persistOr(() => { bid.clauseIds = null; })) return;
   proposalTermsOn = true;
 }
 
@@ -235,6 +240,18 @@ function buildPreview(bid, doc) {
   paper.className = 'prop-preview';
   paper.appendChild(proposalPreviewHead(doc));
 
+  // Scope always prints on Summary and Scope & price. On Full the line items
+  // ARE the description of the work, so nothing is drafted there — but a scope
+  // he wrote himself prints, and it prints where docgen puts it: above the
+  // money, at every level that has one.
+  if (doc.scope && doc.scope.length) {
+    const h = document.createElement('div');
+    h.className = 'prop-sec-title';
+    h.textContent = 'Scope of work';
+    paper.appendChild(h);
+    paper.appendChild(proposalPreviewBullets(doc.scope));
+  }
+
   if (doc.level === 'full') {
     (doc.sections || []).forEach((sec) => {
       const h = document.createElement('div');
@@ -250,16 +267,6 @@ function buildPreview(bid, doc) {
     h.textContent = 'Summary';
     paper.appendChild(h);
     doc.summary.forEach((r) => paper.appendChild(proposalPreviewLine(r.label, '', null, r.cents)));
-  }
-
-  // Scope prints on Summary and Scope & price. On Full the line items ARE the
-  // description of the work, and DocModel leaves doc.scope null there.
-  if (doc.scope && doc.scope.length) {
-    const h = document.createElement('div');
-    h.className = 'prop-sec-title';
-    h.textContent = 'Scope of work';
-    paper.appendChild(h);
-    paper.appendChild(proposalPreviewBullets(doc.scope));
   }
 
   const total = document.createElement('div');
@@ -403,20 +410,29 @@ function buildNotes(bid) {
 // that has it ticked still shows it — otherwise the list on screen would be
 // missing a clause the document is about to print.
 function proposalClauseList(bid) {
-  return state.data.settings.clauses.filter((c) => !c.hidden || bid.clauseIds.indexOf(c.id) !== -1);
+  return state.data.settings.clauses.filter((c) => !c.hidden || proposalClauseIds(bid).indexOf(c.id) !== -1);
 }
 
-function proposalToggleClause(bid, id) {
-  const prev = bid.clauseIds.slice();
-  const i = bid.clauseIds.indexOf(id);
-  if (i === -1) bid.clauseIds.push(id);
-  else bid.clauseIds.splice(i, 1);
+// Every write goes through here, so the null-to-array step happens once: the
+// list on screen is always a copy, the bid gets the new one, and a refused
+// save restores what was there before — null included.
+function proposalWriteClauses(bid, next) {
+  const prev = bid.clauseIds;
+  bid.clauseIds = next;
   if (!persistOr(() => { bid.clauseIds = prev; })) { render(); return; }
   render();
 }
 
+function proposalToggleClause(bid, id) {
+  const next = proposalClauseIds(bid).slice();
+  const i = next.indexOf(id);
+  if (i === -1) next.push(id);
+  else next.splice(i, 1);
+  proposalWriteClauses(bid, next);
+}
+
 function proposalClauseRow(bid, clause) {
-  const on = bid.clauseIds.indexOf(clause.id) !== -1;
+  const on = proposalClauseIds(bid).indexOf(clause.id) !== -1;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'prop-clause' + (on ? ' prop-clause-on' : '');
@@ -443,18 +459,16 @@ function proposalClauseGroup(bid, title, list) {
   head.className = 'prop-group-head';
   const h = document.createElement('span');
   h.className = 'prop-group-title';
-  const on = list.filter((c) => bid.clauseIds.indexOf(c.id) !== -1).length;
+  const on = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
   h.textContent = title + ' · ' + on + ' of ' + list.length;
   head.appendChild(h);
   const allOn = on === list.length;
   head.appendChild(textButton(allOn ? 'None' : 'All', 'link-btn', () => {
-    const prev = bid.clauseIds.slice();
+    const current = proposalClauseIds(bid);
     const ids = list.map((c) => c.id);
-    bid.clauseIds = allOn
-      ? bid.clauseIds.filter((id) => ids.indexOf(id) === -1)
-      : bid.clauseIds.concat(ids.filter((id) => bid.clauseIds.indexOf(id) === -1));
-    if (!persistOr(() => { bid.clauseIds = prev; })) { render(); return; }
-    render();
+    proposalWriteClauses(bid, allOn
+      ? current.filter((id) => ids.indexOf(id) === -1)
+      : current.concat(ids.filter((id) => current.indexOf(id) === -1)));
   }));
   wrap.appendChild(head);
 
@@ -465,7 +479,7 @@ function proposalClauseGroup(bid, title, list) {
 function buildClauses(bid) {
   const box = card('Terms & conditions');
   const list = proposalClauseList(bid);
-  const count = bid.clauseIds.length;
+  const count = proposalClauseIds(bid).length;
 
   box.appendChild(row('On this bid', count + ' clause' + (count === 1 ? '' : 's')));
 
@@ -488,12 +502,17 @@ function buildClauses(bid) {
 
 // A service call doesn't get the clause library thrown at it, but a service
 // call that turns into a two-week retrofit can ask for it.
-function buildTermsToggle() {
+//
+// Opening the library is itself an answer: the bid goes from null (never
+// asked) to [] (asked, none ticked yet), so nothing seeds it behind him later
+// if the job type ever changes to project.
+function buildTermsToggle(bid) {
   const box = card('Terms & conditions');
   box.appendChild(caption('Service bids go out without the clause library. Add it if this one needs it.'));
   box.appendChild(textButton('Add terms & conditions', 'btn btn-block', () => {
     proposalTermsOn = true;
     proposalClausesOpen = true;
+    if (bid.clauseIds === null) { proposalWriteClauses(bid, []); return; }
     render();
   }));
   return box;
@@ -584,7 +603,7 @@ function buildScope(bid) {
       proposalScopeOpen = true;
       render();
     }));
-    box.appendChild(caption('Full detail prints the line items instead.'));
+    box.appendChild(caption('Optional on Full. If you add one, it prints above the line items.'));
     return box;
   }
 
@@ -757,8 +776,9 @@ async function proposalSaveToFiles(bid) {
 
   proposalBusy = true;
   render();
+  let result = null;
   try {
-    await DocGen.share(pdfBlob, name);
+    result = await DocGen.share(pdfBlob, name);
   } catch (err) {
     console.error('Could not re-share the proposal', err);
     showBanner("Couldn't open the share sheet", 'danger');
@@ -767,6 +787,11 @@ async function proposalSaveToFiles(bid) {
     return;
   }
   proposalBusy = false;
+
+  // He backed out of the sheet, so nothing left the phone and there is nothing
+  // to ask about. Asking anyway is how a bid gets marked saved to Files on the
+  // strength of a sheet he closed.
+  if (result === 'cancelled') { render(); return; }
   await proposalAfterShare(bid, { askSent: false });
 }
 
@@ -931,7 +956,7 @@ function renderProposal() {
 
   host.appendChild(buildNotes(bid));
   if (bid.jobType === 'project' || proposalTermsOn) host.appendChild(buildClauses(bid));
-  else host.appendChild(buildTermsToggle());
+  else host.appendChild(buildTermsToggle(bid));
   host.appendChild(buildValidity(bid));
   host.appendChild(buildScope(bid));
   host.appendChild(buildShare(bid));
