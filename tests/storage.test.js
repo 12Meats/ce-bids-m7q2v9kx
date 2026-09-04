@@ -172,6 +172,28 @@ test('addCatalogItem: clamps category, coerces name/unit, rejects empty name', (
   const empty = S.addCatalogItem(d, { category: 'conduit', name: '', unit: 'ft' });
   assert.strictEqual(empty, null);
 });
+test('newTool: builds a full equipment entry, pushes it, and the document still validates', () => {
+  const d = S.emptyData();
+  const before = d.settings.equipment.length;
+  const t = S.newTool(d, '  Bender  ', 24999);
+  assert.strictEqual(t.name, 'Bender');                   // trimmed
+  assert.strictEqual(t.costCents, 24999);
+  assert.strictEqual(t.overrideDayCents, null);
+  assert.strictEqual(t.hidden, false);
+  assert.ok(typeof t.id === 'string' && t.id !== '');
+  assert.strictEqual(d.settings.equipment.length, before + 1);
+  assert.strictEqual(d.settings.equipment[before], t);
+  assert.strictEqual(S.check(d), true);
+});
+test('newTool: refuses an empty name or a cost that is not real money, and pushes nothing', () => {
+  const d = S.emptyData();
+  const before = d.settings.equipment.length;
+  for (const [name, cost] of [['', 5000], ['   ', 5000], [null, 5000],
+    ['Bender', null], ['Bender', 0], ['Bender', -100], ['Bender', 249.99], ['Bender', undefined]]) {
+    assert.strictEqual(S.newTool(d, name, cost), null, String(name) + '/' + String(cost));
+  }
+  assert.strictEqual(d.settings.equipment.length, before);
+});
 test('check: mirrors validateImport as a boolean', () => {
   const d = S.emptyData();
   assert.strictEqual(S.check(d), true);

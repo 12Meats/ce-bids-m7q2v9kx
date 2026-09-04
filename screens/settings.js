@@ -93,9 +93,17 @@ let settingsCategory = 'conduit';   // which parts category the catalog card is 
 let settingsGroupOpen = null;       // which clause group is expanded
 let settingsAddGroup = false;       // the + Clause group picker is up
 
+// Coming back to Settings is coming back to the top of it. Everything the
+// last visit opened or unfolded is closed again, "Show hidden" included: four
+// lists quietly showing put-away men and tools is not the screen he thinks he
+// is looking at. The one thing that stays is settingsCategory — the parts
+// card is a filing cabinet, and the drawer he was last in is the drawer he
+// wants next time.
 function enterSettings() {
   settingsMenu = null;
   settingsAddGroup = false;
+  settingsGroupOpen = null;
+  settingsShowHidden = { crew: false, equipment: false, clauses: false, catalog: false };
 }
 
 function setS() { return state.data.settings; }
@@ -145,6 +153,23 @@ function settingHiddenToggle(box, key, hiddenCount) {
     'link-btn',
     () => { settingsShowHidden[key] = !settingsShowHidden[key]; settingsMenu = null; render(); }
   ));
+}
+
+// Hide/Unhide, written once for all four lists that have one — crew,
+// equipment, clauses, catalog parts. Nothing is ever spliced (see rule 2 at
+// the top), so this is the only delete on the screen and it is the same four
+// lines everywhere: flip the flag, close the strip, save, and on a refused
+// save put BOTH back — the flag and the strip. A refusal that also swallowed
+// the buttons would leave him looking at a row he just told to hide, with
+// nothing on screen to try again with.
+function settingsHideAction(entry) {
+  return [entry.hidden ? 'Unhide' : 'Hide', entry.hidden ? '' : 'btn-danger-outline', () => {
+    const prevHidden = entry.hidden;
+    const prevMenu = settingsMenu;
+    entry.hidden = !prevHidden;
+    settingsMenu = null;
+    settingsSaveAndRender(() => { entry.hidden = prevHidden; settingsMenu = prevMenu; });
+  }];
 }
 
 // --- The two questions that reach backwards ---------------------------------
@@ -210,13 +235,19 @@ function settingsPromptWhole(current, label, node, min, max, refusal, apply) {
 // Every string on this screen goes through here so the shape is one shape:
 // Cancel changes nothing, and an empty answer is only refused where a blank
 // would print blank on a customer's paper.
-function settingsPromptText(current, label, placeholder, node, required, apply) {
+//
+// opts is { required, multiline } — two separate questions, and they are kept
+// separate because the clause wording is BOTH. Folding them into one argument
+// is how a blanked clause used to reach the paper as a bare heading: the
+// wording asked for a big box and silently gave up its empty check to get it.
+function settingsPromptText(current, label, placeholder, node, opts, apply) {
+  const o = opts || {};
   promptText(current, {
     label,
     placeholder,
-    multiline: required === 'multiline',
+    multiline: !!o.multiline,
     done: (text) => {
-      if (required === true && !text) {
+      if (o.required && !text) {
         showBanner(label + ' cannot be empty');
         shake(node);
         return;
@@ -249,7 +280,7 @@ function buildSetCompany() {
 
   SETTINGS_COMPANY_FIELDS.forEach(([key, label, placeholder, required]) => {
     const line = settingRow(box, label, co[key], () => {
-      settingsPromptText(co[key], label, placeholder, line, required, (text) => {
+      settingsPromptText(co[key], label, placeholder, line, { required }, (text) => {
         const prev = co[key];
         co[key] = text;
         settingsSaveAndRender(() => { co[key] = prev; });
@@ -307,7 +338,7 @@ function buildSetCrewRow(box, c) {
 
   box.appendChild(settingActions([
     ['Name', '', () => {
-      settingsPromptText(c.name, 'Name', 'Shawn', line, true, (text) => {
+      settingsPromptText(c.name, 'Name', 'Shawn', line, { required: true }, (text) => {
         const prev = c.name;
         c.name = text;
         settingsSaveAndRender(() => { c.name = prev; });
@@ -326,12 +357,7 @@ function buildSetCrewRow(box, c) {
         },
       });
     }],
-    [c.hidden ? 'Unhide' : 'Hide', c.hidden ? '' : 'btn-danger-outline', () => {
-      const prev = c.hidden;
-      c.hidden = !prev;
-      settingsMenu = null;
-      settingsSaveAndRender(() => { c.hidden = prev; });
-    }],
+    settingsHideAction(c),
   ]));
 }
 
@@ -341,17 +367,33 @@ function settingsAddCrew() {
     placeholder: 'Shawn',
     done: (name) => {
       if (!name) return;
-      promptMoney(null, {
-        label: name + ' — paid an hour',
-        done: (cents) => {
-          const person = { id: Store.uid(), name, wageCents: cents === null ? 0 : cents, hidden: false };
-          const s = setS();
-          s.crew.push(person);
-          settingsSaveAndRender(() => {
-            const i = s.crew.indexOf(person);
-            if (i !== -1) s.crew.splice(i, 1);
-          });
-        },
+      settingsAskWage(name);
+    },
+  });
+}
+
+// The wage half of + Worker. A wage is the one thing a man on the crew cannot
+// be missing: costStack multiplies it by every hour on every bid he is on, so
+// a man with no wage is a man who works for free on paper and quietly eats the
+// margin. Clear and zero both come back here with the question again — the
+// same thing the price screen does with a day count that cannot be zero —
+// rather than being written down as $0.00/hr. Cancel still cancels: the panel
+// closes, nothing was pushed, and there is no half-built man in the file.
+function settingsAskWage(name) {
+  promptMoney(null, {
+    label: name + ' — paid an hour',
+    done: (cents) => {
+      if (cents === null || !(cents > 0)) {
+        showBanner('Enter his hourly wage');
+        settingsAskWage(name);
+        return;
+      }
+      const person = { id: Store.uid(), name, wageCents: cents, hidden: false };
+      const s = setS();
+      s.crew.push(person);
+      settingsSaveAndRender(() => {
+        const i = s.crew.indexOf(person);
+        if (i !== -1) s.crew.splice(i, 1);
       });
     },
   });
@@ -550,7 +592,7 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
 
   const buttons = [
     ['Name', '', () => {
-      settingsPromptText(e.name, 'Name', 'Threader', line, true, (text) => {
+      settingsPromptText(e.name, 'Name', 'Threader', line, { required: true }, (text) => {
         const prev = e.name;
         e.name = text;
         settingsSaveAndRender(() => { e.name = prev; });
@@ -586,33 +628,49 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
     }]);
   }
 
-  buttons.push([e.hidden ? 'Unhide' : 'Hide', e.hidden ? '' : 'btn-danger-outline', () => {
-    const prev = e.hidden;
-    e.hidden = !prev;
-    settingsMenu = null;
-    settingsSaveAndRender(() => { e.hidden = prev; });
-  }]);
+  buttons.push(settingsHideAction(e));
 
   box.appendChild(settingActions(buttons));
 }
 
+// Name, then what it cost new, then one push and one save — the entry is
+// built whole before anything is written, so a Cancel at the money panel
+// leaves nothing behind. The shape of the entry is Store.newTool's, shared
+// with the price screen's + Tool so the two doors into this list cannot drift.
+// A second tap while either panel is up is dropped by the panels themselves
+// (app.js anyPanelOpen), so a fat double-tap adds one tool, not two.
 function settingsAddTool() {
   promptText('', {
     label: 'Tool',
     placeholder: 'Threader',
     done: (name) => {
       if (!name) return;
-      promptMoney(null, {
-        label: name + ' — what it cost new',
-        done: (cents) => {
-          const tool = { id: Store.uid(), name, costCents: cents, overrideDayCents: null, hidden: false };
-          const s = setS();
-          s.equipment.push(tool);
-          settingsSaveAndRender(() => {
-            const i = s.equipment.indexOf(tool);
-            if (i !== -1) s.equipment.splice(i, 1);
-          });
-        },
+      settingsAskToolCost(name);
+    },
+  });
+}
+
+// The cost half of + Tool. A new tool has to arrive with a cost: the day rate
+// is a share of it, so a tool with none has no rate and the picker on the
+// price screen cannot quote it. Clear and zero come back with the question
+// again rather than filing a tool nobody can use; Cancel closes the panel and
+// nothing is written. (A tool already on the list may go back to "no cost
+// yet" — that is what Cost new's Clear is for, and it is still a real answer
+// there.)
+function settingsAskToolCost(name) {
+  promptMoney(null, {
+    label: name + ' — what it cost new',
+    done: (cents) => {
+      const tool = (cents === null || !(cents > 0)) ? null : Store.newTool(state.data, name, cents);
+      if (!tool) {
+        showBanner('Enter what it cost new');
+        settingsAskToolCost(name);
+        return;
+      }
+      const s = setS();
+      settingsSaveAndRender(() => {
+        const i = s.equipment.indexOf(tool);
+        if (i !== -1) s.equipment.splice(i, 1);
       });
     },
   });
@@ -801,25 +859,20 @@ function buildSetClauseRow(box, c) {
   box.appendChild(caption(c.text));
   box.appendChild(settingActions([
     ['Title', '', () => {
-      settingsPromptText(c.title, 'Clause title', 'Payment', line, true, (text) => {
+      settingsPromptText(c.title, 'Clause title', 'Payment', line, { required: true }, (text) => {
         const prev = c.title;
         c.title = text;
         settingsSaveAndRender(() => { c.title = prev; });
       });
     }],
     ['Wording', '', () => {
-      settingsPromptText(c.text, 'Clause wording', '', line, 'multiline', (text) => {
+      settingsPromptText(c.text, 'Clause wording', '', line, { required: true, multiline: true }, (text) => {
         const prev = c.text;
         c.text = text;
         settingsSaveAndRender(() => { c.text = prev; });
       });
     }],
-    [c.hidden ? 'Unhide' : 'Hide', c.hidden ? '' : 'btn-danger-outline', () => {
-      const prev = c.hidden;
-      c.hidden = !prev;
-      settingsMenu = null;
-      settingsSaveAndRender(() => { c.hidden = prev; });
-    }],
+    settingsHideAction(c),
   ]));
 }
 
@@ -919,18 +972,13 @@ function buildSetCatalogRow(box, p) {
 
   box.appendChild(settingActions([
     ['Rename', '', () => {
-      settingsPromptText(p.name, 'Part name', '3/4" EMT', line, true, (text) => {
+      settingsPromptText(p.name, 'Part name', '3/4" EMT', line, { required: true }, (text) => {
         const prev = p.name;
         p.name = text;
         settingsSaveAndRender(() => { p.name = prev; });
       });
     }],
-    [p.hidden ? 'Unhide' : 'Hide', p.hidden ? '' : 'btn-danger-outline', () => {
-      const prev = p.hidden;
-      p.hidden = !prev;
-      settingsMenu = null;
-      settingsSaveAndRender(() => { p.hidden = prev; });
-    }],
+    settingsHideAction(p),
   ]));
 }
 
@@ -978,13 +1026,13 @@ function buildSetCounter() {
 
 function buildSetLock() {
   const box = card('PIN');
-  box.appendChild(row('PIN', state.data.pin === null ? 'Not set yet' : '••••'));
+  box.appendChild(row('Current', state.data.pin === null ? 'Not set yet' : '••••'));
   box.appendChild(textButton('Change PIN', 'btn btn-block mt-3', startPinChange));
 
   if (state.data.pin !== null) {
-    box.appendChild(textButton('Remove PIN', 'btn btn-danger-outline btn-block mt-3', async () => {
-      const ok = await confirmPanel('Remove the PIN? The next time you open the app it will ask you '
-        + 'to pick a new one.', { ok: 'Remove', danger: true });
+    box.appendChild(textButton('Forget this PIN', 'btn btn-danger-outline btn-block mt-3', async () => {
+      const ok = await confirmPanel('Forget this PIN? The next time you open the app it will ask you '
+        + 'to pick a new one.', { ok: 'Forget', danger: true });
       if (!ok) { render(); return; }
       const prev = state.data.pin;
       state.data.pin = null;
@@ -1030,15 +1078,19 @@ function renderSettings() {
   const host = el('settingsContent');
   host.textContent = '';
 
-  host.appendChild(buildSetCompany());
+  // Card order is how often he touches it, not how the file is organized.
+  // Crew, rates and equipment change with the week; the company address and
+  // the PIN were typed once and are not worth a scroll past every time. The
+  // sections in this file stay in their old order so the diff stays readable.
   host.appendChild(buildSetCrew());
   host.appendChild(buildSetRates());
   host.appendChild(buildSetEquipment());
+  host.appendChild(buildSetCounter());
   host.appendChild(buildSetForget());
   host.appendChild(buildSetNotePhrases());
   host.appendChild(buildSetTerms());
   host.appendChild(buildSetCatalog());
-  host.appendChild(buildSetCounter());
+  host.appendChild(buildSetCompany());
   host.appendChild(buildSetLock());
   host.appendChild(buildSetReports());
   host.appendChild(buildSetBackup());

@@ -545,8 +545,10 @@ function priceNewTool(bid) {
         done: (cents) => {
           if (cents === null || !(cents > 0)) return;
           const s = priceSettings();
-          const tool = { id: Store.uid(), name, costCents: cents, overrideDayCents: null, hidden: false };
-          s.equipment.push(tool);
+          // Store.newTool builds it whole and pushes it — the same entry the
+          // Settings screen's + Tool makes, so the two doors cannot drift.
+          const tool = Store.newTool(state.data, name, cents);
+          if (!tool) return;
           if (!priceSave(() => {
             const i = s.equipment.indexOf(tool);
             if (i !== -1) s.equipment.splice(i, 1);

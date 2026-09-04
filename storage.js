@@ -471,9 +471,29 @@
     const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, uses: 0, hidden: false };
     d.catalog.push(p); return p;
   }
+  // A tool he owns, added from Settings or from the price screen's picker.
+  // Both doors build the same entry here rather than each writing the shape
+  // out again: a tool that reached the file missing overrideDayCents or
+  // hidden would be refused by the validator on the very next save, and the
+  // save that refuses would be some later, unrelated edit.
+  //
+  // A cost is required and has to be real money. equipmentDayCents figures a
+  // day rate as a share of it, so a tool with no cost has no rate and the
+  // picker cannot quote it; zero is worse, because it quotes it at nothing.
+  // Pushes onto d.settings.equipment and returns the entry, or returns null
+  // and pushes nothing if the name or the cost will not do — the caller
+  // reverts by splicing the entry it got back.
+  function newTool(d, name, costCents) {
+    const nm = String(name == null ? '' : name).trim();
+    if (!nm) return null;
+    if (!Number.isInteger(costCents) || !(costCents > 0)) return null;
+    const t = { id: uid(), name: nm, costCents, overrideDayCents: null, hidden: false };
+    d.settings.equipment.push(t);
+    return t;
+  }
   function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, uid, todayISO, mondayOf, emptyData, validateImport, load, save, check, loadProblem,
-    findOrCreateCustomer, newBid, newJob, newChangeOrder, duplicateBid, addCatalogItem, recordCatalogUse, numberInUse };
+    findOrCreateCustomer, newBid, newJob, newChangeOrder, duplicateBid, addCatalogItem, newTool, recordCatalogUse, numberInUse };
 });
