@@ -1000,17 +1000,45 @@ function walkAddRental(bid, prefill, from, forgetRow) {
   });
 }
 
+// His own tools carry their day rate with them, so the line the walk leaves is
+// a priced one: a threader at $50 a day, one day, and the days are what the
+// Costs & price screen is for. The rate comes out of Settings the same way the
+// price screen's picker reads it, which is why a tool with no cost on it yet is
+// asked about HERE rather than quietly added at $0 — a $0 equipment line is a
+// day of his own gear given away, and it looks exactly like a priced one.
 function walkAddEquipment(bid, equip, from, forgetRow) {
-  const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents: 0 };
+  const settings = state.data.settings;
+  const rate = equipmentDayCents(equip, settings.equipmentPct);
+  if (rate != null) { walkPushEquipment(bid, equip, rate, from, forgetRow); return; }
+
+  promptMoney(null, {
+    label: 'What does a ' + (equip.name || 'tool') + ' cost new?',
+    done: (cents) => {
+      if (cents === null || !(cents > 0)) return;
+      const prev = equip.costCents;
+      equip.costCents = cents;
+      // The Settings write lands on its own: the cost of a tool is true whether
+      // or not the line that asked for it makes it onto the bid, and a refused
+      // save here must not leave Settings holding a number the disk never took.
+      if (!persistOr(() => { equip.costCents = prev; })) { render(); return; }
+      const made = equipmentDayCents(equip, settings.equipmentPct);
+      walkPushEquipment(bid, equip, made == null ? 0 : made, from, forgetRow);
+    },
+  });
+}
+
+function walkPushEquipment(bid, equip, dayCents, from, forgetRow) {
+  const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents };
   bid.equipment.push(line);
   if (!persistOr(() => {
     const i = bid.equipment.indexOf(line);
     if (i !== -1) bid.equipment.splice(i, 1);
   })) { render(); return; }
-  walkAfterPlaceholder(from, forgetRow);
+  walkAfterPlaceholder(from, forgetRow,
+    'Added at ' + moneyText(dayCents) + ' a day — set the days on the Costs & price screen.');
 }
 
-function walkAfterPlaceholder(from, forgetRow) {
+function walkAfterPlaceholder(from, forgetRow, message) {
   if (forgetRow) walkForgetAnswered.add(forgetRow);
   walkForgetRow = null;
   walkSheet = null;
@@ -1021,7 +1049,7 @@ function walkAfterPlaceholder(from, forgetRow) {
     walkAddCat = null;
     walkAddSearch = '';
   }
-  showBanner('Added — price it on the Costs & price screen.', 'ok');
+  showBanner(message || 'Added — price it on the Costs & price screen.', 'ok');
   render();
 }
 
