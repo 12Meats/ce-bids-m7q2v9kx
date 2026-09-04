@@ -26,13 +26,9 @@ let bidsSuppressTapUntil = 0; // a long press must not also count as a tap
 // bidCustomerName and bidPriceText live in ui.js: the bid screen prints the
 // same two things and the two screens must never disagree about either.
 
-// Newest first: by date, then by number so two bids walked the same day still
-// have a stable order with the most recent one on top.
+// Newest first — the ordering itself lives in dates.js, where it is tested.
 function bidsSorted() {
-  return state.data.bids.slice().sort((a, b) => {
-    if (a.dateISO !== b.dateISO) return a.dateISO < b.dateISO ? 1 : -1;
-    return b.number - a.number;
-  });
+  return state.data.bids.slice().sort(Dates.bidsSortCompare);
 }
 
 // Every photo this bid owns — its own areas plus any change-order areas — so
@@ -52,11 +48,7 @@ function bidPhotoIds(bid) {
 // reason the app exists: a proposal nobody followed up on is money left on a
 // table in a dairy plant.
 function bidsSentNoAnswer() {
-  return state.data.bids.filter((b) => {
-    if (b.status !== 'sent' || !b.sentAt) return false;
-    const d = daysSince(b.sentAt);
-    return d !== null && d > NUDGE_DAYS;
-  });
+  return Dates.sentNoAnswer(state.data.bids, Store.todayISO(), NUDGE_DAYS);
 }
 
 function nudgeBand(text, kind, onTap) {
@@ -260,8 +252,11 @@ function renderBidsList(host) {
   }
 
   const needle = bidsSearch.trim().toLowerCase();
+  // The filter reads off the same list the band counted, so the band can never
+  // promise a number of bids that the list then declines to show.
+  const stale = new Set(bidsSentNoAnswer().map((b) => b.id));
   const shown = all.filter((b) => {
-    if (bidsFilterSent && !(b.status === 'sent' && b.sentAt && daysSince(b.sentAt) > NUDGE_DAYS)) return false;
+    if (bidsFilterSent && !stale.has(b.id)) return false;
     if (!needle) return true;
     return (bidCustomerName(b, state.data) + ' ' + (b.title || '')).toLowerCase().indexOf(needle) !== -1;
   });

@@ -22,8 +22,6 @@ let bidLostSheetOpen = false;
 let bidDraft = null;         // the not-yet-created bid, while state.bidId is null
 let bidShakeField = null;    // 'customer' | 'date' — shaken once after the next render
 
-function pad2(n) { return n < 10 ? '0' + n : String(n); }
-
 // ---------------------------------------------------------------------------
 // Entering the screen
 // ---------------------------------------------------------------------------
@@ -55,54 +53,6 @@ function enterBid(bidId) {
   bidShakeField = null;
   state.bidId = bidId;
   bidDraft = bidId === null ? newBidDraft() : null;
-}
-
-// ---------------------------------------------------------------------------
-// Typed dates
-// ---------------------------------------------------------------------------
-
-// How far behind today a bare MMDD may land before it is read as next year.
-const DATE_ROLLOVER_DAYS = 180;
-
-// Builds an ISO date, or null if that day doesn't exist. Feb 30 passes a range
-// check and fails here, which is the point.
-function composeDate(yyyy, mm, dd) {
-  const iso = yyyy + '-' + pad2(mm) + '-' + pad2(dd);
-  const dt = new Date(iso + 'T12:00:00');
-  if (isNaN(dt.getTime()) || dt.getMonth() + 1 !== mm || dt.getDate() !== dd) return null;
-  return iso;
-}
-
-// The owner types digits on the same keypad as everything else: 915 is
-// September 15, 91526 is September 15, 2026. The keypad drops a leading zero
-// (0915 comes back as the number 915), so the digits are padded back out to 4
-// or 6 before they are read.
-//
-// A bare MMDD takes the current year, and rolls FORWARD a year when that would
-// land more than half a year behind us: in December, "115" means next January,
-// not the one eleven months gone. It never rolls backward, so a bid date is
-// always today or ahead of it — which is what a bid date almost always is.
-// Six typed digits are never second-guessed: he named the year, and that is
-// the way to write down a date in the past.
-function parseTypedDate(v) {
-  if (typeof v !== 'number' || !isFinite(v) || v < 0 || Math.round(v) !== v) return null;
-  let digits = String(v);
-  if (digits.length === 3 || digits.length === 4) digits = digits.padStart(4, '0');
-  else if (digits.length === 5 || digits.length === 6) digits = digits.padStart(6, '0');
-  else return null;
-
-  const mm = Number(digits.slice(0, 2));
-  const dd = Number(digits.slice(2, 4));
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-
-  if (digits.length === 6) return composeDate(2000 + Number(digits.slice(4, 6)), mm, dd);
-
-  const thisYear = Number(Store.todayISO().slice(0, 4));
-  const iso = composeDate(thisYear, mm, dd);
-  if (!iso) return null;
-  const behind = daysSince(iso);
-  if (behind !== null && behind > DATE_ROLLOVER_DAYS) return composeDate(thisYear + 1, mm, dd);
-  return iso;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,11 +98,7 @@ function customerSuggestions(query) {
     return q === '' || c.name.toLowerCase().indexOf(q) !== -1;
   });
 
-  const newest = state.data.bids.reduce((best, b) => {
-    if (!best) return b;
-    if (b.dateISO !== best.dateISO) return b.dateISO > best.dateISO ? b : best;
-    return b.number > best.number ? b : best;
-  }, null);
+  const newest = state.data.bids.slice().sort(Dates.bidsSortCompare)[0];
   const topId = newest ? newest.customerId : null;
 
   const top = matches.filter((c) => c.id === topId);
@@ -277,7 +223,9 @@ function renderBidHeader(bid, host) {
       done: (v) => {
         // Clear means "never mind", the same as Cancel — not a rejected date.
         if (v === null) return;
-        const iso = parseTypedDate(v);
+        // What "915" means, including the roll into next year, is decided
+        // in dates.js and tested there.
+        const iso = Dates.parseTypedDate(v, Store.todayISO());
         if (!iso) {
           bidShakeField = 'date';
           showBanner('That date needs 4 digits (MMDD) or 6 (MMDDYY)');
