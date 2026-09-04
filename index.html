@@ -339,6 +339,9 @@
     .btn-danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
     .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
     .btn-block { display: block; width: 100%; text-align: center; }
+    /* A button that is off is off: a live-looking control that does nothing is
+       worse than a dim one that explains itself in the caption underneath. */
+    .btn:disabled { opacity: .45; cursor: default; }
 
     input[type="text"] {
       min-height: 48px;

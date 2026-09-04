@@ -77,15 +77,21 @@
   // are built on, and a merge is a different way of looking at the same job,
   // not a chance to re-estimate it.
   //
-  //   days = Σ(task.days × task crew count) ÷ union crew count   ← crewed tasks
-  //        + Σ task.days                                          ← crewless tasks
+  //   days = Σ(task.days × task crew count) ÷ union crew count
   //
   // Hours-per-day cancels out of that division, which is why it is not a
   // parameter here: the answer is the same for a 6-hour day and a 12-hour one.
   //
-  // A task nobody is on contributes no person-hours, so it cannot go through
-  // the division — its days are ADDED instead, which is the only reading that
-  // doesn't quietly delete work he wrote down.
+  // A task with days on it and NOBODY on it has no honest place in that sum.
+  // Its days can't go through the division (it contributes no person-hours),
+  // and adding them to the merged line multiplies them by the union crew — two
+  // men and a 3-day unassigned task came out as 80 hours where the tasks said
+  // 32. Both readings are wrong, so the merge REFUSES and names the task: the
+  // owner either puts a crew on it or deletes it, and either answer is his to
+  // make, not this function's to guess. A crewless task with 0 days is just an
+  // empty line he hasn't filled in yet — it is ignored, and changes nothing.
+  //
+  // Returns { ok: false, reason, taskName } or { ok: true, crewIds, days }.
   //
   // Two things DO move when the crews differ from task to task, and the screen
   // says so, with the numbers, before it asks:
@@ -103,15 +109,16 @@
     const tasks = (labor && labor.tasks) || [];
     const crewIds = [];
     let crewDayUnits = 0;   // Σ days × men, over the tasks that have men on them
-    let plainDays = 0;      // Σ days over the tasks that don't
     for (const t of tasks) {
       const ids = t.crewIds || [];
-      if (ids.length === 0) { plainDays += t.days; continue; }
+      if (ids.length === 0) {
+        if (t.days > 0) return { ok: false, reason: 'crewless', taskName: t.name };
+        continue;           // 0 days and nobody on it: an empty line, no hours either way
+      }
       for (const id of ids) if (crewIds.indexOf(id) === -1) crewIds.push(id);
       crewDayUnits += t.days * ids.length;
     }
-    const days = crewIds.length ? crewDayUnits / crewIds.length + plainDays : plainDays;
-    return { crewIds, days };
+    return { ok: true, crewIds, days: crewIds.length ? crewDayUnits / crewIds.length : 0 };
   }
 
   function bidHours(realHours, cushionPct) {

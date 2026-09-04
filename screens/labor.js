@@ -369,22 +369,40 @@ function laborAddTask(bid) {
 async function laborMergeBack(bid) {
   const settings = laborSettings();
   const merged = BidMath.mergeTasks(bid.labor);
+  // A task with days on it and nobody on it has no honest merged reading, so
+  // BidMath refuses rather than guessing. Nothing was written and nothing on
+  // screen has changed, so there is no render to do — just the answer, naming
+  // the task and both ways out of it.
+  if (!merged.ok) {
+    showBanner((merged.taskName || 'A task')
+      + ' has nobody on it — put a crew on it or delete it before combining');
+    return;
+  }
+
   const mergedLabor = { crewIds: merged.crewIds, days: merged.days, tasks: null };
 
   const before = BidMath.costStack(bid, settings);
   const after = BidMath.costStack(Object.assign({}, bid, { labor: mergedLabor }), settings);
 
   const crewCount = merged.crewIds.length;
+  // An empty union now means every task was crewless with 0 days, so the
+  // merged line is 0 days with nobody on it — an empty line, not a crew size.
   const shape = crewCount === 0
-    ? 'one line of ' + laborPlural(merged.days, 'day', 'days') + ' with nobody on it'
+    ? 'one empty line'
     : laborPlural(crewCount, 'guy', 'guys') + ' × ' + laborPlural(merged.days, 'day', 'days');
   const money = before.trueCost === after.trueCost
     ? 'True cost stays ' + moneyText(after.trueCost) + '.'
     : 'True cost ' + moneyText(before.trueCost) + ' → ' + moneyText(after.trueCost) + '.';
+  // Same shape as the money line, and for the same reason: the sentence is
+  // read off the two numbers rather than asserting what they ought to be. With
+  // the refusal above this should always read "stay", and if it ever doesn't,
+  // the screen says so instead of promising something that isn't true.
+  const hoursLine = before.realHours === after.realHours
+    ? 'Labor hours stay ' + numText(after.realHours) + '.'
+    : 'Labor hours ' + numText(before.realHours) + ' → ' + numText(after.realHours) + '.';
 
   const ok = await confirmPanel(
-    'Combine into ' + shape + '? Labor hours stay ' + numText(after.realHours) + '. '
-      + money + ' Task names are lost.',
+    'Combine into ' + shape + '? ' + hoursLine + ' ' + money + ' Task names are lost.',
     { ok: 'Combine' }
   );
   if (!ok) { render(); return; }
