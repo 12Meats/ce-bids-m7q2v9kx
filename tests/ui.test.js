@@ -78,6 +78,14 @@ test('isEmailAddress wants exactly one @ with something either side', () => {
   });
 });
 
+// A space anywhere is what a typed or half-pasted address looks like, and it
+// used to pass: one @, something either side, and a To: line Mail refuses.
+test('isEmailAddress refuses whitespace anywhere in the address', () => {
+  ['andy smith@cox.net', 'andy@cox net', ' andy@cox.net', 'andy@cox.net ', 'andy@cox.net\n'].forEach((v) => {
+    assert.equal(isEmailAddress(v), false, JSON.stringify(v));
+  });
+});
+
 // --- Backups ----------------------------------------------------------------
 // Three more that are pure and load-bearing. backupDateFromName is what the
 // restore confirm names the file's day off. pendingPdfs and backupSelection

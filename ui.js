@@ -496,8 +496,14 @@ function backupSelection(entries, sentThroughMs, cap) {
 // an address that isn't one is a Copy button that pastes garbage into a To:
 // line. Both places that take an email address use this one.
 function isEmailAddress(value) {
-  const parts = String(value).split('@');
-  return parts.length === 2 && parts[0].trim() !== '' && parts[1].trim() !== '';
+  const text = String(value);
+  // No whitespace anywhere. An address with a space in it is not one, and it
+  // used to get through: "andy smith@cox.net" has one @ with something either
+  // side of it, and the Copy button then pastes a broken To: line that Mail
+  // silently refuses. Checked before the split so a space anywhere counts.
+  if (/\s/.test(text)) return false;
+  const parts = text.split('@');
+  return parts.length === 2 && parts[0] !== '' && parts[1] !== '';
 }
 
 // A bid that can't price itself must not take the whole list down with it, so
