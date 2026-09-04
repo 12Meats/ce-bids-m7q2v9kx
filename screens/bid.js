@@ -134,7 +134,7 @@ function renderBidHeader(bid, host) {
   host = host || el('bidContent');
   const isNew = !bid;
   const cur = isNew ? bidDraft : {
-    customerName: bidCustomerName(bid),
+    customerName: bidCustomerName(bid, state.data),
     title: bid.title,
     jobType: bid.jobType,
     number: bid.number,
@@ -318,7 +318,7 @@ function renderBidScreen(bid, host) {
 
   const name = document.createElement('div');
   name.className = 'bid-head-name';
-  name.textContent = bidCustomerName(bid);
+  name.textContent = bidCustomerName(bid, state.data);
   box.appendChild(name);
 
   const title = document.createElement('div');
@@ -328,7 +328,7 @@ function renderBidScreen(bid, host) {
 
   const price = document.createElement('div');
   price.className = 'bid-head-price';
-  price.textContent = bidPriceText(bid);
+  price.textContent = bidPriceText(bid, state.data);
   box.appendChild(price);
 
   const meta = document.createElement('div');

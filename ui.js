@@ -1,9 +1,11 @@
 'use strict';
 
 // ui.js — shared DOM helpers and the small builders every screen composes from.
-// Loaded before app.js and before screens/*.js. Nothing here touches state or
-// storage: these functions take values and hand back elements, so a screen can
-// be read top to bottom as "what goes on the glass".
+// Loaded before app.js and before screens/*.js. Nothing here reaches into app
+// state: these functions take values and hand back elements or strings, so a
+// screen can be read top to bottom as "what goes on the glass". Anything two
+// screens both need lives here — a screen file never defines a helper another
+// screen calls.
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -128,4 +130,39 @@ function daysSince(iso) {
   const now = new Date(Store.todayISO() + 'T12:00:00');
   if (isNaN(then.getTime()) || isNaN(now.getTime())) return null;
   return Math.round((now.getTime() - then.getTime()) / 86400000);
+}
+
+// ---------------------------------------------------------------------------
+// Reading a bid
+// ---------------------------------------------------------------------------
+// Both take the whole document rather than reading a global, so they stay
+// honest about what they depend on. The bids list and the bid screen both
+// print these two things and must never disagree about either.
+
+// The customer name as the owner knows it. An orphaned customerId reads
+// "Customer" — the same placeholder the printed document uses — rather than
+// leaving a blank line with nothing to recognize.
+function bidCustomerName(bid, data) {
+  const c = data.customers.find((x) => x.id === bid.customerId);
+  return (c && c.name && c.name.trim()) || 'Customer';
+}
+
+// A bid that can't price itself must not take the whole list down with it, so
+// this is the one place the DocModel call is wrapped. The log fires once per
+// session: a broken bid would otherwise print on every keystroke in the
+// search field.
+let bidPriceErrorLogged = false;
+
+// The price the owner would see on the proposal, change orders included — the
+// same number DocModel prints, not a second opinion.
+function bidPriceText(bid, data) {
+  try {
+    return BidMath.fmt(DocModel.build(bid, data, bid.detail).totalCents);
+  } catch (err) {
+    if (!bidPriceErrorLogged) {
+      bidPriceErrorLogged = true;
+      console.error('Could not price a bid', err);
+    }
+    return '—';
+  }
 }

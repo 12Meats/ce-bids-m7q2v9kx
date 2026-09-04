@@ -20,36 +20,11 @@ let bidsMenuId = null;        // the bid showing its Duplicate/Delete row, if an
 let bidsListEl = null;        // the live list container, so search can redraw only it
 let bidsSuppressTapUntil = 0; // a long press must not also count as a tap
 
-// A row that can't price itself must not take the whole list down with it, so
-// each price is computed behind a try/catch. The log fires once per session:
-// a broken bid would otherwise print on every keystroke in the search field.
-let bidsPriceErrorLogged = false;
-
 // ---------------------------------------------------------------------------
 // Reading a bid
 // ---------------------------------------------------------------------------
-
-// The customer name as the owner knows it. An orphaned customerId reads
-// "Customer" — the same placeholder the printed document uses — rather than
-// leaving a blank line with nothing to recognize.
-function bidCustomerName(bid) {
-  const c = state.data.customers.find((x) => x.id === bid.customerId);
-  return (c && c.name && c.name.trim()) || 'Customer';
-}
-
-// The price the owner would see on the proposal, including change orders —
-// the same number DocModel prints, not a second opinion from the price screen.
-function bidPriceText(bid) {
-  try {
-    return BidMath.fmt(DocModel.build(bid, state.data, bid.detail).totalCents);
-  } catch (err) {
-    if (!bidsPriceErrorLogged) {
-      bidsPriceErrorLogged = true;
-      console.error('Could not price a bid for the list', err);
-    }
-    return '—';
-  }
-}
+// bidCustomerName and bidPriceText live in ui.js: the bid screen prints the
+// same two things and the two screens must never disagree about either.
 
 // Newest first: by date, then by number so two bids walked the same day still
 // have a stable order with the most recent one on top.
@@ -144,11 +119,20 @@ function bidsToggleMenu(id) {
 
 function bidsDuplicate(id) {
   bidsMenuId = null;
-  // duplicateBid pushes the copy itself and hands back a fresh draft with a
-  // new number, no photos, and no sent/won history.
+  // duplicateBid pushes the copy itself and steps the number counter, so a
+  // refused save has to put both back. Leaving the copy in memory would show a
+  // row that isn't on disk and won't survive the next launch — and would burn
+  // a bid number on a bid that never existed.
+  const prevNextNumber = state.data.settings.nextNumber;
   const copy = Store.duplicateBid(state.data, id);
   if (!copy) { showBanner("Couldn't copy that bid", 'danger'); render(); return; }
-  if (!persist()) { render(); return; }
+  if (!persist()) {
+    const i = state.data.bids.indexOf(copy);
+    if (i !== -1) state.data.bids.splice(i, 1);
+    state.data.settings.nextNumber = prevNextNumber;
+    render();  // persist() has already said why
+    return;
+  }
   openBid(copy.id);
 }
 
@@ -160,7 +144,7 @@ async function bidsDelete(id) {
   bidsMenuId = null;
 
   const ok = await confirmPanel(
-    `Delete bid #${bid.number} for ${bidCustomerName(bid)}? This can't be undone.`,
+    `Delete bid #${bid.number} for ${bidCustomerName(bid, state.data)}? This can't be undone.`,
     { ok: 'Delete', danger: true }
   );
   if (!ok) { render(); return; }
@@ -201,14 +185,14 @@ function bidRow(bid) {
 
   const line1 = document.createElement('div');
   line1.className = 'bid-line1';
-  line1.textContent = bidCustomerName(bid) + (bid.title ? ' · ' + bid.title : '');
+  line1.textContent = bidCustomerName(bid, state.data) + (bid.title ? ' · ' + bid.title : '');
   main.appendChild(line1);
 
   const line2 = document.createElement('div');
   line2.className = 'bid-line2';
   const price = document.createElement('span');
   price.className = 'bid-price';
-  price.textContent = bidPriceText(bid);
+  price.textContent = bidPriceText(bid, state.data);
   line2.appendChild(price);
   line2.appendChild(statusPill(bid.status));
   const num = document.createElement('span');
@@ -284,11 +268,15 @@ function renderBidsList(host) {
   const shown = all.filter((b) => {
     if (bidsFilterSent && !(b.status === 'sent' && b.sentAt && daysSince(b.sentAt) > NUDGE_DAYS)) return false;
     if (!needle) return true;
-    return (bidCustomerName(b) + ' ' + (b.title || '')).toLowerCase().indexOf(needle) !== -1;
+    return (bidCustomerName(b, state.data) + ' ' + (b.title || '')).toLowerCase().indexOf(needle) !== -1;
   });
 
   if (shown.length === 0) {
-    host.appendChild(bidsEmptyNote(needle ? 'Nothing matches that search.' : 'Nothing sent and waiting.'));
+    // Carded like the no-bids state: a bare line of grey text under a search
+    // field reads as the list failing to load rather than as an answer.
+    const box = card();
+    box.appendChild(bidsEmptyNote(needle ? 'Nothing matches that search.' : 'Nothing sent and waiting.'));
+    host.appendChild(box);
     return;
   }
 
