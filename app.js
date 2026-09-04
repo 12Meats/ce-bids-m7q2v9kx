@@ -134,7 +134,11 @@ function clearBanner(includePersistent) {
 // a panel is up is dropped, which is what a fast double-tap on iOS produces.
 
 const keypadCtx = { open: false, buffer: null, done: null };
-const textCtx = { open: false, done: null, suggest: null };
+// field: whichever of the two text controls this prompt is using — the
+// single-line input or the multi-line textarea. Everything after promptText
+// reads the field through the context rather than by id, so Done, the chips
+// and the close path work the same either way.
+const textCtx = { open: false, done: null, suggest: null, field: null, multiline: false };
 const confirmCtx = { open: false, resolve: null };
 
 function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open; }
@@ -237,7 +241,7 @@ function promptMoney(cents, opts) {
 
 // --- Text prompt -----------------------------------------------------------
 
-// promptText(current, { label, placeholder, suggestions | suggest, done })
+// promptText(current, { label, placeholder, suggestions | suggest, multiline, done })
 // A real <input type="text"> — words are not scroll wheels. done(string) fires
 // on Done (or Enter) with the trimmed value; Cancel calls nothing.
 //
@@ -247,6 +251,12 @@ function promptMoney(cents, opts) {
 //                   as he types — with sixty customers a fixed list is a wall,
 //                   and typing the same name a second time, slightly
 //                   differently, is how one customer becomes two.
+//
+// multiline: true swaps the input for a <textarea> and stops Enter from
+// submitting, because in a scope of work Enter is a new line. Everything else
+// about the panel is unchanged: same title, same chips, same Done and Cancel.
+// The value still comes back trimmed — of the whole string, not per line; the
+// caller splits it if it wants lines.
 const TEXT_SUGGESTION_MAX = 8;
 
 function promptText(current, opts) {
@@ -258,11 +268,17 @@ function promptText(current, opts) {
   textCtx.suggest = typeof opts.suggest === 'function'
     ? opts.suggest
     : (Array.isArray(opts.suggestions) ? () => opts.suggestions : null);
+  textCtx.multiline = !!opts.multiline;
 
   el('textLabel').textContent = opts.label || '';
   const input = el('textInput');
-  input.value = current == null ? '' : String(current);
-  input.placeholder = opts.placeholder || '';
+  const area = el('textArea');
+  input.hidden = textCtx.multiline;
+  area.hidden = !textCtx.multiline;
+  const field = textCtx.multiline ? area : input;
+  textCtx.field = field;
+  field.value = current == null ? '' : String(current);
+  field.placeholder = opts.placeholder || '';
   renderTextChips();
 
   el('panel-text').hidden = false;
@@ -270,9 +286,17 @@ function promptText(current, opts) {
   // Focus twice: immediately (keeps the iOS keyboard inside the tap gesture)
   // and once more on the next tick, for browsers that ignore focus on an
   // element revealed in the same frame.
-  input.focus();
-  input.select();
-  setTimeout(() => { if (textCtx.open) { input.focus(); input.select(); } }, 50);
+  //
+  // A paragraph is EDITED, not retyped: selecting the whole scope would mean
+  // the first key he presses wipes the draft the walk wrote for him. So the
+  // multi-line field puts the caret at the end instead of selecting.
+  const place = () => {
+    field.focus();
+    if (textCtx.multiline) field.setSelectionRange(field.value.length, field.value.length);
+    else field.select();
+  };
+  place();
+  setTimeout(() => { if (textCtx.open) place(); }, 50);
 }
 
 // Redrawn from scratch on every keystroke: eight chips is a cheap rebuild,
@@ -282,7 +306,7 @@ function renderTextChips() {
   chips.textContent = '';
   if (!textCtx.suggest) { chips.hidden = true; return; }
 
-  const input = el('textInput');
+  const input = textCtx.field || el('textInput');
   let list = [];
   try {
     list = textCtx.suggest(input.value) || [];
@@ -304,15 +328,23 @@ function renderTextChips() {
 function closeText() {
   el('panel-text').hidden = true;
   el('textInput').blur();
+  el('textArea').blur();
+  // Back to the single-line default, so the next prompt is never handed the
+  // shape the last one asked for.
+  el('textInput').hidden = false;
+  el('textArea').hidden = true;
   el('textChips').textContent = '';
   el('textChips').hidden = true;
   textCtx.open = false;
   textCtx.done = null;
   textCtx.suggest = null;
+  textCtx.field = null;
+  textCtx.multiline = false;
 }
 
 function textDone() {
-  const value = el('textInput').value.trim();
+  const field = textCtx.field || el('textInput');
+  const value = field.value.trim();
   const done = textCtx.done;
   closeText();
   if (done) done(value);
@@ -578,6 +610,13 @@ function wirePanels() {
   el('textInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); textDone(); }
     else if (e.key === 'Escape') { e.preventDefault(); closeText(); }
+  });
+
+  // The multi-line field is the same panel with one rule reversed: Enter is a
+  // new line in a scope of work, so only Done finishes it.
+  el('textArea').addEventListener('input', () => { if (textCtx.open) renderTextChips(); });
+  el('textArea').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeText(); }
   });
 
   el('confirmOk').addEventListener('click', () => closeConfirm(true));

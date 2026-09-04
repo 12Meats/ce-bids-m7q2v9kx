@@ -37,16 +37,58 @@
     return name;
   }
 
+  // "a" or "an" for a single countable item. First letter only: the name is a
+  // part number as often as it is a word, and guessing at spoken sound
+  // ("an LB") would be a rule that only sometimes fires. A name starting with
+  // a digit or a fraction takes "a", which is what "a 20 A breaker" reads as.
+  function article(name) { return /^[aeiou]/i.test(name) ? 'an' : 'a'; }
+
+  // The plural of a part name, for counts other than one. Deliberately narrow:
+  // it only fires when the name ENDS IN A LETTER, so `LB 3/4"`, `J-box 4x4`
+  // and anything ending in a quote, a digit or punctuation is printed exactly
+  // as he catalogued it rather than growing an "s" in a strange place. Names
+  // already plural ("3/4\" hubs", "Straps & supports") are left alone.
+  function plural(name) {
+    if (!/[A-Za-z]$/.test(name)) return name;
+    if (/s$/i.test(name)) return name;
+    if (/(ch|sh|x|z)$/i.test(name)) return name + 'es';
+    if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + 'ies';
+    return name + 's';
+  }
+
+  // One item as a sentence fragment a customer can read. The verb comes off
+  // the unit, because that is the only thing in the record that says whether
+  // the part is a length or a count:
+  //
+  //   ft    -> "run 180 ft of 3/4\" rigid"
+  //   ea    -> "furnish and install 4 emergency light fixtures"
+  //            (a count of one takes an article: "furnish and install a VFD")
+  //   other -> "furnish and install 1 lot of straps & supports"
+  //            ("roll", "lot", "day" all read correctly with a plain "s")
+  function scopePhrase(it) {
+    const nm = scopeCase(it.name.trim());
+    const qty = qtyNum(it.qty);
+    if (it.unit === 'ft') return `run ${qty} ft of ${nm}`;
+    if (it.unit === 'ea') {
+      return it.qty === 1
+        ? `furnish and install ${article(nm)} ${nm}`
+        : `furnish and install ${qty} ${plural(nm)}`;
+    }
+    return `furnish and install ${qty} ${it.unit}${it.qty === 1 ? '' : 's'} of ${nm}`;
+  }
+
   // One line per area from its items, e.g.
-  // "Warehouse: 180 ft 3/4\" rigid; 4 emergency light fixtures".
+  // "Warehouse: run 180 ft of 3/4\" rigid; furnish and install 4 emergency
+  // light fixtures". Items keep the order he walked them in.
+  //
+  // Only area items become scope. Misc ("supports, anchors, and hardware") and
+  // rentals are money on the bid, not work described to the customer: a line
+  // reading "furnish and install 1 lift rental" is not a scope of work, and
+  // the lift is already on the priced document where it belongs.
   function draftScope(bid) {
-    return (bid.areas || []).filter((a) => a.items && a.items.length).map((a) => {
-      const parts = a.items.map((it) => {
-        const nm = scopeCase(it.name.trim());
-        return it.unit === 'ea' ? `${qtyNum(it.qty)} ${nm}` : `${qtyNum(it.qty)} ${it.unit} ${nm}`;
-      });
-      return `${a.name.trim()}: ${parts.join('; ')}`;
-    });
+    return (bid.areas || []).filter((a) => a.items && a.items.length).map((a) => (
+      `${a.name.trim()}: ${a.items.map(scopePhrase).join('; ')}`
+    ));
   }
 
   // Shared lookup used everywhere a bid's customer name is printed (document

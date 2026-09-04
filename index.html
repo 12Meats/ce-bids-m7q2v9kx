@@ -354,7 +354,18 @@
       padding: 0 var(--space-2);
       width: 100%;
     }
-    input[type="text"]:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+    textarea {
+      font-size: var(--font-body);
+      font-family: inherit;
+      border-radius: 10px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      padding: var(--space-1) var(--space-2);
+      width: 100%;
+    }
+    input[type="text"]:focus,
+    textarea:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
     input.field-invalid { border-color: var(--color-danger); outline-color: var(--color-danger); }
 
     .section-heading {
@@ -872,6 +883,136 @@
     .price-readout .row { min-height: 44px; }
 
     /* ---------- Utilities ---------- */
+    /* ---------- Proposal (Task 11) ---------- */
+    /* The preview is a piece of paper on a phone: white, boxed, and set a size
+       smaller than the app around it so it reads as the document rather than
+       as more of the screen. Every number in it is BidMath.fmt's. */
+    .prop-preview {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      padding: var(--space-2);
+      font-size: 0.95rem;
+      margin-top: var(--space-1);
+    }
+    .prop-doc-head { border-bottom: 2px solid var(--color-accent); padding-bottom: var(--space-1); }
+    .prop-co { font-size: var(--font-body); font-weight: 800; color: var(--color-accent); }
+    .prop-co-sub { color: var(--color-text-muted); font-size: 0.85rem; margin-top: 2px; }
+    .prop-meta { margin-top: var(--space-1); }
+    .prop-meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: 1px 0;
+    }
+    .prop-meta-row span:first-child { color: var(--color-text-muted); }
+    .prop-meta-row span:last-child { font-weight: 600; text-align: right; }
+    .prop-doc-title { margin-top: var(--space-1); font-weight: 700; }
+    .prop-sec-title {
+      margin-top: var(--space-2);
+      padding: 3px var(--space-1);
+      background: #f1f5f9;
+      color: var(--color-accent);
+      font-weight: 700;
+      border-radius: 4px;
+    }
+    /* Baseline, not center: a description that wraps to two lines must not
+       drag its price down to sit between them. */
+    .prop-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: var(--space-2);
+      padding: 3px 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .prop-line-desc { min-width: 0; overflow-wrap: anywhere; }
+    .prop-line-money { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .prop-bullets { margin: var(--space-1) 0 0; padding-left: 20px; }
+    .prop-bullets li { padding: 2px 0; overflow-wrap: anywhere; }
+    /* The one number he must not have to hunt for, at all three levels. */
+    .prop-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-top: var(--space-2);
+      padding: var(--space-1) var(--space-2);
+      border-radius: 6px;
+      background: var(--color-accent);
+      color: #fff;
+      font-weight: 800;
+      font-size: var(--font-body);
+    }
+    .prop-sign {
+      margin-top: var(--space-2);
+      padding-top: var(--space-1);
+      border-top: 1px solid var(--color-border);
+      color: var(--color-text-muted);
+      font-size: 0.85rem;
+    }
+
+    .prop-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
+    .prop-actions { display: flex; gap: var(--space-1); margin-top: var(--space-2); }
+
+    .prop-group { margin-top: var(--space-2); }
+    .prop-group-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: var(--space-2);
+      margin-bottom: 2px;
+    }
+    .prop-group-title { flex: 1 1 auto; font-weight: 700; color: var(--color-text-muted); font-size: 0.95rem; }
+    .prop-group-head .link-btn { flex: 0 0 auto; white-space: nowrap; }
+    /* A whole clause line is the tick target: the titles are long and a
+       checkbox-sized box beside them is not a thumb-sized thing to hit. */
+    .prop-clause {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      width: 100%;
+      min-height: 48px;
+      padding: var(--space-1);
+      text-align: left;
+      background: none;
+      border: 0;
+      border-bottom: 1px solid var(--color-border);
+      color: var(--color-text);
+      font-size: var(--font-body);
+    }
+    .prop-clause:active { background: #eef2f7; }
+    .prop-tick {
+      flex: 0 0 26px;
+      height: 26px;
+      border: 2px solid var(--color-border);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.95rem;
+    }
+    .prop-clause-on .prop-tick { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+    .prop-clause-title { min-width: 0; }
+
+    .prop-email {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      margin-top: var(--space-2);
+    }
+    .prop-email-addr { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; color: var(--color-text-muted); }
+
+    .prop-pdf {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: var(--space-1) 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .prop-pdf-when { min-width: 0; overflow-wrap: anywhere; }
+
     .mt-3 { margin-top: var(--space-3); }
 
     /* Off-screen but still focusable/clickable — the camera input, which is
@@ -960,6 +1101,19 @@
       margin: var(--space-4) 0 var(--space-3);
       font-size: var(--font-lg);
       min-height: 56px;
+    }
+    /* The multi-line half of the same prompt. Body size, not --font-lg: a
+       scope of work is a paragraph he reads back, and 1.4rem fits four words
+       to a line on a phone. */
+    textarea.panel-textarea {
+      width: 100%;
+      max-width: 340px;
+      margin: var(--space-3) 0;
+      font-family: var(--font);
+      font-size: var(--font-body);
+      line-height: 1.45;
+      min-height: 200px;
+      resize: vertical;
     }
 
     .panel-actions {
@@ -1063,10 +1217,8 @@
 
     <!-- ---------- Proposal -- Task 11 ---------- -->
     <section id="screen-proposal" class="screen" hidden>
-      <div id="proposalContent" class="screen-content">
-        <h2 class="section-heading">Proposal</h2>
-        <p class="screen-placeholder">Scope, terms, and the PDF.</p>
-      </div>
+      <!-- Filled entirely by screens/proposal.js. -->
+      <div id="proposalContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- Job (won bid) -- Task 12 ---------- -->
@@ -1135,6 +1287,12 @@
          differently, is how one customer becomes two. -->
     <div id="textChips" class="panel-chips" hidden></div>
     <input type="text" id="textInput" class="panel-input" autocomplete="off" autocorrect="off" spellcheck="false">
+    <!-- The same prompt, for the one thing in this app that is a paragraph
+         rather than a name: the scope of work. promptText({ multiline: true })
+         shows this instead of the input above; exactly one of the two is ever
+         visible. It keeps the dictation key on the iOS keyboard, which is how
+         he is meant to write a scope standing in a plant. -->
+    <textarea id="textArea" class="panel-input panel-textarea" rows="8" autocapitalize="sentences" hidden></textarea>
     <div class="panel-actions">
       <button type="button" id="textDone" class="btn btn-confirm">Done</button>
       <button type="button" id="textCancel" class="btn">Cancel</button>

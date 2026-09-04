@@ -59,25 +59,9 @@ function enterBid(bidId) {
 // Small builders
 // ---------------------------------------------------------------------------
 
-function fieldLabel(text) {
-  const d = document.createElement('div');
-  d.className = 'field-label';
-  d.textContent = text;
-  return d;
-}
-
-// A row of big toggle buttons — the replacement for every <select> this app
-// doesn't have. options: [[value, label], ...]
-function toggleRow(options, current, onPick) {
-  const wrap = document.createElement('div');
-  wrap.className = 'toggle-row';
-  options.forEach(([value, label]) => {
-    const btn = chip(label, current === value, () => onPick(value));
-    btn.classList.add('chip-lg');
-    wrap.appendChild(btn);
-  });
-  return wrap;
-}
+// fieldLabel() and toggleRow() moved to ui.js when the proposal screen grew
+// its own detail-level toggle: the same three buttons, written twice, is how
+// two screens end up disagreeing about what "Scope & price" is called.
 
 // Customers matching what he has typed so far, best guess first. Three keys,
 // in this order:
@@ -115,7 +99,6 @@ function customerSuggestions(query) {
 // The header form
 // ---------------------------------------------------------------------------
 
-const DETAIL_OPTIONS = [['full', 'Full'], ['summary', 'Summary'], ['scope', 'Scope & price']];
 const JOB_TYPE_OPTIONS = [['service', 'Service'], ['project', 'Project']];
 
 // bid === null builds the new-bid form off bidDraft; an existing bid edits

@@ -49,10 +49,10 @@ test('scope level: no rows, scope auto-drafted from areas when bid.scope is null
   b.clauseIds = [d.settings.clauses[0].id];
   const doc = D.build(b, d, 'scope');
   assert.strictEqual(doc.sections, null);
-  assert.deepStrictEqual(doc.scope, ['Warehouse: 180 ft 3/4" rigid; 4 emergency light fixtures']);
+  assert.deepStrictEqual(doc.scope, ['Warehouse: run 180 ft of 3/4" rigid; furnish and install 4 emergency light fixtures']);
   b.scope = ['Custom line'];
   assert.deepStrictEqual(D.build(b, d, 'scope').scope, ['Custom line']);
-  assert.deepStrictEqual(D.draftScope(b), ['Warehouse: 180 ft 3/4" rigid; 4 emergency light fixtures']);
+  assert.deepStrictEqual(D.draftScope(b), ['Warehouse: run 180 ft of 3/4" rigid; furnish and install 4 emergency light fixtures']);
   assert.ok(doc.terms.includes('Pricing held 30 days from the date above.'));
   assert.ok(doc.terms.includes('Disconnect to be supplied by UDA.'));
   assert.strictEqual(doc.clauses.length, 1);
@@ -266,4 +266,62 @@ test('summary level keeps the Materials row at $0.00 on a labor-only bid', () =>
   assert.deepStrictEqual(doc.summary.map((r) => r.label), ['Materials', 'Labor (36 hrs)']);
   assert.strictEqual(doc.summary[0].cents, 0);
   assert.strictEqual(doc.summary.reduce((s, r) => s + r.cents, 0), doc.totalCents);
+});
+
+// --- draftScope phrasing ----------------------------------------------------
+// The scope is the one part of the document written in sentences rather than
+// in rows, and it goes in front of a customer. These pin the verb each unit
+// takes and the two places the phrasing is deliberately conservative.
+
+test('draftScope: verbs come off the unit — ft runs, ea is furnished and installed, other units read "N units of"', () => {
+  const { d, b } = fixture();
+  b.areas = [{ id: 'a1', name: 'MCC room', items: [
+    { catalogId: null, name: '3/4" rigid', unit: 'ft', qty: 180, costCents: 241, priceCents: null },
+    { catalogId: null, name: 'Emergency light fixture', unit: 'ea', qty: 4, costCents: 31800, priceCents: null },
+    { catalogId: null, name: '#12 THHN', unit: 'roll', qty: 2, costCents: 8000, priceCents: null },
+    { catalogId: null, name: 'Straps & supports', unit: 'lot', qty: 1, costCents: 5000, priceCents: null },
+  ], photoIds: [] }];
+  assert.deepStrictEqual(D.draftScope(b), ['MCC room: run 180 ft of 3/4" rigid; '
+    + 'furnish and install 4 emergency light fixtures; '
+    + 'furnish and install 2 rolls of #12 THHN; '
+    + 'furnish and install 1 lot of straps & supports']);
+});
+
+test('draftScope: a count of one takes an article, and plurals never touch a name that ends in a quote or a digit', () => {
+  const { d, b } = fixture();
+  b.areas = [{ id: 'a1', name: 'Yard', items: [
+    { catalogId: null, name: '60 A disconnect', unit: 'ea', qty: 1, costCents: 100, priceCents: null },
+    { catalogId: null, name: 'Exit sign', unit: 'ea', qty: 1, costCents: 100, priceCents: null },
+    { catalogId: null, name: 'LB 3/4"', unit: 'ea', qty: 3, costCents: 100, priceCents: null },
+    { catalogId: null, name: 'J-box 4x4', unit: 'ea', qty: 2, costCents: 100, priceCents: null },
+    { catalogId: null, name: '3/4" hubs', unit: 'ea', qty: 6, costCents: 100, priceCents: null },
+    { catalogId: null, name: 'VFD', unit: 'ea', qty: 2, costCents: 100, priceCents: null },
+    { catalogId: null, name: 'Photo eye', unit: 'ea', qty: 2, costCents: 100, priceCents: null },
+  ], photoIds: [] }];
+  assert.deepStrictEqual(D.draftScope(b), ['Yard: furnish and install a 60 A disconnect; '
+    + 'furnish and install an exit sign; '
+    + 'furnish and install 3 LB 3/4"; '
+    + 'furnish and install 2 J-box 4x4; '
+    + 'furnish and install 6 3/4" hubs; '
+    + 'furnish and install 2 VFDs; '
+    + 'furnish and install 2 photo eyes']);
+});
+
+test('draftScope: misc, rentals and equipment are never scope lines, and an empty area is skipped', () => {
+  const { d, b } = fixture();
+  b.areas.push({ id: 'a2', name: 'Dock', items: [], photoIds: [] });
+  b.equipment = [{ name: 'Threader', days: 1, dayCents: 5000 }];
+  const lines = D.draftScope(b);
+  assert.strictEqual(lines.length, 1);
+  assert.ok(!lines.join(' ').toLowerCase().includes('lift'));
+  assert.ok(!lines.join(' ').toLowerCase().includes('threader'));
+  assert.ok(!lines.join(' ').toLowerCase().includes('supports, anchors'));
+  assert.strictEqual(D.draftScope({ areas: [] }).length, 0);
+});
+
+test('draftScope is pure: it does not touch the bid it reads', () => {
+  const { d, b } = fixture();
+  const before = JSON.stringify(b);
+  D.draftScope(b);
+  assert.strictEqual(JSON.stringify(b), before);
 });

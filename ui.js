@@ -141,6 +141,34 @@ function chip(text, selected, onTap) {
   return btn;
 }
 
+// fieldLabel(text) -> the small heading over a form control. Not a caption:
+// a caption explains, this one names the thing directly underneath it.
+function fieldLabel(text) {
+  const d = document.createElement('div');
+  d.className = 'field-label';
+  d.textContent = text;
+  return d;
+}
+
+// A row of big toggle buttons — the replacement for every <select> this app
+// doesn't have. options: [[value, label], ...]
+function toggleRow(options, current, onPick) {
+  const wrap = document.createElement('div');
+  wrap.className = 'toggle-row';
+  options.forEach(([value, label]) => {
+    const btn = chip(label, current === value, () => onPick(value));
+    btn.classList.add('chip-lg');
+    wrap.appendChild(btn);
+  });
+  return wrap;
+}
+
+// How much of the price the customer is shown. Set on the bid screen when the
+// bid is created and again on the proposal screen with the document in front
+// of him, so the labels live here rather than in either screen: the same three
+// words in both places, or he will think they are two different settings.
+const DETAIL_OPTIONS = [['full', 'Full'], ['summary', 'Summary'], ['scope', 'Scope & price']];
+
 // statusPill(status) -> the bid's state as a colored pill. Unknown values
 // still render (as themselves, in the neutral style) rather than disappearing.
 const STATUS_LABELS = { draft: 'Draft', sent: 'Sent', won: 'Won', lost: 'Lost', complete: 'Complete' };
