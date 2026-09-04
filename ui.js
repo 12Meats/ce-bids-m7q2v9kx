@@ -381,8 +381,8 @@ function bidPdfParse(id) {
 // ---------------------------------------------------------------------------
 // Backups
 // ---------------------------------------------------------------------------
-// Which PDFs ride along with a backup, and what day the backup was made on.
-// All three are pure and take everything they need as arguments: Settings
+// Which PDFs ride along with a backup, and what day a backup file was made on.
+// All of these are pure and take everything they need as arguments: Settings
 // draws the Send button off them, and the restore confirm names a date off
 // them, and getting either one wrong is silent — a PDF that never leaves the
 // phone, or a confirm that names the wrong week's file.
@@ -398,56 +398,43 @@ function backupDateFromName(name) {
   return hit ? hit[1] : null;
 }
 
-// Midnight of the day of the last backup, in local time. The whole day is
-// included on purpose: a PDF made an hour before he backed up would otherwise
-// fall in the gap between "already sent" and "made since". Sending one twice
-// costs an attachment; missing one costs the document.
-function backupSinceMs(lastBackupAt) {
-  if (typeof lastBackupAt !== 'string' || !lastBackupAt) return 0;   // never backed up: everything is pending
-  const t = new Date(lastBackupAt + 'T00:00:00').getTime();
-  return isFinite(t) ? t : 0;
-}
-
-// Epoch ms -> 'YYYY-MM-DD' in local time, the same way Store.todayISO reads
-// the clock. Used to date a backup by the newest PDF that actually went with
-// it rather than by what day it is now.
-function backupDayISO(ms) {
-  const d = new Date(ms);
-  if (!isFinite(d.getTime())) return null;
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (day < 10 ? '0' + day : day);
-}
-
-// backupSelection(entries, lastBackupAt, todayISO, cap)
-//   -> { send, nextLastBackupAt, truncated }
+// What has not left the phone yet.
 //
-// entries are bidPdfParse results. What is pending is everything archived on
-// or after the day of the last backup, and what GOES is the OLDEST cap of
-// them — not the newest. Newest-first was the bug: the cap took the newest 25,
-// the date then jumped to today, and every older PDF behind the cap was
-// pending no longer and never went anywhere. Oldest-first drains the backlog
-// instead, a share sheet at a time.
+// The watermark is settings.pdfsSentThroughMs: the archive stamp of the newest
+// PDF that has actually gone. Null means none ever has, so everything is
+// pending. Strictly greater than, not on-or-after: the PDF the watermark names
+// is the one that went, and re-sending it every time is the bug that reading
+// this off a DAY used to cause.
 //
-// nextLastBackupAt is the other half of the same promise. When the cap cut the
-// set short, the date only moves up to the day of the NEWEST PDF that actually
-// went, so the ones left behind are still "made since the last backup" next
-// time. When nothing was cut, everything pending went and the date is today.
-function backupSelection(entries, lastBackupAt, todayISO, cap) {
-  const since = backupSinceMs(lastBackupAt);
-  const limit = (typeof cap === 'number' && isFinite(cap) && cap > 0) ? Math.floor(cap) : 0;
-  const pending = (entries || [])
-    .filter((e) => e && typeof e.at === 'number' && isFinite(e.at) && e.at >= since)
+// This is deliberately not settings.lastBackupAt. That one answers "when did
+// he last back up" for the home band, and it moves whenever the JSON leaves
+// whether the PDFs did or not. Two questions, two fields.
+function pendingPdfs(entries, sentThroughMs) {
+  const through = (typeof sentThroughMs === 'number' && isFinite(sentThroughMs)) ? sentThroughMs : null;
+  return (entries || [])
+    .filter((e) => e && typeof e.at === 'number' && isFinite(e.at))
+    .filter((e) => through === null || e.at > through)
     .sort((a, b) => a.at - b.at);
+}
+
+// backupSelection(entries, sentThroughMs, cap)
+//   -> { send, nextSentThroughMs, truncated }
+//
+// entries are bidPdfParse results. What GOES is the OLDEST cap of what is
+// pending, not the newest. Newest-first was the bug: the cap took the newest
+// 25, the watermark then jumped past everything, and every older PDF behind
+// the cap was pending no longer and never went anywhere. Oldest-first drains
+// the backlog instead, a share sheet at a time.
+//
+// nextSentThroughMs is where the watermark lands IF this whole set leaves: the
+// stamp of the newest one that actually fits under the cap, so the ones left
+// behind are still pending next time. Nothing sent, nothing moved.
+function backupSelection(entries, sentThroughMs, cap) {
+  const limit = (typeof cap === 'number' && isFinite(cap) && cap > 0) ? Math.floor(cap) : 0;
+  const pending = pendingPdfs(entries, sentThroughMs);
   const send = pending.slice(0, limit);
-  const truncated = pending.length - send.length;
-  let nextLastBackupAt = todayISO;
-  if (truncated > 0) {
-    // Never past the last one that went. With a cap of zero nothing went at
-    // all, so the date does not move either.
-    nextLastBackupAt = send.length ? backupDayISO(send[send.length - 1].at) : (lastBackupAt || todayISO);
-  }
-  return { send, nextLastBackupAt, truncated };
+  const prev = (typeof sentThroughMs === 'number' && isFinite(sentThroughMs)) ? sentThroughMs : null;
+  return { send, nextSentThroughMs: send.length ? send[send.length - 1].at : prev, truncated: pending.length - send.length };
 }
 
 // One @, with something on both sides of it. Not a check that the mailbox

@@ -79,13 +79,14 @@ test('isEmailAddress wants exactly one @ with something either side', () => {
 });
 
 // --- Backups ----------------------------------------------------------------
-// Four more that are pure and load-bearing. backupDateFromName is what the
-// restore confirm names the file's day off; backupSinceMs decides what counts
-// as "made since"; backupSelection decides which PDFs actually leave the phone
-// and how far the date is allowed to move afterwards. Every one of them fails
-// silently when it is wrong.
+// Three more that are pure and load-bearing. backupDateFromName is what the
+// restore confirm names the file's day off. pendingPdfs and backupSelection
+// decide which PDFs actually leave the phone and where the watermark lands
+// afterwards, off settings.pdfsSentThroughMs — the stamp of the newest PDF
+// that has really gone. Every one of them fails silently when it is wrong: a
+// PDF that never leaves, or a confirm naming the wrong week's file.
 
-const { backupDateFromName, backupSinceMs, backupSelection } = sandbox;
+const { backupDateFromName, pendingPdfs, backupSelection } = sandbox;
 
 // Midnight local of a plain day, the way the app reads its own dates.
 function at(iso, hour, min) {
@@ -107,26 +108,33 @@ test('backupDateFromName is null when there is no date to read', () => {
     .forEach((v) => assert.equal(backupDateFromName(v), null, String(v)));
 });
 
-test('backupSinceMs is midnight of the backup day, and zero when there is no backup', () => {
-  assert.equal(backupSinceMs('2026-09-04'), at('2026-09-04'));
-  [null, undefined, '', 'nope', 42].forEach((v) => assert.equal(backupSinceMs(v), 0, String(v)));
+test('a null watermark means nothing has gone yet, so everything is pending', () => {
+  const entries = [{ id: 'b', at: at('2026-09-02') }, { id: 'a', at: at('2026-09-01') }];
+  [null, undefined, 'nope'].forEach((v) => {
+    assert.deepEqual(pendingPdfs(entries, v).map((e) => e.id), ['a', 'b'], String(v));
+  });
 });
 
-test('a PDF archived the same day as the last backup is still included', () => {
-  const lastBackupAt = '2026-09-04';
-  const sameDay = { id: 'a', bidId: 'b1', at: at('2026-09-04', 9, 30) };   // hours before the backup or after it
-  const dayBefore = { id: 'b', bidId: 'b1', at: at('2026-09-03', 23, 59) };
-  const sel = backupSelection([dayBefore, sameDay], lastBackupAt, '2026-09-10', 25);
-  assert.deepEqual(sel.send.map((e) => e.id), ['a']);
-  assert.equal(sel.truncated, 0);
-  assert.equal(sel.nextLastBackupAt, '2026-09-10');
+test('the PDF the watermark names has already gone and is not offered again', () => {
+  // This is the whole point of a stamp instead of a day: on-or-after re-sent
+  // the last PDF on every single backup.
+  const sent = { id: 'sent', at: at('2026-09-04', 9, 30) };
+  const older = { id: 'older', at: at('2026-09-03', 23, 59) };
+  const newer = { id: 'newer', at: at('2026-09-04', 9, 31) };
+  assert.deepEqual(pendingPdfs([older, sent, newer], sent.at).map((e) => e.id), ['newer']);
 });
 
-test('backupSelection on an empty phone sends nothing and dates the backup today', () => {
-  const sel = backupSelection([], '2026-09-01', '2026-09-04', 25);
-  assert.deepEqual(sel.send, []);
-  assert.equal(sel.truncated, 0);
-  assert.equal(sel.nextLastBackupAt, '2026-09-04');
+test('pendingPdfs ignores anything that is not a real archive stamp', () => {
+  const good = { id: 'z', at: at('2026-09-02') };
+  const junk = [null, undefined, { id: 'x' }, { id: 'y', at: NaN }, { id: 'w', at: 'soon' }];
+  assert.deepEqual(pendingPdfs(junk.concat([good]), null).map((e) => e.id), ['z']);
+  assert.deepEqual(pendingPdfs(null, null), []);
+});
+
+test('backupSelection on an empty phone sends nothing and leaves the watermark alone', () => {
+  const was = at('2026-09-01');
+  assert.deepEqual(backupSelection([], was, 25), { send: [], nextSentThroughMs: was, truncated: 0 });
+  assert.deepEqual(backupSelection([], null, 25), { send: [], nextSentThroughMs: null, truncated: 0 });
 });
 
 test('backupSelection under the cap sends everything pending, oldest first', () => {
@@ -135,32 +143,36 @@ test('backupSelection under the cap sends everything pending, oldest first', () 
     { id: 'a', bidId: 'b1', at: at('2026-09-01') },
     { id: 'b', bidId: 'b2', at: at('2026-09-02') },
   ];
-  const sel = backupSelection(entries, null, '2026-09-04', 25);
+  const sel = backupSelection(entries, null, 25);
   assert.deepEqual(sel.send.map((e) => e.id), ['a', 'b', 'c']);
   assert.equal(sel.truncated, 0);
-  assert.equal(sel.nextLastBackupAt, '2026-09-04');
+  assert.equal(sel.nextSentThroughMs, at('2026-09-03'));
 });
 
-test('over the cap it takes the OLDEST and only dates the backup up to the last one sent', () => {
+test('over the cap it takes the OLDEST and the watermark stops at the last one sent', () => {
   // Ten days, one PDF each. A cap of four must take days 1-4 and leave 5-10
-  // pending, which only happens if the date stops at day 4.
+  // pending, which only happens if the watermark stops at day 4.
   const entries = [];
   for (let i = 1; i <= 10; i += 1) {
     entries.push({ id: 'p' + i, bidId: 'b1', at: at('2026-09-' + String(i).padStart(2, '0'), 8) });
   }
-  const sel = backupSelection(entries.slice().reverse(), null, '2026-09-20', 4);
+  const sel = backupSelection(entries.slice().reverse(), null, 4);
   assert.deepEqual(sel.send.map((e) => e.id), ['p1', 'p2', 'p3', 'p4']);
   assert.equal(sel.truncated, 6);
-  assert.equal(sel.nextLastBackupAt, '2026-09-04');
+  assert.equal(sel.nextSentThroughMs, at('2026-09-04', 8));
 
-  // The next backup picks up where that one stopped and drains the rest.
-  const next = backupSelection(entries, sel.nextLastBackupAt, '2026-09-20', 25);
-  assert.deepEqual(next.send.map((e) => e.id), ['p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
+  // The next backup picks up where that one stopped and drains the rest —
+  // without offering p4, which already went.
+  const next = backupSelection(entries, sel.nextSentThroughMs, 25);
+  assert.deepEqual(next.send.map((e) => e.id), ['p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
   assert.equal(next.truncated, 0);
+  assert.equal(next.nextSentThroughMs, at('2026-09-10', 8));
 });
 
-test('backupSelection ignores anything that is not a real archive stamp', () => {
-  const sel = backupSelection([null, { id: 'x' }, { id: 'y', at: NaN }, { id: 'z', at: at('2026-09-02') }],
-    null, '2026-09-04', 25);
-  assert.deepEqual(sel.send.map((e) => e.id), ['z']);
+test('a cap of zero sends nothing and moves nothing', () => {
+  const entries = [{ id: 'a', at: at('2026-09-01') }];
+  const sel = backupSelection(entries, null, 0);
+  assert.deepEqual(sel.send, []);
+  assert.equal(sel.truncated, 1);
+  assert.equal(sel.nextSentThroughMs, null);
 });

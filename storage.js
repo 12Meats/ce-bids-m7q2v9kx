@@ -110,7 +110,15 @@
         taxMode: 'included',
         equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false })),
         forgetList: SEED_FORGET.slice(), notePhrases: SEED_NOTES.slice(), clauses: SEED_CLAUSES.map((c) => ({ ...c, hidden: false })),
-        nextNumber: 1, backupEmail: 'adriancantu95@gmail.com', lastBackupAt: null },
+        nextNumber: 1, backupEmail: 'adriancantu95@gmail.com',
+        // Two different questions. lastBackupAt is the day a backup file last
+        // left the phone and it is what the home band nags off.
+        // pdfsSentThroughMs is the archive stamp of the newest PROPOSAL PDF
+        // that actually left, and it is what decides which PDFs still have to
+        // go. Optional on purpose: a backup written before this field existed
+        // restores without it and every PDF simply reads as pending, so the
+        // document version does not have to move.
+        lastBackupAt: null, pdfsSentThroughMs: null },
       catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, uses: 0, hidden: false })),
       customers: [], bids: [] };
   }
@@ -225,6 +233,10 @@
 
       if (!isStr(s.backupEmail)) return null;
       if (s.lastBackupAt !== null && !isISO(s.lastBackupAt)) return null;
+      // Absent is as good as null here — see emptyData. An old backup file
+      // has no such key and must still restore.
+      if (s.pdfsSentThroughMs !== undefined && s.pdfsSentThroughMs !== null
+          && !isIntGte0(s.pdfsSentThroughMs)) return null;
 
       if (!isArr(d.catalog)) return null;
       const catalogIds = new Set();

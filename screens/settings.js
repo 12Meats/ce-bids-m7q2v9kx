@@ -1122,10 +1122,17 @@ const SET_BACKUP_PDF_MAX = 25;      // how many new PDFs one share sheet is aske
 const SET_BACKUP_TITLE = 'CE Bids backup';
 
 let settingsBackupBusy = false;
-let settingsBackupPdfs = [];         // { id, bidId, at, blob } made since the last backup
+let settingsBackupPdfs = [];         // { id, bidId, at, blob } still pending, oldest first
 let settingsBackupPdfExtra = 0;      // how many more there were than the cap allows
-let settingsBackupQueue = null;      // { id, file } still to be offered one at a time
-let settingsBackupNextAt = null;     // what lastBackupAt becomes if this send goes through
+let settingsBackupQueue = null;      // { id, at, file } still to be offered one at a time
+let settingsBackupSentThrough = null; // where pdfsSentThroughMs lands if this whole set leaves
+let settingsBackupPdfTotal = 0;      // how many are pending in all, the ones over the cap included
+// The IndexedDB read has come back (either way), and whether it came back
+// empty-handed. Send stays DISABLED until it has: a watermark computed from a
+// list that has not loaded is a watermark over PDFs nobody looked at, and
+// those PDFs would be stranded for good.
+let settingsBackupPdfsReady = false;
+let settingsBackupPdfsFailed = false;
 let settingsBackupPhotoPick = false; // the bid chips are showing
 let settingsBackupPhotos = null;     // { bidId, label, files } once its blobs are in memory
 // Two counters, not one: the PDF load and a photo load run against different
@@ -1134,27 +1141,19 @@ let settingsBackupPhotos = null;     // { bidId, label, files } once its blobs a
 // were none.
 let settingsBackupPdfToken = 0;
 let settingsBackupPhotoToken = 0;
-// Every PDF that has actually left the phone this session, by id. lastBackupAt
-// only has a day on it and the whole of that day stays pending on purpose (see
-// backupSinceMs), so without this the PDFs he just sent are still "new" the
-// second the send finishes, and the button reads "Send backup + 1 PDF" as if
-// nothing had happened. Deliberately NOT cleared by settingsResetBackup: it is
-// a record of what went, not of what the screen was showing. A reload does
-// clear it and then the day rule re-offers them, which costs an attachment,
-// and that is the side of the trade this card has always taken.
-let settingsBackupSentIds = Object.create(null);
 
 function settingsResetBackup() {
   settingsBackupBusy = false;
   settingsBackupPdfs = [];
   settingsBackupPdfExtra = 0;
+  settingsBackupPdfTotal = 0;
+  settingsBackupPdfsReady = false;
+  settingsBackupPdfsFailed = false;
   // Dropping a half-drained queue loses nothing. A PDF that never went is
-  // still "made since the last backup" (lastBackupAt only ever moves up to the
-  // newest PDF that actually left — see backupSelection and settingsSendBackup)
-  // and it is not in settingsBackupSentIds either, so coming back to this
-  // screen offers it again.
+  // still pending, because pdfsSentThroughMs only ever moves up to a PDF that
+  // actually left the phone. Coming back to this screen offers it again.
   settingsBackupQueue = null;
-  settingsBackupNextAt = null;
+  settingsBackupSentThrough = null;
   settingsBackupPhotoPick = false;
   settingsBackupPhotos = null;
   settingsBackupPdfToken += 1;
@@ -1163,29 +1162,57 @@ function settingsResetBackup() {
 
 // --- What is pending --------------------------------------------------------
 
-// The bytes, in memory, before the Send button is drawn. WHICH ones, and how
-// far the date is allowed to move afterwards, is backupSelection's decision
-// (ui.js, tested): the OLDEST capful of what is pending, so that repeated
-// backups drain a backlog instead of stranding everything behind the cap. A
-// share sheet handed two hundred files is a share sheet that does not open,
-// and the JSON — the actual backup — has every bid in it either way.
+// The bytes, in memory, before the Send button is drawn. WHICH ones, and where
+// the watermark lands afterwards, is backupSelection's decision (ui.js,
+// tested): the OLDEST capful of what is pending, so that repeated backups
+// drain a backlog instead of stranding everything behind the cap. A share
+// sheet handed two hundred files is a share sheet that does not open, and the
+// JSON — the actual backup — has every bid in it either way.
+//
+// Until this resolves the Send button is disabled. It has to be: sending off
+// an empty list would call every PDF sent that nobody read, and sending off a
+// HALF-read one would move the watermark past files that were never in hand.
 function settingsLoadBackupPdfs() {
   const token = ++settingsBackupPdfToken;
-  const lastAt = setS().lastBackupAt;
-  Photos.list('pdf').then((ids) => {
+  settingsBackupPdfsReady = false;
+  settingsBackupPdfsFailed = false;
+  const through = setS().pdfsSentThroughMs;
+  const failed = () => {
     if (token !== settingsBackupPdfToken) return;
-    const entries = ids.map(bidPdfParse).filter((x) => x && !settingsBackupSentIds[x.id]);
-    const sel = backupSelection(entries, lastAt, Store.todayISO(), SET_BACKUP_PDF_MAX);
+    // The JSON is the backup and it does not need IndexedDB, so the button
+    // comes back — with nothing riding along, and a line saying so.
+    settingsBackupPdfs = [];
+    settingsBackupPdfExtra = 0;
+    settingsBackupPdfTotal = 0;
+    settingsBackupSentThrough = null;
+    settingsBackupPdfsReady = true;
+    settingsBackupPdfsFailed = true;
+    if (state.screen === 'settings') render();
+  };
+  return Photos.list('pdf').then((ids) => {
+    if (token !== settingsBackupPdfToken) return;
+    const entries = (ids || []).map(bidPdfParse).filter(Boolean);
+    const sel = backupSelection(entries, through, SET_BACKUP_PDF_MAX);
     const take = sel.send.map((x) => ({ id: x.id, bidId: x.bidId, at: x.at, blob: null }));
-    settingsBackupNextAt = sel.nextLastBackupAt;
-    return Promise.all(take.map((e) => Photos.get(e.id).then((b) => { e.blob = b; }))).then(() => {
-      if (token !== settingsBackupPdfToken) return;
-      // A PDF whose blob has been evicted is not a PDF that can be sent.
-      settingsBackupPdfs = take.filter((e) => e.blob);
-      settingsBackupPdfExtra = sel.truncated;
-      if (state.screen === 'settings') render();
-    });
-  });
+    return Promise.all(take.map((e) => Photos.get(e.id).then((b) => { e.blob = b; }, () => { e.blob = null; })))
+      .then(() => {
+        if (token !== settingsBackupPdfToken) return;
+        // A PDF whose blob has been evicted is not a PDF that can be sent, and
+        // every count on the card is taken AFTER that filter, so the card never
+        // offers a file it is not holding.
+        settingsBackupPdfs = take.filter((e) => e.blob);
+        settingsBackupPdfExtra = sel.truncated;
+        settingsBackupPdfTotal = settingsBackupPdfs.length + sel.truncated;
+        // An evicted PDF is gone for good; letting it hold the watermark back
+        // would strand every newer one behind it forever. So the watermark
+        // follows the newest one actually in hand.
+        settingsBackupSentThrough = settingsBackupPdfs.length
+          ? settingsBackupPdfs[settingsBackupPdfs.length - 1].at
+          : null;
+        settingsBackupPdfsReady = true;
+        if (state.screen === 'settings') render();
+      }, failed);
+  }, failed);
 }
 
 // --- Files ------------------------------------------------------------------
@@ -1209,11 +1236,13 @@ function settingsBackupPdfName(entry) {
   return base + '-' + entry.at + '.pdf';
 }
 
-// Each file paired with the id it came from, because the queue has to be able
-// to say which PDF it just got rid of.
+// Each file paired with the id it came from and the moment it was archived.
+// The queue needs both: the id to say which PDF it just got rid of, and the
+// stamp to move the watermark to as each one actually leaves.
 function settingsBackupPdfItems() {
   return settingsBackupPdfs.map((e) => ({
     id: e.id,
+    at: e.at,
     file: new File([e.blob], settingsBackupPdfName(e), { type: 'application/pdf' }),
   }));
 }
@@ -1264,6 +1293,10 @@ function settingsCopyBackupEmail() {
 
 async function settingsSendBackup() {
   if (settingsBackupBusy) return;
+  // The button is disabled until the list is in, so this is a belt on top of
+  // braces. It is still here because the cost of being wrong is a watermark
+  // over PDFs that were never read.
+  if (!settingsBackupPdfsReady) return;
 
   const jsonFile = settingsBackupJsonFile();
   const items = settingsBackupPdfItems();
@@ -1306,37 +1339,52 @@ async function settingsSendBackup() {
     return;
   }
 
-  // ONLY here. A sheet he backed out of is not a backup, and a date that says
-  // otherwise turns the home screen's warning off for two weeks.
+  // ONLY here, and only for the JSON. A sheet he backed out of is not a
+  // backup, and a date that says otherwise turns the home screen's warning off
+  // for two weeks.
   //
-  // How far the date is allowed to move is the whole of the "no PDF gets
-  // stranded" promise. backupSelection already stopped it at the newest PDF
-  // that fit under the cap; a queue stops it earlier still, because a queued
-  // PDF has not gone anywhere yet: the date stays on the day of the oldest of
-  // them, so every one is still pending whether he drains the queue or walks
-  // away from it. Only PDFs that really left get written down as sent.
-  let nextAt = settingsBackupNextAt || Store.todayISO();
-  if (settingsBackupQueue && settingsBackupQueue.length) {
-    nextAt = backupDayISO(settingsBackupPdfs[0].at) || nextAt;
+  // The JSON is the backup: every bid, every setting, the whole document. So
+  // the moment it leaves the phone, the nag is answered — today's date, PDFs
+  // or no PDFs, queue still draining or not. That the PDFs come behind it one
+  // share sheet at a time is a convenience, not the backup.
+  //
+  // The watermark is the other question and it moves on its own terms: only
+  // when the PDFs THEMSELVES left, which on this path means the browser took
+  // the whole set at once. A queue has not gone anywhere yet, so it moves the
+  // watermark one file at a time, in settingsSendQueuedPdf.
+  const prevAt = setS().lastBackupAt;
+  const prevThrough = setS().pdfsSentThroughMs;
+  setS().lastBackupAt = Store.todayISO();
+  if (pdfsWentToo && settingsBackupSentThrough !== null) {
+    setS().pdfsSentThroughMs = settingsBackupSentThrough;
   }
-  if (pdfsWentToo) settingsBackupPdfs.forEach((e) => { settingsBackupSentIds[e.id] = true; });
-
-  const prev = setS().lastBackupAt;
-  setS().lastBackupAt = nextAt;
-  if (!settingsSaveAndRender(() => { setS().lastBackupAt = prev; })) return;
+  if (!settingsSaveAndRender(() => {
+    setS().lastBackupAt = prevAt;
+    setS().pdfsSentThroughMs = prevThrough;
+  })) return;
   settingsLoadBackupPdfs();
   showBanner(result === 'downloaded' ? 'Backup downloaded' : 'Backup sent', 'ok');
 }
 
 // The queue, one tap per file. No await in front of the share, so each tap
 // keeps its own activation.
+//
+// The watermark moves here, once per file that really left. It is safe to move
+// it to just this one's stamp because the queue is oldest-first and only ever
+// advances on a send that went through: by the time this file lands, every
+// older pending PDF has already landed too. Cancel one and the queue stops
+// where it is, so the watermark stops with it and the rest stay pending.
 function settingsSendQueuedPdf() {
   if (!settingsBackupQueue || !settingsBackupQueue.length) return;
   const item = settingsBackupQueue[0];
   const file = item.file;
   const done = () => {
-    settingsBackupSentIds[item.id] = true;
     settingsBackupQueue.shift();
+    const prev = setS().pdfsSentThroughMs;
+    if (typeof item.at === 'number' && (prev === null || prev === undefined || item.at > prev)) {
+      setS().pdfsSentThroughMs = item.at;
+      persistOr(() => { setS().pdfsSentThroughMs = prev; });
+    }
     if (!settingsBackupQueue.length) {
       settingsBackupQueue = null;
       // Drained. Ask again what is pending, so the Send button stops counting
@@ -1488,12 +1536,22 @@ function buildSetBackup() {
   const box = card('Backup');
   box.appendChild(settingsBackupAgeLine());
 
-  const pdfCount = settingsBackupPdfs.length;
-  const sendLabel = settingsBackupBusy
-    ? 'Opening…'
-    : 'Send backup' + (pdfCount ? ' + ' + pdfCount + (pdfCount === 1 ? ' PDF' : ' PDFs') : '');
+  // Three states, one button. While the PDFs are still coming out of
+  // IndexedDB it is disabled and says so: tapping through the wait used to
+  // send the JSON alone and then mark the PDFs sent anyway, which stranded
+  // every one of them.
+  const loading = !settingsBackupPdfsReady;
+  // A live queue is already holding those PDFs and offering them one at a
+  // time on its own button. Counting them on this one too offers the same file
+  // twice, and taking the top offer sends a second copy of the JSON with it.
+  const queued = !!(settingsBackupQueue && settingsBackupQueue.length);
+  const pdfCount = queued ? 0 : settingsBackupPdfs.length;
+  let sendLabel;
+  if (settingsBackupBusy) sendLabel = 'Opening…';
+  else if (loading) sendLabel = 'Loading PDFs…';
+  else sendLabel = 'Send backup' + (pdfCount ? ' + ' + pdfCount + (pdfCount === 1 ? ' PDF' : ' PDFs') : '');
   const sendBtn = textButton(sendLabel, 'btn btn-primary btn-block', settingsSendBackup);
-  if (settingsBackupBusy) {
+  if (settingsBackupBusy || loading) {
     sendBtn.disabled = true;
     sendBtn.setAttribute('aria-busy', 'true');
   }
@@ -1501,8 +1559,12 @@ function buildSetBackup() {
   box.appendChild(caption('This sends everything on this phone to Adrian. Do it every couple of '
     + 'weeks, or after a big bid.'));
 
+  if (settingsBackupPdfsFailed) {
+    box.appendChild(caption("Couldn't read the saved PDFs. The backup file still goes."));
+  }
+
   if (settingsBackupPdfExtra > 0) {
-    box.appendChild(inlineWarn('There are ' + (pdfCount + settingsBackupPdfExtra) + ' new PDFs. Only the '
+    box.appendChild(inlineWarn('There are ' + settingsBackupPdfTotal + ' new PDFs. Only the '
       + 'oldest ' + SET_BACKUP_PDF_MAX + ' go this time. Send another backup to get the rest. '
       + 'The backup file itself always has every bid.'));
   }

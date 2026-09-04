@@ -200,6 +200,33 @@ test('check: mirrors validateImport as a boolean', () => {
   const bad = JSON.parse(JSON.stringify(d)); bad.settings.rateCents = 65.5;
   assert.strictEqual(S.check(bad), false);
 });
+// settings.pdfsSentThroughMs is the PDF watermark, and it is OPTIONAL on
+// purpose: it shipped after the first backups did, and a file written before
+// it existed has to restore without a document version bump. Absent reads the
+// same as null — nothing has gone yet, so every PDF is pending.
+test('validateImport: pdfsSentThroughMs absent (an old backup file) still restores', () => {
+  const d = S.emptyData();
+  delete d.settings.pdfsSentThroughMs;
+  const back = S.validateImport(JSON.stringify(d));
+  assert.notStrictEqual(back, null);
+  assert.strictEqual(back.settings.pdfsSentThroughMs, undefined);
+});
+test('validateImport: pdfsSentThroughMs null is accepted', () => {
+  const d = S.emptyData();
+  assert.strictEqual(d.settings.pdfsSentThroughMs, null);
+  assert.notStrictEqual(S.validateImport(JSON.stringify(d)), null);
+});
+test('validateImport: pdfsSentThroughMs takes an epoch stamp and refuses a non-integer one', () => {
+  const d = S.emptyData();
+  d.settings.pdfsSentThroughMs = 1757000000000;
+  const back = S.validateImport(JSON.stringify(d));
+  assert.strictEqual(back.settings.pdfsSentThroughMs, 1757000000000);
+  [-1, 1.5, '1757000000000', true].forEach((v) => {
+    const bad = S.emptyData();
+    bad.settings.pdfsSentThroughMs = v;
+    assert.strictEqual(S.validateImport(JSON.stringify(bad)), null, String(v));
+  });
+});
 test('validateImport: table-driven negative mutations across every section reject', () => {
   const { d } = buildFullData();
   const base = JSON.stringify(d);
