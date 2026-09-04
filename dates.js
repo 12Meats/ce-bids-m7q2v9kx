@@ -15,8 +15,11 @@
   const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  // How far behind today a bare MMDD may land before it is read as next year.
-  const ROLLOVER_DAYS = 180;
+  // How long a proposal may sit unanswered before the home screen says so.
+  const DEFAULT_NUDGE_DAYS = 14;
+
+  // The years a bare MMDD could mean, relative to the year it is typed in.
+  const MMDD_YEAR_OFFSETS = [-1, 0, 1];
 
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
   function isISO(s) { return typeof s === 'string' && ISO_RE.test(s); }
@@ -64,12 +67,22 @@
   // (0915 arrives as the number 915), so the digits are padded back out to 4
   // or 6 before they are read.
   //
-  // A bare MMDD takes the current year, and rolls FORWARD a year when that
-  // would land more than half a year behind us: in December, "115" means next
-  // January, not the one eleven months gone. It never rolls backward, so a
-  // typed MMDD is always today or ahead of it — which is what a bid date
-  // almost always is. Six typed digits are never second-guessed: he named the
-  // year, and that is how you write down a date in the past.
+  // A bare MMDD means the nearest one: the same month and day is built in last
+  // year, this year and next, and whichever lands closest to today wins. In
+  // December, "115" is next January, not the one eleven months gone; in
+  // January, "1230" is the December just past, not the one still eleven months
+  // out. Both readings are a few days away and the other is most of a year
+  // away, so "nearest" says what a person means without a rule about which
+  // direction time runs.
+  //
+  // Only calendar-real candidates are considered, which is what makes Feb 29
+  // work: type it in March 2027 and 2026 and 2027 have no such day, so the
+  // 2028 one is the only thing it can mean.
+  //
+  // Ties — possible only across a leap day, where the two gaps sum to 366 —
+  // go to the earlier date, on the grounds that a bid he already walked is
+  // more real than one he is guessing at. Six typed digits are never
+  // second-guessed: he named the year.
   function parseTypedDate(digits, todayISO) {
     if (typeof digits !== 'number' || !isFinite(digits) || digits < 0) return null;
     if (Math.round(digits) !== digits) return null;
@@ -87,15 +100,19 @@
     if (text.length === 6) return composeDate(2000 + Number(text.slice(4, 6)), mm, dd);
 
     const thisYear = Number(todayISO.slice(0, 4));
-    const iso = composeDate(thisYear, mm, dd);
-    // A day that doesn't exist this year (Feb 29 in a common year) is a typo,
-    // not an instruction to go hunting through other years for one where it
-    // does.
-    if (!iso) return null;
-
-    const behind = daysSince(iso, todayISO);
-    if (behind !== null && behind > ROLLOVER_DAYS) return composeDate(thisYear + 1, mm, dd);
-    return iso;
+    let best = null;
+    let bestGap = null;
+    // Oldest year first, and a strict < below, so an exact tie keeps the
+    // earlier date without needing a second comparison to say so.
+    MMDD_YEAR_OFFSETS.forEach((offset) => {
+      const iso = composeDate(thisYear + offset, mm, dd);
+      if (!iso) return;
+      const gap = daysSince(iso, todayISO);
+      if (gap === null) return;
+      const distance = Math.abs(gap);
+      if (bestGap === null || distance < bestGap) { best = iso; bestGap = distance; }
+    });
+    return best;
   }
 
   // The bids that went out and never came back: sent, still sitting at 'sent',
@@ -103,7 +120,7 @@
   // a proposal nobody followed up on is money left on a table in a dairy plant.
   // Strictly older than `days`: at exactly fourteen it is not yet late.
   function sentNoAnswer(bids, todayISO, days) {
-    const limit = typeof days === 'number' ? days : ROLLOVER_DAYS;
+    const limit = typeof days === 'number' ? days : DEFAULT_NUDGE_DAYS;
     return (bids || []).filter((b) => {
       if (!b || b.status !== 'sent' || !b.sentAt) return false;
       const age = daysSince(b.sentAt, todayISO);
@@ -118,5 +135,5 @@
     return b.number - a.number;
   }
 
-  return { ROLLOVER_DAYS, fmtDate, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
+  return { DEFAULT_NUDGE_DAYS, fmtDate, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
 });

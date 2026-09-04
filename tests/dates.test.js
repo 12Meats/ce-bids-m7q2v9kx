@@ -10,12 +10,14 @@ const TODAY = '2026-09-03';
 // parseTypedDate — what the thumb produces on the number keypad
 // ---------------------------------------------------------------------------
 
-test('parseTypedDate: MMDD takes the current year', () => {
+test('parseTypedDate: MMDD means the nearest such day', () => {
   // The keypad drops a leading zero, so 0915 arrives as 915.
   assert.equal(D.parseTypedDate(915, TODAY), '2026-09-15');
   assert.equal(D.parseTypedDate(1220, TODAY), '2026-12-20');
   assert.equal(D.parseTypedDate(1231, TODAY), '2026-12-31');
-  // Jan 1 is 245 days behind Sep 3, so it rolls — but it is still Jan 1.
+  // Jan 1 is 245 days behind Sep 3 but only 120 ahead, so it reads as the
+  // coming one — and either way it is still Jan 1.
+  assert.equal(D.parseTypedDate(101, TODAY), '2027-01-01');
   assert.equal(D.parseTypedDate(101, TODAY).slice(5), '01-01');
 });
 
@@ -34,7 +36,7 @@ test('parseTypedDate: rejects anything that is not a real day', () => {
   assert.equal(D.parseTypedDate(1301, TODAY), null);     // month 13
   assert.equal(D.parseTypedDate(1131, TODAY), null);     // November has 30
   assert.equal(D.parseTypedDate(231, TODAY), null);      // 0231: February has no 31st
-  assert.equal(D.parseTypedDate(229, TODAY), null);      // 0229: 2026 is not a leap year
+  assert.equal(D.parseTypedDate(229, TODAY), null);      // 0229: no leap year in reach
   assert.equal(D.parseTypedDate(1234567, TODAY), null);  // seven digits
   assert.equal(D.parseTypedDate(1000, TODAY), null);     // month 10, day 0
 });
@@ -47,26 +49,50 @@ test('parseTypedDate: refuses non-integers, negatives and a bad today', () => {
   assert.equal(D.parseTypedDate(915, 'not a date'), null);
 });
 
-test('parseTypedDate: a bare MMDD far behind us rolls forward a year', () => {
+test('parseTypedDate: the nearest year wins, forwards or backwards', () => {
   // In December, "115" means the January that is coming, not the one eleven
   // months gone.
   assert.equal(D.parseTypedDate(115, '2026-12-20'), '2027-01-15');
-  // The same digits in January mean this January: nothing to roll.
+  // And in January, "1230" means the December just past — the reading the old
+  // forward-only rule got wrong, sending a back-dated bid eleven months out.
+  assert.equal(D.parseTypedDate(1230, '2026-01-10'), '2025-12-30');
+  assert.equal(D.parseTypedDate(1220, '2026-01-05'), '2025-12-20');
+  // Dates near today are left where they are, either side of it.
   assert.equal(D.parseTypedDate(115, '2026-01-05'), '2026-01-15');
-  // A date just ahead of today is left alone.
   assert.equal(D.parseTypedDate(915, TODAY), '2026-09-15');
   assert.equal(D.parseTypedDate(1225, '2026-12-20'), '2026-12-25');
-  // It never rolls backward: six digits are the way to write down last year.
-  assert.equal(D.parseTypedDate(1220, '2026-01-05'), '2026-12-20');
 });
 
-test('parseTypedDate: the rollover boundary is exactly 180 days behind', () => {
-  // 2026-03-07 is 180 days behind 2026-09-03 — not more than, so it stays.
-  assert.equal(D.daysSince('2026-03-07', TODAY), 180);
-  assert.equal(D.parseTypedDate(307, TODAY), '2026-03-07');
-  // One day further back and it belongs to next year.
-  assert.equal(D.daysSince('2026-03-06', TODAY), 181);
-  assert.equal(D.parseTypedDate(306, TODAY), '2027-03-06');
+test('parseTypedDate: Feb 29 finds the only year that has one', () => {
+  // Typed in March 2027: neither 2026 nor 2027 has a Feb 29, so the 2028 one
+  // is the only day those digits can mean.
+  assert.equal(D.parseTypedDate(229, '2027-03-01'), '2028-02-29');
+  // Typed in 2026, none of 2025/2026/2027 has one, so it stays a typo.
+  assert.equal(D.parseTypedDate(229, TODAY), null);
+  // Six digits are still taken at their word, leap year or not.
+  assert.equal(D.parseTypedDate(22924, TODAY), '2024-02-29');
+  assert.equal(D.parseTypedDate(22926, TODAY), null);
+});
+
+test('parseTypedDate: the boundary sits where the two gaps cross', () => {
+  // 2026-03-05 is 182 days behind Sep 3; its 2027 copy is 183 ahead. Behind
+  // is nearer, so behind wins.
+  assert.equal(D.daysSince('2026-03-05', TODAY), 182);
+  assert.equal(D.daysSince('2027-03-05', TODAY), -183);
+  assert.equal(D.parseTypedDate(305, TODAY), '2026-03-05');
+  // One day earlier and the gaps swap: 183 behind, only 182 ahead.
+  assert.equal(D.daysSince('2026-03-04', TODAY), 183);
+  assert.equal(D.daysSince('2027-03-04', TODAY), -182);
+  assert.equal(D.parseTypedDate(304, TODAY), '2027-03-04');
+});
+
+test('parseTypedDate: an exact tie goes to the earlier date', () => {
+  // A tie needs the two gaps to sum to 366, so it only happens across a leap
+  // day: on 2027-08-31, "301" is 183 days from March 2027 and 183 from March
+  // 2028. The bid he already walked beats the one he is guessing at.
+  assert.equal(D.daysSince('2027-03-01', '2027-08-31'), 183);
+  assert.equal(D.daysSince('2028-03-01', '2027-08-31'), -183);
+  assert.equal(D.parseTypedDate(301, '2027-08-31'), '2027-03-01');
 });
 
 // ---------------------------------------------------------------------------

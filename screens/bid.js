@@ -223,8 +223,8 @@ function renderBidHeader(bid, host) {
       done: (v) => {
         // Clear means "never mind", the same as Cancel — not a rejected date.
         if (v === null) return;
-        // What "915" means, including the roll into next year, is decided
-        // in dates.js and tested there.
+        // Which year "915" belongs to is decided in dates.js and tested
+        // there: a bare MMDD means the nearest such day, either side of today.
         const iso = Dates.parseTypedDate(v, Store.todayISO());
         if (!iso) {
           bidShakeField = 'date';
