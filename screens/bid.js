@@ -21,7 +21,7 @@ let bidShakeField = null;    // 'customer' | 'date' — shaken once after the ne
 function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
 // ---------------------------------------------------------------------------
-// Entry points (called from the bids list)
+// Entering the screen
 // ---------------------------------------------------------------------------
 
 function newBidDraft() {
@@ -36,21 +36,21 @@ function newBidDraft() {
   };
 }
 
-function startNewBid() {
-  bidDraft = newBidDraft();
+// The screen's enter hook, called by show('bid', arg). Three arguments, three
+// meanings — and every one of them is a navigation the shell performs, so no
+// other screen has to reach into this file to open a bid:
+//
+//   a bid id  — open that bid, on the summary view
+//   null      — the header form for a bid that doesn't exist yet
+//   undefined — coming back from Walk/Labor/Price/Proposal/Job (the Back
+//               button passes nothing): keep the bid and the view we left
+function enterBid(bidId) {
+  if (bidId === undefined) return;
   bidHeaderOpen = false;
   bidLostSheetOpen = false;
   bidShakeField = null;
-  state.bidId = null;
-  show('bid');
-}
-
-function openBid(id) {
-  bidHeaderOpen = false;
-  bidLostSheetOpen = false;
-  bidShakeField = null;
-  state.bidId = id;
-  show('bid');
+  state.bidId = bidId;
+  bidDraft = bidId === null ? newBidDraft() : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,4 +430,4 @@ function renderBid() {
   else renderBidScreen(bid, host);
 }
 
-registerScreen('bid', { id: 'screen-bid', title: 'Bid', back: 'bids', tab: 'bids', render: renderBid });
+registerScreen('bid', { id: 'screen-bid', title: 'Bid', back: 'bids', tab: 'bids', enter: enterBid, render: renderBid });

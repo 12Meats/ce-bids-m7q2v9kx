@@ -133,7 +133,7 @@ function bidsDuplicate(id) {
     render();  // persist() has already said why
     return;
   }
-  openBid(copy.id);
+  show('bid', copy.id);
 }
 
 // Drafts only: a bid that has been sent is a record of what a customer was
@@ -219,7 +219,7 @@ function bidRow(bid) {
   main.addEventListener('pointerleave', cancelPress);
   main.addEventListener('click', () => {
     if (Date.now() < bidsSuppressTapUntil) return;
-    openBid(bid.id);
+    show('bid', bid.id);
   });
 
   const more = document.createElement('button');
@@ -324,7 +324,7 @@ function renderBids() {
   newBtn.type = 'button';
   newBtn.className = 'btn btn-primary btn-block';
   newBtn.textContent = '+ New bid';
-  newBtn.addEventListener('click', startNewBid);
+  newBtn.addEventListener('click', () => show('bid', null));
   bar.appendChild(newBtn);
   host.appendChild(bar);
 }

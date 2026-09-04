@@ -17,7 +17,10 @@
 // Adding a screen (Tasks 6-14): create screens/<key>.js with its renderer,
 // call registerScreen() at the bottom of that file, add the <script> tag last
 // in index.html, and navigate with show('<key>') so the destination always
-// re-renders.
+// re-renders. A screen that has to be opened *for* something ("open the bid
+// screen for this bid") registers an enter hook and is reached with
+// show('<key>', arg) — so no screen ever has to call into another screen's
+// file to set that up.
 
 // ---------------------------------------------------------------------------
 // STATE
@@ -32,6 +35,13 @@ const state = { data: Store.load(), screen: 'pin', bidId: null, unlocked: false 
 // Back goes (null = no back button), which bottom tab lights up, and the
 // render function show() calls after switching to it. The shell only knows
 // about the PIN screen; every other screen adds itself from its own file.
+//
+//   enter(arg): optional; resets the screen's private view state and receives
+//   the navigation argument (usually a bid id). Called by show() after the
+//   section toggle and before render(). Screens are reached with
+//   show(key, arg); a plain show(key) — what the Back button and the tab bar
+//   do — passes undefined, which a screen should read as "coming back, keep
+//   what's on the glass".
 const SCREENS = {
   pin: { id: 'screen-pin', title: '', back: null, tab: null, render: null },
 };
@@ -426,7 +436,7 @@ function handleBackspace() {
 // The single navigation entry point: switches sections, updates the top bar
 // and tab bar, then renders the destination. Accepts either a screen key
 // ('bids') or its section id ('screen-bids').
-function show(screenId) {
+function show(screenId, arg) {
   const key = SCREENS[screenId] ? screenId : String(screenId).replace(/^screen-/, '');
   const cfg = SCREENS[key];
   if (!cfg) return;
@@ -451,6 +461,11 @@ function show(screenId) {
       btn.classList.toggle('tab-active', btn.dataset.tab === cfg.tab);
     });
   }
+
+  // The destination's own file decides what a navigation argument means and
+  // what stale view state to clear — before render(), so the renderer only
+  // ever sees settled state.
+  if (cfg.enter) cfg.enter(arg);
 
   render();
 }
