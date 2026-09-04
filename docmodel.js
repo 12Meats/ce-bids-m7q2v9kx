@@ -51,10 +51,13 @@
   // meta, signature line, file name) so an orphaned customerId — a customer
   // deleted or never resolved — reads the same "Customer" placeholder
   // everywhere instead of silently diverging per call site.
-  function customerName(bid, data) {
+  // A blank name is as unusable as a missing record — both read "Customer"
+  // rather than printing "Accepted by ()".
+  function customerOf(bid, data) {
     const c = data.customers.find((c) => c.id === bid.customerId);
-    return c ? c.name : 'Customer';
+    return { name: (c && c.name) || 'Customer', contact: (c && c.contact) || '' };
   }
+  function customerName(bid, data) { return customerOf(bid, data).name; }
 
   function fileName(bid, data) {
     const clean = (t) => t.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -66,8 +69,7 @@
 
   function build(bid, data, level) {
     const s = data.settings;
-    const cust = customerName(bid, data);
-    const custContact = (data.customers.find((c) => c.id === bid.customerId) || { contact: '' }).contact;
+    const { name: cust, contact: custContact } = customerOf(bid, data);
     const stack = B.costStack(bid, s);
     const rate = bid.pricing.rateCents;
     const laborCents = stack.bidHours * rate;
