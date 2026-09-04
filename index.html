@@ -351,6 +351,75 @@
       text-align: center;
     }
 
+    /* ---------- Shared components (built by ui.js) ---------- */
+    .card {
+      display: block;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: var(--space-3);
+      margin-bottom: var(--space-2);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      margin-bottom: var(--space-2);
+    }
+
+    /* A row is the whole tap target — no small pencil icons to aim at. */
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      width: 100%;
+      min-height: 56px;
+      padding: var(--space-1) 0;
+      text-align: left;
+      font-family: inherit;
+      font-size: var(--font-body);
+      color: var(--color-text);
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .row:last-child { border-bottom: none; }
+    .row-tap:active { background: #eef2f7; }
+    .row-label { color: var(--color-text-muted); }
+    .row-value { font-weight: 700; text-align: right; }
+
+    .chip {
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1.5px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .chip-selected {
+      border-color: var(--color-accent);
+      background: var(--color-accent);
+      color: #fff;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: #e2e8f0;
+      color: var(--color-text-muted);
+    }
+    .pill-sent { background: rgba(4, 30, 66, 0.12); color: var(--color-accent); }
+    .pill-won { background: rgba(21, 128, 61, 0.12); color: var(--color-confirm); }
+    .pill-lost { background: rgba(185, 28, 28, 0.1); color: var(--color-danger); }
+    .pill-complete { background: var(--color-accent); color: #fff; }
+
     /* ---------- Utilities ---------- */
     .mt-3 { margin-top: var(--space-3); }
 
@@ -606,13 +675,27 @@
     </div>
   </div>
 
+  <!-- Pure logic first, then the browser-only stores, then the UI helpers,
+       then the shell. Each screen registers itself with the shell, so every
+       screen script must come after app.js. -->
   <script src="bidmath.js"></script>
   <script src="storage.js"></script>
   <script src="docmodel.js"></script>
+  <script src="keypad.js"></script>
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="vendor/jspdf.plugin.autotable.min.js"></script>
   <script src="photos.js"></script>
   <script src="docgen.js"></script>
+  <script src="ui.js"></script>
   <script src="app.js"></script>
+  <script src="screens/bids.js"></script>
+  <script src="screens/bid.js"></script>
+  <script src="screens/walk.js"></script>
+  <script src="screens/labor.js"></script>
+  <script src="screens/price.js"></script>
+  <script src="screens/proposal.js"></script>
+  <script src="screens/job.js"></script>
+  <script src="screens/settings.js"></script>
+  <script src="screens/reports.js"></script>
 </body>
 </html>

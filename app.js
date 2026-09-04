@@ -1,22 +1,23 @@
 'use strict';
 
-// app.js — app shell: state, navigation, banners, the three overlay panels,
-// and the PIN screen. Depends on globals BidMath (bidmath.js), Store
-// (storage.js), DocModel (docmodel.js), Photos (photos.js) and DocGen
-// (docgen.js), all loaded before this file.
+// app.js — the app SHELL and nothing else: state, the screen registry,
+// navigation, banners, the three overlay panels, the PIN screen, and boot.
+// Screens live one-per-file in screens/*.js and register themselves; shared
+// DOM helpers live in ui.js. Depends on globals BidMath, Store, DocModel,
+// Keypad, Photos, DocGen and the ui.js helpers, all loaded before this file.
 //
 // Sections, in order:
-//   STATE            — the single app state object and the screen registry
-//   DOM HELPERS      — el(), tiny formatting shared by the panels
-//   BANNERS          — showBanner / clearBanner
-//   PANELS           — promptNumber, promptText, confirmPanel
-//   PIN              — set / confirm / unlock
-//   NAV              — show(), render(), persist()
-//   SCREEN RENDERERS — one renderX per screen (stubs until their task lands)
-//   BOOT             — DOMContentLoaded wiring
+//   STATE     — the single app state object and the screen registry
+//   BANNERS   — showBanner / clearBanner
+//   PANELS    — promptNumber, promptMoney, promptText, confirmPanel
+//   PIN       — set / confirm / unlock
+//   NAV       — show(), render(), persist()
+//   BOOT      — DOMContentLoaded wiring
 //
-// Later tasks: add your screen's renderer to SCREENS and navigate with
-// show('<key>') so the destination always re-renders.
+// Adding a screen (Tasks 6-14): create screens/<key>.js with its renderer,
+// call registerScreen() at the bottom of that file, add the <script> tag last
+// in index.html, and navigate with show('<key>') so the destination always
+// re-renders.
 
 // ---------------------------------------------------------------------------
 // STATE
@@ -29,40 +30,17 @@ const state = { data: Store.load(), screen: 'pin', bidId: null, unlocked: false 
 
 // Single source of truth per screen: its section element, top-bar title, where
 // Back goes (null = no back button), which bottom tab lights up, and the
-// render function show() calls after switching to it.
+// render function show() calls after switching to it. The shell only knows
+// about the PIN screen; every other screen adds itself from its own file.
 const SCREENS = {
-  pin:      { id: 'screen-pin',      title: '',            back: null,     tab: null,       render: null },
-  bids:     { id: 'screen-bids',     title: 'Bids',        back: null,     tab: 'bids',     render: renderBids },
-  bid:      { id: 'screen-bid',      title: 'Bid',         back: 'bids',   tab: 'bids',     render: renderBid },
-  walk:     { id: 'screen-walk',     title: 'Walkthrough', back: 'bid',    tab: 'bids',     render: renderWalk },
-  labor:    { id: 'screen-labor',    title: 'Labor',       back: 'bid',    tab: 'bids',     render: renderLabor },
-  price:    { id: 'screen-price',    title: 'Price',       back: 'bid',    tab: 'bids',     render: renderPrice },
-  proposal: { id: 'screen-proposal', title: 'Proposal',    back: 'bid',    tab: 'bids',     render: renderProposal },
-  job:      { id: 'screen-job',      title: 'Job',         back: 'bid',    tab: 'bids',     render: renderJob },
-  settings: { id: 'screen-settings', title: 'Settings',    back: null,     tab: 'settings', render: renderSettings },
-  reports:  { id: 'screen-reports',  title: 'Reports',     back: 'settings', tab: 'settings', render: renderReports },
+  pin: { id: 'screen-pin', title: '', back: null, tab: null, render: null },
 };
 
-// ---------------------------------------------------------------------------
-// DOM HELPERS
-// ---------------------------------------------------------------------------
-
-function el(id) { return document.getElementById(id); }
-
-// Plain-number display for the keypad's "was" line. Trims float noise
-// (0.30000000000000004) without pretending to be a currency formatter —
-// callers that want dollars pass a pre-formatted label instead.
-function numText(n) {
-  if (typeof n !== 'number' || !isFinite(n)) return '';
-  return String(Math.round(n * 1000) / 1000);
-}
-
-// Restarts a CSS animation that may already be on the element.
-function shake(node) {
-  node.classList.remove('shake');
-  void node.offsetWidth; // force reflow so a second trigger re-runs the animation
-  node.classList.add('shake');
-  node.addEventListener('animationend', () => node.classList.remove('shake'), { once: true });
+// Called at the bottom of each screens/*.js. Keeping registration next to the
+// renderer means a screen is one file to read and one file to delete, and the
+// shell never has to be edited to add one.
+function registerScreen(key, cfg) {
+  SCREENS[key] = cfg;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +115,7 @@ function clearBanner(includePersistent) {
 // wired once in boot(). Only one may be open at a time: a second request while
 // a panel is up is dropped, which is what a fast double-tap on iOS produces.
 
-const keypadCtx = { open: false, digits: '', allowDecimal: false, done: null };
+const keypadCtx = { open: false, buffer: null, done: null };
 const textCtx = { open: false, done: null };
 const confirmCtx = { open: false, resolve: null };
 
@@ -155,9 +133,9 @@ function promptNumber(current, opts) {
   opts = opts || {};
   if (anyPanelOpen()) return;
 
+  const allowDecimal = !!opts.allowDecimal;
   keypadCtx.open = true;
-  keypadCtx.digits = '';
-  keypadCtx.allowDecimal = !!opts.allowDecimal;
+  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal });
   keypadCtx.done = typeof opts.done === 'function' ? opts.done : null;
 
   el('keypadLabel').textContent = opts.label || '';
@@ -168,52 +146,42 @@ function promptNumber(current, opts) {
   // The decimal key only exists for callers that allow one; otherwise it stays
   // blanked so 0 and backspace never shift under the thumb.
   const dot = el('keypadDot');
-  dot.classList.toggle('key-blank', !keypadCtx.allowDecimal);
-  dot.disabled = !keypadCtx.allowDecimal;
-  dot.tabIndex = keypadCtx.allowDecimal ? 0 : -1;
-  dot.setAttribute('aria-hidden', keypadCtx.allowDecimal ? 'false' : 'true');
+  dot.classList.toggle('key-blank', !allowDecimal);
+  dot.disabled = !allowDecimal;
+  dot.tabIndex = allowDecimal ? 0 : -1;
+  dot.setAttribute('aria-hidden', allowDecimal ? 'false' : 'true');
 
   renderKeypad();
   el('panel-keypad').hidden = false;
 }
 
+// What the thumb produces (leading zeros, the single decimal point, the digit
+// cap, what counts as "nothing typed") is Keypad's business and is unit-tested
+// there; the panel only draws the buffer and reads its value.
 function renderKeypad() {
-  el('keypadDigits').textContent = keypadCtx.digits;
+  el('keypadDigits').textContent = keypadCtx.buffer ? keypadCtx.buffer.text() : '';
 }
 
 function keypadPress(ch) {
   if (!keypadCtx.open) return;
-  const d = keypadCtx.digits;
-  if (ch === '.') {
-    if (!keypadCtx.allowDecimal || d.indexOf('.') !== -1) return;
-    keypadCtx.digits = d === '' ? '0.' : d + '.';
-  } else {
-    if (d.length >= 12) return;         // no one bids in trillions
-    if (d === '0') keypadCtx.digits = ch; // "0" then "5" is 5, not 05
-    else keypadCtx.digits = d + ch;
-  }
+  keypadCtx.buffer.press(ch);
   renderKeypad();
 }
 
 function keypadBackspace() {
   if (!keypadCtx.open) return;
-  keypadCtx.digits = keypadCtx.digits.slice(0, -1);
+  keypadCtx.buffer.backspace();
   renderKeypad();
 }
 
-// null only when nothing has been typed. '0.' is a real zero (the owner tapped
-// the decimal point and stopped), not a rejection — Number('0.') === 0.
 function keypadValue() {
-  const d = keypadCtx.digits;
-  if (d === '') return null;
-  const n = Number(d);
-  return isFinite(n) ? n : null;
+  return keypadCtx.buffer ? keypadCtx.buffer.value() : null;
 }
 
 function closeKeypad() {
   el('panel-keypad').hidden = true;
   keypadCtx.open = false;
-  keypadCtx.digits = '';
+  keypadCtx.buffer = null;
   keypadCtx.done = null;
 }
 
@@ -491,22 +459,6 @@ function goBack() {
   const cfg = SCREENS[state.screen];
   if (cfg && cfg.back) show(cfg.back);
 }
-
-// ---------------------------------------------------------------------------
-// SCREEN RENDERERS
-// ---------------------------------------------------------------------------
-// Each screen's static placeholder lives in index.html; these stubs leave it
-// in place until their task fills the screen in.
-
-function renderBids() { /* Task 6 */ }
-function renderBid() { /* Task 7 */ }
-function renderWalk() { /* Task 8 */ }
-function renderLabor() { /* Task 9 */ }
-function renderPrice() { /* Task 10 */ }
-function renderProposal() { /* Task 11 */ }
-function renderJob() { /* Task 12 */ }
-function renderSettings() { /* Task 13 */ }
-function renderReports() { /* Task 14 */ }
 
 // ---------------------------------------------------------------------------
 // BOOT
