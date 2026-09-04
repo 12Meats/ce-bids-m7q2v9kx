@@ -815,10 +815,15 @@ function walkQueuePhoto(file, bidId, areaId) {
 async function walkDrainPhotos() {
   if (walkPhotoBusy) return;
   walkPhotoBusy = true;
-  render();
   try {
     while (walkPhotoQueue.length) {
+      // Shift FIRST, then draw: the queue is what is still WAITING, and the
+      // button counts it plus the one in hand. Rendering before the shift
+      // counted the photo being compressed twice, so one photo came up as
+      // "Saving photo… (2)". The render still happens before the await, so
+      // the button answers the tap as immediately as it did.
       const next = walkPhotoQueue.shift();
+      render();
       await walkStorePhoto(next.file, next.bidId, next.areaId);
     }
   } finally {
