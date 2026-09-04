@@ -714,7 +714,35 @@ function boot() {
 
 document.addEventListener('DOMContentLoaded', boot);
 
-// TODO Task 16: register the service worker here once sw.js exists, following
-// the CE Timesheets pattern (register on load, reg.update() on visibilitychange,
-// one reload on controllerchange). Registering before the file exists would
-// only log a failed registration on every launch.
+// Service worker registration. Same pattern as CE Timesheets: this is what
+// makes the app work in a plant with no signal.
+if ('serviceWorker' in navigator) {
+  // Home-screen apps on iOS resume from the background far more often than
+  // they cold-launch, and iOS's own periodic SW update check is unreliable
+  // there. So we don't just register-and-forget: pull for updates right
+  // after registering, and again every time the app comes back to the
+  // foreground.
+  let reloadedForNewWorker = false; // guards against a reload loop
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then((reg) => {
+        reg.update().catch(() => {});
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            reg.update().catch(() => {});
+          }
+        });
+      })
+      .catch(() => {});
+  });
+
+  // When a new worker takes control, reload once to pick it up. Everything the
+  // user has committed lives in localStorage (every screen saves on change), so
+  // a reload here can only lose an in-progress, not-yet-committed field edit.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadedForNewWorker) return;
+    reloadedForNewWorker = true;
+    location.reload();
+  });
+}

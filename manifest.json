@@ -1,0 +1,9 @@
+{
+  "name": "CE Bids",
+  "short_name": "CE Bids",
+  "display": "standalone",
+  "start_url": "./",
+  "background_color": "#f8fafc",
+  "theme_color": "#041E42",
+  "icons": [{ "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }]
+}
