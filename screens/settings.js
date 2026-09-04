@@ -368,14 +368,16 @@ function buildSetCrewRow(box, c) {
 // margin — the same reason + Worker refuses one. Clear is different and is
 // left alone: on a man who already has a wage, "clear" is "leave it as it is",
 // the way it is everywhere else on this screen.
-function settingsEditWage(c) {
+// again: the keypad has just come back because a zero was typed, and the
+// reason is in the label. Not a banner: the keypad panel covers the banner
+// area, so the only feedback he can see is the one line above the digits.
+function settingsEditWage(c, again) {
   promptMoney(c.wageCents, {
-    label: (c.name || 'Worker') + ' — paid an hour',
+    label: (c.name || 'Worker') + ' — paid an hour' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null) return;
       if (!(cents > 0)) {
-        showBanner('Enter his hourly wage');
-        settingsEditWage(c);
+        settingsEditWage(c, true);
         return;
       }
       const prev = c.wageCents;
@@ -403,13 +405,16 @@ function settingsAddCrew() {
 // same thing the price screen does with a day count that cannot be zero —
 // rather than being written down as $0.00/hr. Cancel still cancels: the panel
 // closes, nothing was pushed, and there is no half-built man in the file.
-function settingsAskWage(name) {
+//
+// Why the question comes back with the reason in its own label and not on a
+// banner: the keypad panel sits over the banner area, so a banner fired while
+// it is open is a banner nobody ever sees.
+function settingsAskWage(name, again) {
   promptMoney(null, {
-    label: name + ' — paid an hour',
+    label: name + ' — paid an hour' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null || !(cents > 0)) {
-        showBanner('Enter his hourly wage');
-        settingsAskWage(name);
+        settingsAskWage(name, true);
         return;
       }
       const person = { id: Store.uid(), name, wageCents: cents, hidden: false };
@@ -681,13 +686,12 @@ function settingsAddTool() {
 // nothing is written. (A tool already on the list may go back to "no cost
 // yet" — that is what Cost new's Clear is for, and it is still a real answer
 // there.)
-function settingsAskToolCost(name) {
+function settingsAskToolCost(name, again) {
   promptMoney(null, {
-    label: name + ' — what it cost new',
+    label: name + ' — what it cost new' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null || !(cents > 0)) {
-        showBanner('Enter what it cost new');
-        settingsAskToolCost(name);
+        settingsAskToolCost(name, true);
         return;
       }
       // Store.newTool only ever refuses a blank name or a cost that isn't a
@@ -1120,7 +1124,8 @@ const SET_BACKUP_TITLE = 'CE Bids backup';
 let settingsBackupBusy = false;
 let settingsBackupPdfs = [];         // { id, bidId, at, blob } made since the last backup
 let settingsBackupPdfExtra = 0;      // how many more there were than the cap allows
-let settingsBackupQueue = null;      // Files still to be offered one at a time
+let settingsBackupQueue = null;      // { id, file } still to be offered one at a time
+let settingsBackupNextAt = null;     // what lastBackupAt becomes if this send goes through
 let settingsBackupPhotoPick = false; // the bid chips are showing
 let settingsBackupPhotos = null;     // { bidId, label, files } once its blobs are in memory
 // Two counters, not one: the PDF load and a photo load run against different
@@ -1129,12 +1134,27 @@ let settingsBackupPhotos = null;     // { bidId, label, files } once its blobs a
 // were none.
 let settingsBackupPdfToken = 0;
 let settingsBackupPhotoToken = 0;
+// Every PDF that has actually left the phone this session, by id. lastBackupAt
+// only has a day on it and the whole of that day stays pending on purpose (see
+// backupSinceMs), so without this the PDFs he just sent are still "new" the
+// second the send finishes, and the button reads "Send backup + 1 PDF" as if
+// nothing had happened. Deliberately NOT cleared by settingsResetBackup: it is
+// a record of what went, not of what the screen was showing. A reload does
+// clear it and then the day rule re-offers them, which costs an attachment,
+// and that is the side of the trade this card has always taken.
+let settingsBackupSentIds = Object.create(null);
 
 function settingsResetBackup() {
   settingsBackupBusy = false;
   settingsBackupPdfs = [];
   settingsBackupPdfExtra = 0;
+  // Dropping a half-drained queue loses nothing. A PDF that never went is
+  // still "made since the last backup" (lastBackupAt only ever moves up to the
+  // newest PDF that actually left — see backupSelection and settingsSendBackup)
+  // and it is not in settingsBackupSentIds either, so coming back to this
+  // screen offers it again.
   settingsBackupQueue = null;
+  settingsBackupNextAt = null;
   settingsBackupPhotoPick = false;
   settingsBackupPhotos = null;
   settingsBackupPdfToken += 1;
@@ -1143,32 +1163,26 @@ function settingsResetBackup() {
 
 // --- What is pending --------------------------------------------------------
 
-// Midnight of the day of the last backup, in local time. The whole day is
-// included on purpose: a PDF made an hour before he backed up would otherwise
-// fall in the gap between "already sent" and "made since". Sending one twice
-// costs an attachment; missing one costs the document.
-function settingsBackupSinceMs() {
-  const at = setS().lastBackupAt;
-  if (!at) return 0;   // never backed up: everything is pending
-  const t = new Date(at + 'T00:00:00').getTime();
-  return isFinite(t) ? t : 0;
-}
-
-// The bytes, in memory, before the Send button is drawn. Newest first and
-// capped: a share sheet handed two hundred files is a share sheet that does
-// not open, and the JSON — the actual backup — is unaffected either way.
+// The bytes, in memory, before the Send button is drawn. WHICH ones, and how
+// far the date is allowed to move afterwards, is backupSelection's decision
+// (ui.js, tested): the OLDEST capful of what is pending, so that repeated
+// backups drain a backlog instead of stranding everything behind the cap. A
+// share sheet handed two hundred files is a share sheet that does not open,
+// and the JSON — the actual backup — has every bid in it either way.
 function settingsLoadBackupPdfs() {
   const token = ++settingsBackupPdfToken;
-  const since = settingsBackupSinceMs();
+  const lastAt = setS().lastBackupAt;
   Photos.list('pdf').then((ids) => {
     if (token !== settingsBackupPdfToken) return;
-    const all = ids.map(bidPdfParse).filter((x) => x && x.at >= since).sort((a, b) => b.at - a.at);
-    const take = all.slice(0, SET_BACKUP_PDF_MAX).map((x) => ({ id: x.id, bidId: x.bidId, at: x.at, blob: null }));
+    const entries = ids.map(bidPdfParse).filter((x) => x && !settingsBackupSentIds[x.id]);
+    const sel = backupSelection(entries, lastAt, Store.todayISO(), SET_BACKUP_PDF_MAX);
+    const take = sel.send.map((x) => ({ id: x.id, bidId: x.bidId, at: x.at, blob: null }));
+    settingsBackupNextAt = sel.nextLastBackupAt;
     return Promise.all(take.map((e) => Photos.get(e.id).then((b) => { e.blob = b; }))).then(() => {
       if (token !== settingsBackupPdfToken) return;
       // A PDF whose blob has been evicted is not a PDF that can be sent.
       settingsBackupPdfs = take.filter((e) => e.blob);
-      settingsBackupPdfExtra = all.length - take.length;
+      settingsBackupPdfExtra = sel.truncated;
       if (state.screen === 'settings') render();
     });
   });
@@ -1195,8 +1209,13 @@ function settingsBackupPdfName(entry) {
   return base + '-' + entry.at + '.pdf';
 }
 
-function settingsBackupPdfFiles() {
-  return settingsBackupPdfs.map((e) => new File([e.blob], settingsBackupPdfName(e), { type: 'application/pdf' }));
+// Each file paired with the id it came from, because the queue has to be able
+// to say which PDF it just got rid of.
+function settingsBackupPdfItems() {
+  return settingsBackupPdfs.map((e) => ({
+    id: e.id,
+    file: new File([e.blob], settingsBackupPdfName(e), { type: 'application/pdf' }),
+  }));
 }
 
 // --- Sharing ----------------------------------------------------------------
@@ -1247,7 +1266,8 @@ async function settingsSendBackup() {
   if (settingsBackupBusy) return;
 
   const jsonFile = settingsBackupJsonFile();
-  const pdfFiles = settingsBackupPdfFiles();
+  const items = settingsBackupPdfItems();
+  const pdfFiles = items.map((it) => it.file);
   const all = pdfFiles.length ? [jsonFile].concat(pdfFiles) : [jsonFile];
 
   // Everything that decides WHICH share happens is settled here, synchronously,
@@ -1261,16 +1281,18 @@ async function settingsSendBackup() {
   render();
 
   let result;
+  let pdfsWentToo = false;
   if (canAll) {
     result = await settingsShareFiles(all);
+    pdfsWentToo = result === 'shared';
   } else if (canJson) {
     // iOS takes a whole set; some browsers take exactly one file. The backup
     // itself goes now and the PDFs queue up behind their own button.
     result = await settingsShareFiles([jsonFile]);
-    if (result === 'shared' && pdfFiles.length) settingsBackupQueue = pdfFiles.slice();
+    if (result === 'shared' && items.length) settingsBackupQueue = items.slice();
   } else {
     settingsDownloadFile(jsonFile);
-    if (pdfFiles.length) settingsBackupQueue = pdfFiles.slice();
+    if (items.length) settingsBackupQueue = items.slice();
     result = 'downloaded';
   }
 
@@ -1286,8 +1308,21 @@ async function settingsSendBackup() {
 
   // ONLY here. A sheet he backed out of is not a backup, and a date that says
   // otherwise turns the home screen's warning off for two weeks.
+  //
+  // How far the date is allowed to move is the whole of the "no PDF gets
+  // stranded" promise. backupSelection already stopped it at the newest PDF
+  // that fit under the cap; a queue stops it earlier still, because a queued
+  // PDF has not gone anywhere yet: the date stays on the day of the oldest of
+  // them, so every one is still pending whether he drains the queue or walks
+  // away from it. Only PDFs that really left get written down as sent.
+  let nextAt = settingsBackupNextAt || Store.todayISO();
+  if (settingsBackupQueue && settingsBackupQueue.length) {
+    nextAt = backupDayISO(settingsBackupPdfs[0].at) || nextAt;
+  }
+  if (pdfsWentToo) settingsBackupPdfs.forEach((e) => { settingsBackupSentIds[e.id] = true; });
+
   const prev = setS().lastBackupAt;
-  setS().lastBackupAt = Store.todayISO();
+  setS().lastBackupAt = nextAt;
   if (!settingsSaveAndRender(() => { setS().lastBackupAt = prev; })) return;
   settingsLoadBackupPdfs();
   showBanner(result === 'downloaded' ? 'Backup downloaded' : 'Backup sent', 'ok');
@@ -1297,10 +1332,17 @@ async function settingsSendBackup() {
 // keeps its own activation.
 function settingsSendQueuedPdf() {
   if (!settingsBackupQueue || !settingsBackupQueue.length) return;
-  const file = settingsBackupQueue[0];
+  const item = settingsBackupQueue[0];
+  const file = item.file;
   const done = () => {
+    settingsBackupSentIds[item.id] = true;
     settingsBackupQueue.shift();
-    if (!settingsBackupQueue.length) settingsBackupQueue = null;
+    if (!settingsBackupQueue.length) {
+      settingsBackupQueue = null;
+      // Drained. Ask again what is pending, so the Send button stops counting
+      // the ones that just went.
+      settingsLoadBackupPdfs();
+    }
     render();
   };
   if (!settingsCanShareFiles([file])) { settingsDownloadFile(file); done(); return; }
@@ -1353,7 +1395,7 @@ function settingsSendPhotos() {
     if (result === 'cancelled') { render(); return; }
     if (result === 'unsupported') { showBanner("Couldn't open the share sheet", 'danger'); render(); return; }
     settingsBackupPhotos = null;
-    showBanner('Photos sent', 'ok');
+    showBanner(result === 'downloaded' ? 'Photos downloaded' : 'Photos sent', 'ok');
     render();
   };
   if (!settingsCanShareFiles(files)) {
@@ -1365,14 +1407,6 @@ function settingsSendPhotos() {
 }
 
 // --- Restore ----------------------------------------------------------------
-
-// The file name is the fallback answer to "from when?": a backup whose
-// lastBackupAt is null is the first one he ever made, and its name still
-// carries the day it was made on.
-function settingsBackupDateFromName(name) {
-  const hit = /(\d{4}-\d{2}-\d{2})/.exec(String(name || ''));
-  return hit ? hit[1] : null;
-}
 
 // Store.validateImport is the ONE gate: it parses (in its own try/catch, so a
 // truncated file comes back null rather than throwing), runs the migrations for
@@ -1387,7 +1421,13 @@ function settingsRestoreFrom(file) {
       render();
       return;
     }
-    const when = data.settings.lastBackupAt || settingsBackupDateFromName(file.name);
+    // The NAME first. lastBackupAt inside the file is written after the file
+    // is built, so it carries the date of the backup BEFORE this one: a file
+    // named for September said it was from August, which is exactly the
+    // question this sentence exists to answer. The name is only wrong if
+    // somebody renamed the file, and then the date inside is the next best
+    // thing there is.
+    const when = backupDateFromName(file.name) || data.settings.lastBackupAt;
     const theirs = data.bids.length;
     const mine = state.data.bids.length;
     return confirmPanel(
@@ -1395,6 +1435,10 @@ function settingsRestoreFrom(file) {
       + (when ? fmtDate(when) : 'an unknown date') + '? '
       + 'The backup has ' + theirs + (theirs === 1 ? ' bid' : ' bids') + '. '
       + 'This phone has ' + mine + (mine === 1 ? ' bid' : ' bids') + '. '
+      // The PIN rides along in the file, so the phone he unlocks tomorrow
+      // wants the PIN that was set when the backup was made. Said here, while
+      // he can still say no, rather than at a lock screen that will not open.
+      + (data.pin != null ? "The PIN from that backup replaces this phone's PIN. " : '')
       + "This can't be undone.",
       { ok: 'Replace', danger: true }
     ).then((ok) => {
@@ -1458,8 +1502,9 @@ function buildSetBackup() {
     + 'weeks, or after a big bid.'));
 
   if (settingsBackupPdfExtra > 0) {
-    box.appendChild(inlineWarn('There are ' + (pdfCount + settingsBackupPdfExtra) + ' new PDFs. The '
-      + SET_BACKUP_PDF_MAX + ' newest go with this one. The backup file itself always has every bid.'));
+    box.appendChild(inlineWarn('There are ' + (pdfCount + settingsBackupPdfExtra) + ' new PDFs. Only the '
+      + 'oldest ' + SET_BACKUP_PDF_MAX + ' go this time. Send another backup to get the rest. '
+      + 'The backup file itself always has every bid.'));
   }
 
   if (settingsBackupQueue && settingsBackupQueue.length) {
@@ -1489,10 +1534,13 @@ function buildSetBackup() {
   // The one native input in the app. There is no other way to let somebody
   // pick a file off their own phone, so it is hidden behind a button that
   // looks like every other button on this screen.
+  // No accept filter on purpose. iOS Files hands back a JSON that arrived as a
+  // mail attachment as public.data, and an accept list greys out the one file
+  // he is trying to pick. Store.validateImport is the real gate, and it says
+  // no on a banner to anything that is not one of ours.
   const picker = document.createElement('input');
   picker.type = 'file';
   picker.id = 'backupFile';
-  picker.accept = '.json,application/json';
   picker.hidden = true;
   picker.addEventListener('change', () => {
     const f = picker.files && picker.files[0];
@@ -1539,7 +1587,8 @@ function buildSetBackupPhotos(box) {
   chips.className = 'set-chips';
   withPhotos.forEach((b) => {
     const n = bidPhotoIds(b).length;
-    chips.appendChild(chip(settingsBidLabel(b) + ' · ' + n, false, () => settingsLoadPhotos(b)));
+    chips.appendChild(chip(settingsBidLabel(b) + ' · ' + n + (n === 1 ? ' photo' : ' photos'),
+      false, () => settingsLoadPhotos(b)));
   });
   box.appendChild(chips);
   box.appendChild(textButton('Cancel', 'btn btn-block', () => { settingsBackupPhotoPick = false; render(); }));

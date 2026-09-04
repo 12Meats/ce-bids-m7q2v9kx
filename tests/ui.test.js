@@ -77,3 +77,90 @@ test('isEmailAddress wants exactly one @ with something either side', () => {
     assert.equal(isEmailAddress(v), false, JSON.stringify(v));
   });
 });
+
+// --- Backups ----------------------------------------------------------------
+// Four more that are pure and load-bearing. backupDateFromName is what the
+// restore confirm names the file's day off; backupSinceMs decides what counts
+// as "made since"; backupSelection decides which PDFs actually leave the phone
+// and how far the date is allowed to move afterwards. Every one of them fails
+// silently when it is wrong.
+
+const { backupDateFromName, backupSinceMs, backupSelection } = sandbox;
+
+// Midnight local of a plain day, the way the app reads its own dates.
+function at(iso, hour, min) {
+  return new Date(iso + 'T' + String(hour == null ? 0 : hour).padStart(2, '0')
+    + ':' + String(min == null ? 0 : min).padStart(2, '0') + ':00').getTime();
+}
+
+test('backupDateFromName reads the day out of a backup file name', () => {
+  assert.equal(backupDateFromName('ce-bids-backup-2026-09-04.json'), '2026-09-04');
+});
+
+test('backupDateFromName survives the copy the phone renamed', () => {
+  assert.equal(backupDateFromName('ce-bids-backup-2026-09-04 (1).json'), '2026-09-04');
+  assert.equal(backupDateFromName('/var/mobile/Downloads/ce-bids-backup-2026-09-04.json'), '2026-09-04');
+});
+
+test('backupDateFromName is null when there is no date to read', () => {
+  ['backup.json', 'ce-bids-backup.json', 'ce-bids-backup-09-04.json', '', null, undefined]
+    .forEach((v) => assert.equal(backupDateFromName(v), null, String(v)));
+});
+
+test('backupSinceMs is midnight of the backup day, and zero when there is no backup', () => {
+  assert.equal(backupSinceMs('2026-09-04'), at('2026-09-04'));
+  [null, undefined, '', 'nope', 42].forEach((v) => assert.equal(backupSinceMs(v), 0, String(v)));
+});
+
+test('a PDF archived the same day as the last backup is still included', () => {
+  const lastBackupAt = '2026-09-04';
+  const sameDay = { id: 'a', bidId: 'b1', at: at('2026-09-04', 9, 30) };   // hours before the backup or after it
+  const dayBefore = { id: 'b', bidId: 'b1', at: at('2026-09-03', 23, 59) };
+  const sel = backupSelection([dayBefore, sameDay], lastBackupAt, '2026-09-10', 25);
+  assert.deepEqual(sel.send.map((e) => e.id), ['a']);
+  assert.equal(sel.truncated, 0);
+  assert.equal(sel.nextLastBackupAt, '2026-09-10');
+});
+
+test('backupSelection on an empty phone sends nothing and dates the backup today', () => {
+  const sel = backupSelection([], '2026-09-01', '2026-09-04', 25);
+  assert.deepEqual(sel.send, []);
+  assert.equal(sel.truncated, 0);
+  assert.equal(sel.nextLastBackupAt, '2026-09-04');
+});
+
+test('backupSelection under the cap sends everything pending, oldest first', () => {
+  const entries = [
+    { id: 'c', bidId: 'b1', at: at('2026-09-03') },
+    { id: 'a', bidId: 'b1', at: at('2026-09-01') },
+    { id: 'b', bidId: 'b2', at: at('2026-09-02') },
+  ];
+  const sel = backupSelection(entries, null, '2026-09-04', 25);
+  assert.deepEqual(sel.send.map((e) => e.id), ['a', 'b', 'c']);
+  assert.equal(sel.truncated, 0);
+  assert.equal(sel.nextLastBackupAt, '2026-09-04');
+});
+
+test('over the cap it takes the OLDEST and only dates the backup up to the last one sent', () => {
+  // Ten days, one PDF each. A cap of four must take days 1-4 and leave 5-10
+  // pending, which only happens if the date stops at day 4.
+  const entries = [];
+  for (let i = 1; i <= 10; i += 1) {
+    entries.push({ id: 'p' + i, bidId: 'b1', at: at('2026-09-' + String(i).padStart(2, '0'), 8) });
+  }
+  const sel = backupSelection(entries.slice().reverse(), null, '2026-09-20', 4);
+  assert.deepEqual(sel.send.map((e) => e.id), ['p1', 'p2', 'p3', 'p4']);
+  assert.equal(sel.truncated, 6);
+  assert.equal(sel.nextLastBackupAt, '2026-09-04');
+
+  // The next backup picks up where that one stopped and drains the rest.
+  const next = backupSelection(entries, sel.nextLastBackupAt, '2026-09-20', 25);
+  assert.deepEqual(next.send.map((e) => e.id), ['p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']);
+  assert.equal(next.truncated, 0);
+});
+
+test('backupSelection ignores anything that is not a real archive stamp', () => {
+  const sel = backupSelection([null, { id: 'x' }, { id: 'y', at: NaN }, { id: 'z', at: at('2026-09-02') }],
+    null, '2026-09-04', 25);
+  assert.deepEqual(sel.send.map((e) => e.id), ['z']);
+});

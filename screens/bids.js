@@ -161,7 +161,10 @@ function bidsDeleteBlobs(bid) {
   Photos.list('pdf')
     .then((ids) => Photos.delMany(bidPhotoIds(bid).concat(ids.filter((x) => x.indexOf(prefix) === 0))))
     .then((ok) => {
-      if (!ok) showBanner('Bid deleted. Some of its photos are still on this phone.');
+      // The sweep takes the photos and the PDFs together, so a failure here
+      // may have left either kind behind. Naming only photos sends him looking
+      // for the wrong thing.
+      if (!ok) showBanner("Couldn't clear this bid's photos and PDFs from the phone. They take space but change nothing.");
     });
 }
 
