@@ -5,9 +5,26 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   const KEY = 'ce-bids';
 
-  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function uid() {
+    try {
+      const c = (typeof crypto !== 'undefined') ? crypto : (typeof global !== 'undefined' ? global.crypto : undefined);
+      if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+    } catch { /* fall through to the base36 fallback below */ }
+    return Math.random().toString(36).slice(2, 10);
+  }
   function todayISO() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
-  function mondayOf(iso) { const dt = new Date(iso + 'T12:00:00'); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); return dt.toISOString().slice(0, 10); }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  // Returns null for anything that isn't a valid YYYY-MM-DD date, instead of
+  // silently producing "Invalid Date" math. Composed from local
+  // getFullYear/getMonth/getDate (not toISOString, which is UTC) so this
+  // agrees with todayISO()'s local-date semantics.
+  function mondayOf(iso) {
+    if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+    const dt = new Date(iso + 'T12:00:00');
+    if (isNaN(dt.getTime())) return null;
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
 
   // -------------------------------------------------------------------------
   // Seed data
@@ -82,12 +99,15 @@
         company: { name: 'Cantu Electric LLC', person: 'Andy Cantu', phone: '(480) 329-5548', email: 'cantuelectric@cox.net',
           address: '15708 E Chandler Heights Rd, Gilbert, AZ 85298', roc: 'AZ ROC #276507', tagline: 'Licensed, bonded, and insured',
           signName: 'Andy Cantu', plainStyle: false },
-        crew: [{ id: 'c1', name: 'Shawn', wageCents: 3200 }, { id: 'c2', name: 'George', wageCents: 3000 }],
+        // hidden supports soft delete: Settings can hide a crew member/piece of
+        // equipment/clause instead of splicing it, so old bids that reference
+        // its id by reference stay valid forever.
+        crew: [{ id: 'c1', name: 'Shawn', wageCents: 3200, hidden: false }, { id: 'c2', name: 'George', wageCents: 3000, hidden: false }],
         hoursPerDay: 8, burdenPct: 25, rateCents: 6500, floorCents: 6500, marginPct: 25, markupPct: 18, consumablesPct: 3,
         truckDayCents: 9500, overheadPct: 10, cushionPct: { service: 10, project: 15 }, equipmentPct: 4, validityDays: 30,
         taxMode: 'included',
-        equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null })),
-        forgetList: SEED_FORGET.slice(), notePhrases: SEED_NOTES.slice(), clauses: SEED_CLAUSES.map((c) => ({ ...c })),
+        equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false })),
+        forgetList: SEED_FORGET.slice(), notePhrases: SEED_NOTES.slice(), clauses: SEED_CLAUSES.map((c) => ({ ...c, hidden: false })),
         nextNumber: 1, backupEmail: 'adriancantu95@gmail.com', lastBackupAt: null },
       catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, uses: 0, hidden: false })),
       customers: [], bids: [] };
@@ -97,7 +117,6 @@
   // Validation helpers
   // -------------------------------------------------------------------------
 
-  function isInt(v) { return Number.isInteger(v); }
   function isIntGte0(v) { return Number.isInteger(v) && v >= 0; }
   function isIntGte0OrNull(v) { return v === null || isIntGte0(v); }
   function isPct(v) { return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 100; }
@@ -110,7 +129,6 @@
   function isArr(v) { return Array.isArray(v); }
   function isBool(v) { return typeof v === 'boolean'; }
   function isIn(v, list) { return list.indexOf(v) !== -1; }
-  function uniq(arr) { return new Set(arr).size === arr.length; }
   function strArr(v) { return isArr(v) && v.every(isStr); }
 
   const STATUS = ['draft', 'sent', 'won', 'lost', 'complete'];
@@ -119,6 +137,34 @@
   const LOST_REASON = ['price', 'timing', 'other', 'silence'];
   const CLAUSE_GROUP = ['always', 'trench', 'site', 'hazmat', 'subs'];
   const CATALOG_CATEGORY = ['conduit', 'wire', 'boxes', 'lighting', 'gear', 'rentals'];
+  const TAX_MODE = ['included', 'added'];
+
+  // -------------------------------------------------------------------------
+  // Migration scaffold. No shape change has shipped yet (CURRENT_VERSION is
+  // still 1), but every future one lands as a MIGRATIONS[fromVersion] step
+  // instead of a rewritten validator, so old exports stay loadable forever.
+  // -------------------------------------------------------------------------
+
+  const CURRENT_VERSION = 1;
+  const MIGRATIONS = {};
+
+  // Steps the document from whatever version it claims up to CURRENT_VERSION,
+  // or returns null if that isn't possible. Refuses (never overwrites) a
+  // document from a *newer* version than this build understands — the
+  // caller's load() has already stashed the raw text before calling this, so
+  // nothing is lost by refusing.
+  function migrate(d) {
+    if (!isObj(d) || !Number.isInteger(d.version)) return null;
+    if (d.version > CURRENT_VERSION) return null;
+    let cur = d;
+    while (cur.version < CURRENT_VERSION) {
+      const step = MIGRATIONS[cur.version];
+      if (!step) return null;
+      cur = step(cur);
+      if (!isObj(cur) || !Number.isInteger(cur.version)) return null;
+    }
+    return cur;
+  }
 
   // Fail-closed validation: returns the parsed data only if every level of the
   // shape checks out; returns null for anything else. Must NEVER throw — this
@@ -127,7 +173,8 @@
     let d;
     try { d = JSON.parse(text); } catch { return null; }
     try {
-      if (!isObj(d) || d.version !== 1) return null;
+      d = migrate(d);
+      if (!d) return null;
       if (d.pin !== null && !(typeof d.pin === 'string' && /^\d{4}$/.test(d.pin))) return null;
 
       const s = d.settings;
@@ -139,7 +186,7 @@
         if (!isPct(s[k])) return null;
       }
       if (!isObj(s.cushionPct) || !isPct(s.cushionPct.service) || !isPct(s.cushionPct.project)) return null;
-      if (!isStr(s.taxMode)) return null;
+      if (!isIn(s.taxMode, TAX_MODE)) return null;
 
       const co = s.company;
       if (!isObj(co)) return null;
@@ -153,7 +200,7 @@
       for (const c of s.crew) {
         if (!isObj(c) || !isStr(c.id) || c.id === '' || crewIds.has(c.id)) return null;
         crewIds.add(c.id);
-        if (!isStr(c.name) || !isIntGte0(c.wageCents)) return null;
+        if (!isStr(c.name) || !isIntGte0(c.wageCents) || !isBool(c.hidden)) return null;
       }
 
       if (!isArr(s.equipment)) return null;
@@ -161,7 +208,7 @@
       for (const e of s.equipment) {
         if (!isObj(e) || !isStr(e.id) || e.id === '' || equipIds.has(e.id)) return null;
         equipIds.add(e.id);
-        if (!isStr(e.name) || !isIntGte0OrNull(e.costCents) || !isIntGte0OrNull(e.overrideDayCents)) return null;
+        if (!isStr(e.name) || !isIntGte0OrNull(e.costCents) || !isIntGte0OrNull(e.overrideDayCents) || !isBool(e.hidden)) return null;
       }
 
       if (!strArr(s.forgetList) || !strArr(s.notePhrases)) return null;
@@ -171,7 +218,7 @@
       for (const c of s.clauses) {
         if (!isObj(c) || !isStr(c.id) || c.id === '' || clauseIds.has(c.id)) return null;
         clauseIds.add(c.id);
-        if (!isIn(c.group, CLAUSE_GROUP) || !isStr(c.title) || !isStr(c.text)) return null;
+        if (!isIn(c.group, CLAUSE_GROUP) || !isStr(c.title) || !isStr(c.text) || !isBool(c.hidden)) return null;
       }
 
       if (!isStr(s.backupEmail)) return null;
@@ -203,10 +250,16 @@
         if (it.priceCents !== null && !isIntGte0(it.priceCents)) return false;
         return true;
       }
+      // Area ids only need to be unique *within* the array passed in — once
+      // for a bid's own top-level areas, and separately for each change
+      // order's own areas — not globally across the whole document.
       function validAreas(areas) {
         if (!isArr(areas)) return false;
+        const areaIds = new Set();
         for (const a of areas) {
-          if (!isObj(a) || !isStr(a.name)) return false;
+          if (!isObj(a) || !isStr(a.id) || a.id === '' || areaIds.has(a.id)) return false;
+          areaIds.add(a.id);
+          if (!isStr(a.name)) return false;
           if (!isArr(a.items) || !a.items.every(validAreaItem)) return false;
           if (!strArr(a.photoIds)) return false;
         }
@@ -279,19 +332,49 @@
           if (j.completedAt !== null && !isISO(j.completedAt)) return null;
         }
       }
-      if (!uniq([...crewIds]) || !uniq([...equipIds]) || !uniq([...clauseIds]) || !uniq([...catalogIds]) ||
-          !uniq([...customerIds]) || !uniq([...bidIds])) return null;
 
       return d;
     } catch { return null; }
   }
 
   // -------------------------------------------------------------------------
-  // Persistence (browser-only; guarded so Node tests never touch it)
+  // Persistence (browser-only; guarded so Node tests never touch it unless a
+  // test installs its own localStorage stub)
   // -------------------------------------------------------------------------
 
-  function load() { try { const d = validateImport(localStorage.getItem(KEY) || ''); return d || emptyData(); } catch { return emptyData(); } }
-  function save(d) { localStorage.setItem(KEY, JSON.stringify(d)); }
+  // 'corrupt' after a load() that found data but couldn't validate it (and
+  // stashed the raw text under a side key so nothing is silently lost); null
+  // otherwise, including after a load() that found nothing at all.
+  let lastLoadProblem = null;
+  function loadProblem() { return lastLoadProblem; }
+
+  function load() {
+    try {
+      const raw = (typeof localStorage !== 'undefined') && localStorage.getItem(KEY);
+      if (!raw) { lastLoadProblem = null; return emptyData(); }
+      const d = validateImport(raw);
+      if (d) { lastLoadProblem = null; return d; }
+      try { localStorage.setItem(KEY + '-corrupt-' + Date.now(), raw); } catch { /* best effort */ }
+      lastLoadProblem = 'corrupt';
+      return emptyData();
+    } catch {
+      lastLoadProblem = null;
+      return emptyData();
+    }
+  }
+
+  // Never mints an unloadable document: refuses (and never writes) anything
+  // that wouldn't itself pass validateImport on the next load. Returns a
+  // boolean instead of throwing.
+  function save(d) {
+    const json = JSON.stringify(d);
+    if (!validateImport(json)) return false;
+    try { localStorage.setItem(KEY, json); return true; } catch { return false; }
+  }
+
+  // True if `d` would survive its own validateImport round-trip. Cheap
+  // pre-flight check for UI code before it calls save().
+  function check(d) { return !!validateImport(JSON.stringify(d)); }
 
   // -------------------------------------------------------------------------
   // Helpers
@@ -305,12 +388,15 @@
   function newBid(d, { customerName, title, jobType, dateISO }) {
     const cust = findOrCreateCustomer(d, customerName); const s = d.settings;
     const jt = JOB_TYPE.indexOf(jobType) !== -1 ? jobType : 'service';
+    const detail = DETAIL.indexOf(cust.defaultDetail) !== -1 ? cust.defaultDetail : 'full';
     const b = { id: uid(), number: s.nextNumber, customerId: cust.id, title: title || '', dateISO: dateISO || todayISO(),
-      status: 'draft', detail: cust.defaultDetail || 'full', jobType: jt,
+      status: 'draft', detail, jobType: jt,
       areas: [], misc: { label: 'Supports, anchors, and hardware', cents: 0 },
       labor: { crewIds: s.crew.slice(0, 2).map((c) => c.id), days: 0, tasks: null }, rentals: [], equipment: [],
+      // No stored priceCents here: the sell price is always derived from the
+      // (rounded) rate below, never persisted as its own independent number.
       pricing: { marginPct: s.marginPct, rateCents: s.rateCents, cushionPct: s.cushionPct[jt], markupPct: s.markupPct },
-      scope: null, notes: [s.notePhrases[0]], clauseIds: [], validityDays: s.validityDays,
+      scope: null, notes: s.notePhrases.length ? [s.notePhrases[0]] : [], clauseIds: [], validityDays: s.validityDays,
       sentAt: null, savedToFilesAt: null, lostReason: null, job: null };
     s.nextNumber += 1; return b;
   }
@@ -322,8 +408,17 @@
     c.areas.forEach((a) => { a.id = uid(); a.photoIds = []; });
     d.bids.push(c); return c;
   }
-  function addCatalogItem(d, { category, name, unit }) { const p = { id: uid(), category, name, unit, lastCostCents: null, uses: 0, hidden: false }; d.catalog.push(p); return p; }
+  function addCatalogItem(d, { category, name, unit }) {
+    const cat = CATALOG_CATEGORY.indexOf(category) !== -1 ? category : 'gear';
+    const nm = String(name || '');
+    if (!nm) return null;
+    const un = String(unit || '');
+    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, uses: 0, hidden: false };
+    d.catalog.push(p); return p;
+  }
   function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
+  function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
-  return { KEY, uid, todayISO, mondayOf, emptyData, validateImport, load, save, findOrCreateCustomer, newBid, duplicateBid, addCatalogItem, recordCatalogUse };
+  return { KEY, uid, todayISO, mondayOf, emptyData, validateImport, load, save, check, loadProblem,
+    findOrCreateCustomer, newBid, duplicateBid, addCatalogItem, recordCatalogUse, numberInUse };
 });
