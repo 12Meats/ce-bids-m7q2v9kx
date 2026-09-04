@@ -500,17 +500,12 @@ function buildCategoryTiles() {
   return grid;
 }
 
-// hidden === false is a soft delete: a part he stopped carrying stays in the
-// file so old bids that reference it keep validating, but it is not offered.
+// Which parts to offer and in what order is a rule, not a rendering decision,
+// so it lives in catalog.js where it is pure and tested: hidden ones excluded,
+// rentals kept out of the material lists, search crossing categories, most-used
+// first. This screen only decides what to do with what comes back.
 function walkCatalogMatches() {
-  const needle = walkAddSearch.trim().toLowerCase();
-  const all = state.data.catalog.filter((p) => p.hidden === false);
-  const list = needle
-    ? all.filter((p) => p.name.toLowerCase().indexOf(needle) !== -1)
-    : all.filter((p) => p.category === walkAddCat);
-  // What he reaches for most, first — the order is earned from his own history
-  // rather than inherited from whatever order the seed list happened to be in.
-  return list.slice().sort((a, b) => (b.uses - a.uses) || a.name.localeCompare(b.name));
+  return Catalog.matches(state.data.catalog, { category: walkAddCat, query: walkAddSearch });
 }
 
 function buildCatalogList(bid, area, box) {
@@ -882,18 +877,18 @@ async function walkShrink(file) {
   try {
     const w0 = src.naturalWidth || src.width;
     const h0 = src.naturalHeight || src.height;
-    if (!w0 || !h0) return null;
-    const scale = Math.min(1, WALK_MAX_EDGE / Math.max(w0, h0));
-    const w = Math.max(1, Math.round(w0 * scale));
-    const h = Math.max(1, Math.round(h0 * scale));
+    // Zeros come back for anything that isn't a real size — a file that
+    // decoded into nothing is not a photo.
+    const fit = Catalog.fitWithin(w0, h0, WALK_MAX_EDGE);
+    if (!fit.w || !fit.h) return null;
 
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = fit.w;
+    canvas.height = fit.h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     try {
-      ctx.drawImage(src, 0, 0, w, h);
+      ctx.drawImage(src, 0, 0, fit.w, fit.h);
     } catch (e) {
       return null;
     }

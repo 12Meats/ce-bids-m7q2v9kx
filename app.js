@@ -4,8 +4,8 @@
 // navigation, banners, the three overlay panels, the PIN screen, and boot.
 // Screens live one-per-file in screens/*.js and register themselves; shared
 // DOM helpers live in ui.js. Depends on globals BidMath, Store, DocModel,
-// Keypad, Dates, Photos, DocGen and the ui.js helpers, all loaded before this
-// file.
+// Keypad, Dates, Catalog, Photos, DocGen and the ui.js helpers, all loaded
+// before this file.
 //
 // Sections, in order:
 //   STATE     — the single app state object and the screen registry
