@@ -315,8 +315,9 @@ function promptRentalName(catalog, prefill, done) {
 
 // What one piece of his own equipment bills at per day: the override he typed
 // in Settings, or equipmentPct of what it cost new, rounded to the nearest $5
-// (BidMath.equipmentDayRate). null when the tool has no cost on it yet — the
-// caller asks him for one rather than quietly billing $0.
+// with a $5 minimum (BidMath.equipmentDayRate), so a cheap tool never derives
+// $0.00 a day. null when the tool has no cost on it yet — the caller asks him
+// for one rather than quietly billing $0.
 function equipmentDayCents(equip, equipmentPct) {
   if (equip.overrideDayCents != null) return equip.overrideDayCents;
   return BidMath.equipmentDayRate(equip.costCents, equipmentPct);

@@ -26,6 +26,21 @@ test('equipmentDayRate: $1,000 × 4% = $40 → 4000; $900 × 4% = 36 → rounds 
   assert.strictEqual(B.equipmentDayRate(90000, 4), 3500);
   assert.strictEqual(B.equipmentDayRate(null, 4), null);
 });
+// A cheap tool is still a tool. $40 of bits at 4% is $1.60, which rounds to
+// nothing, and a $0/day line is exactly what the cost prompts on the walk and
+// the price screen were built to stop. The floor is $5 for anything that cost
+// something; a tool with no cost still has no rate at all.
+test('equipmentDayRate: a $5 minimum for any tool that cost something', () => {
+  assert.strictEqual(B.equipmentDayRate(4000, 4), 500);      // $1.60 → $5.00
+  assert.strictEqual(B.equipmentDayRate(6250, 4), 500);      // $2.50, the old round-up case → $5.00
+  assert.strictEqual(B.equipmentDayRate(12500, 4), 500);     // $5.00 exactly, floor and rounding agree
+  assert.strictEqual(B.equipmentDayRate(30000, 4), 1000);    // $12.00 → $10.00, above the floor, rounding untouched
+  assert.strictEqual(B.equipmentDayRate(100000, 4), 4000);   // $40.00, nowhere near the floor
+  assert.strictEqual(B.equipmentDayRate(1, 4), 500);         // a penny tool is still $5 a day
+  assert.strictEqual(B.equipmentDayRate(100000, 0), 500);    // 0% is a percentage, not a missing cost
+  assert.strictEqual(B.equipmentDayRate(0, 4), 0);           // free gear is free: no cost, no floor
+  assert.strictEqual(B.equipmentDayRate(null, 4), null);     // no cost yet is still no rate
+});
 test('materialCost and materialPrice (override respected, qty × rounded unit price)', () => {
   assert.strictEqual(B.materialCost(bid), 43380 + 127200 + 674);
   // 180×284 + 4×37524 + 1×700

@@ -381,9 +381,9 @@ async function priceDeleteRental(bid, x) {
 // ---------------------------------------------------------------------------
 // His own tools. He already owns the threader; billing a day of it is how it
 // pays for the next one. The day rate is equipmentPct of what the tool cost
-// new, rounded to the nearest $5 (BidMath.equipmentDayRate) unless Settings
-// carries an override — worked out in ui.js so the walk's picker and this one
-// quote the same tool at the same number.
+// new, rounded to the nearest $5 with a $5 minimum (BidMath.equipmentDayRate)
+// unless Settings carries an override — worked out in ui.js so the walk's
+// picker and this one quote the same tool at the same number.
 //
 // A tool with no cost on it has no rate, and a rate of nothing is a day billed
 // at $0. So the cost is asked for the first time it is needed and kept in

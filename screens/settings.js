@@ -585,9 +585,9 @@ function settingsCushionRow(box, s, jobType, label, captionText) {
 // EQUIPMENT
 // ---------------------------------------------------------------------------
 // His own tools. A day of one bills at equipment % of what it cost new,
-// rounded to the nearest $5, unless he has typed an override — worked out by
-// ui.js equipmentDayCents so the picker on the price screen, the walk, and
-// this list all quote the same tool at the same number.
+// rounded to the nearest $5 with a $5 minimum, unless he has typed an
+// override — worked out by ui.js equipmentDayCents so the picker on the price
+// screen, the walk, and this list all quote the same tool at the same number.
 //
 // Nothing here moves a bid: the rate is copied onto the bid line the moment
 // the tool is picked, so a cost typed today changes what the picker offers
@@ -608,7 +608,7 @@ function buildSetEquipment() {
   box.appendChild(textButton('+ Tool', 'btn btn-block mt-3', settingsAddTool));
   settingHiddenToggle(box, 'equipment', hidden.length);
   box.appendChild(caption('A day of a tool bills at ' + pctText(s.equipmentPct)
-    + ' of what it cost new, to the nearest $5, unless you set your own rate.'));
+    + ' of what it cost new, to the nearest $5, never under $5, unless you set your own rate.'));
   return box;
 }
 

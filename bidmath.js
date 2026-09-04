@@ -9,9 +9,18 @@
 
   function unitPrice(costCents, markupPct) { return r(costCents * (1 + markupPct / 100)); }
 
+  // What a day of an owned tool bills at: pct of what it cost new, to the
+  // nearest $5, with a floor of $5 for any tool that cost something. Without
+  // the floor a $40 pair of bits derives $1.60 at 4%, rounds to $0.00, and the
+  // screens hand back the very $0/day line their cost prompts exist to
+  // prevent. A tool with no cost has no rate (null); the caller asks for the
+  // cost rather than billing a day of gear at nothing. An override typed in
+  // Settings never reaches here — ui.js equipmentDayCents returns it as typed,
+  // a deliberate $0 included.
   function equipmentDayRate(costCents, pct) {
     if (costCents == null) return null;
-    return r(costCents * (pct / 100) / 500) * 500;                    // nearest $5
+    const derived = r(costCents * (pct / 100) / 500) * 500;           // nearest $5
+    return costCents > 0 ? Math.max(500, derived) : derived;          // $5 minimum
   }
 
   function items(bid) { return (bid.areas || []).flatMap((a) => a.items || []); }
