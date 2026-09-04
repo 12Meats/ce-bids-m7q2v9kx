@@ -130,11 +130,11 @@ function walkPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 // The rentals the catalog already knows about, offered as chips on the rental
 // name prompt. They are deliberately kept out of the material lists, so this is
 // the one place they are reachable — and reaching them here is on purpose.
+// Alphabetical: nothing ever records a use against a rental (the walk only
+// writes a placeholder line, and the price goes on it two screens later), so
+// the use-count key Catalog.matches sorts on first is zero for all of them.
 function walkRentalNames() {
-  return state.data.catalog
-    .filter((p) => p.hidden === false && p.category === 'rentals')
-    .slice()
-    .sort((a, b) => (b.uses - a.uses) || a.name.localeCompare(b.name))
+  return Catalog.matches(state.data.catalog, { category: 'rentals', includeRentals: true })
     .map((p) => p.name);
 }
 
@@ -351,20 +351,17 @@ async function walkDeleteArea(bid, area) {
   );
   if (!ok) { render(); return; }
 
-  // Photos first, and only carry on if they actually went: dropping the area
-  // while its photos survive strands blobs in IndexedDB that nothing will ever
-  // point at again, and he has no way to find or clear them.
-  const photosGone = await Photos.delMany(area.photoIds || []);
-  if (!photosGone) {
-    showBanner("Couldn't remove the photos — area kept", 'danger');
-    render();
-    return;
-  }
-
   const i = bid.areas.indexOf(area);
   if (i !== -1) {
+    // The bid document is the truth, so it is written first — the same order,
+    // and for the same reason, as deleting a single photo. If the blobs then
+    // refuse to go they are left behind: a file nothing points at is invisible,
+    // where an area put back by a refused save while its photos were already
+    // deleted would be a row of grey tiles he could never clear.
+    const orphans = (area.photoIds || []).slice();
     bid.areas.splice(i, 1);
     if (!persistOr(() => { bid.areas.splice(i, 0, area); })) { render(); return; }
+    Photos.delMany(orphans);
   }
   walkView = 'areas';
   walkAreaId = null;
@@ -788,14 +785,15 @@ function walkWirePhotoInput() {
     const bid = walkBid();
     const area = bid && walkCurrentArea(bid);
     if (!area) return;
-    // The area is pinned now rather than read later: the queue is drained
-    // asynchronously and he may well have walked into the next room by then.
-    files.forEach((file) => walkQueuePhoto(file, area.id));
+    // The bid AND the area are pinned now rather than read later: the queue is
+    // drained asynchronously, and by the time it gets there he may have walked
+    // into the next room — or backed out to a different bid entirely.
+    files.forEach((file) => walkQueuePhoto(file, bid.id, area.id));
   });
 }
 
-function walkQueuePhoto(file, areaId) {
-  walkPhotoQueue.push({ file, areaId });
+function walkQueuePhoto(file, bidId, areaId) {
+  walkPhotoQueue.push({ file, bidId, areaId });
   // A second photo taken while the first is still compressing used to be
   // dropped on the floor without a word. Now it waits its turn.
   if (walkPhotoBusy) { render(); return; }
@@ -809,7 +807,7 @@ async function walkDrainPhotos() {
   try {
     while (walkPhotoQueue.length) {
       const next = walkPhotoQueue.shift();
-      await walkStorePhoto(next.file, next.areaId);
+      await walkStorePhoto(next.file, next.bidId, next.areaId);
     }
   } finally {
     walkPhotoBusy = false;
@@ -817,12 +815,7 @@ async function walkDrainPhotos() {
   }
 }
 
-async function walkStorePhoto(file, areaId) {
-  const bid = walkBid();
-  // The area this photo was taken in, not whichever one is on screen now.
-  const area = bid && (bid.areas || []).find((a) => a.id === areaId);
-  if (!area) return;
-
+async function walkStorePhoto(file, bidId, areaId) {
   const blob = await walkShrink(file);
   if (!blob) { showBanner("Couldn't read that photo", 'danger'); return; }
 
@@ -832,6 +825,20 @@ async function walkStorePhoto(file, areaId) {
   // (a full phone) than localStorage is.
   const stored = await Photos.put(id, blob, 'photo');
   if (!stored) { showBanner("Photo didn't save (storage full?)", 'danger'); return; }
+
+  // Resolved here, not before the work: shrinking a photo takes long enough for
+  // the area to be deleted, or a different bid opened, while this one was still
+  // in the queue. The bid it was taken for, by id — never whatever is on screen
+  // now. A photo that has nowhere to go is said out loud rather than dropped in
+  // silence (he took it for a reason), and the blob is taken back out so it is
+  // not left behind with nothing pointing at it.
+  const bid = state.data.bids.find((b) => b.id === bidId);
+  const area = bid && (bid.areas || []).find((a) => a.id === areaId);
+  if (!area) {
+    showBanner("Photo couldn't be filed (area was removed)", 'danger');
+    Photos.del(id);
+    return;
+  }
 
   area.photoIds.push(id);
   if (!persistOr(() => {
@@ -1072,9 +1079,16 @@ function walkForgetAdd(bid, name) {
   // because Settings lets him edit this list: "Lift rental" may well become
   // "Boom lift" or "Lift / scaffold", and it still has to reach the rentals
   // side of the bid. Rental is tested first, so a row reading "equipment
-  // rental" is a rental. Renaming a row far enough (to "Scaffolding", say) does
-  // change where Add it puts it — it becomes a General line, which is the
-  // safe direction to be wrong in.
+  // rental" is a rental.
+  //
+  // 'lift' is a wide net on purpose and it does catch rows that are not
+  // rentals: "Forklift", "Lift plan" and "Lift gate" would all open the rental
+  // prompt. Both ways of being wrong are cheap and visible — he is looking at a
+  // name field with the row's own words already in it, and Cancel costs one
+  // tap. A row renamed far enough to miss both rules ("Scaffolding") makes
+  // Add it write a $0 General line instead, which stays on the bid until it is
+  // priced. Neither outcome can quietly lose money: the failure is always
+  // something he can see.
   if (key.indexOf('rental') !== -1 || key.indexOf('lift') !== -1) {
     walkSheet = null;
     walkForgetRow = null;
@@ -1147,8 +1161,16 @@ function renderWalk() {
 }
 
 // leave(): the last render before a navigation never gets a next render to
-// take its object URLs back, so the shell asks for them on the way out.
+// take its object URLs back, so the shell asks for them on the way out. The
+// token is bumped FIRST, which is what cancels the thumbnail fills still in
+// flight: one resolving after the release would hand out one more URL, with no
+// render left to revoke it.
+function walkLeave() {
+  walkRenderToken += 1;
+  walkReleasePhotoUrls();
+}
+
 registerScreen('walk', {
   id: 'screen-walk', title: 'Walkthrough', back: 'bid', tab: 'bids',
-  enter: enterWalk, leave: walkReleasePhotoUrls, render: renderWalk,
+  enter: enterWalk, leave: walkLeave, render: renderWalk,
 });
