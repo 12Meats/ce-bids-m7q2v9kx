@@ -61,6 +61,14 @@ test('hourCostRows: every line off a known settings fixture', () => {
   rows.forEach((r) => assert.ok(Number.isInteger(r.cents), r.label + ' is not integer cents'));
 });
 
+// The screen and the page both pick rows out of this list. They match on key,
+// never on the label, so rewording a line can never silently change which
+// number the Reports card quotes or which line the page draws a rule above.
+test('hourCostRows: every row carries its stable key, in order', () => {
+  assert.deepStrictEqual(DocGen.hourCostRows(settings()).map((r) => r.key),
+    ['wage', 'burden', 'truck', 'consumables', 'overhead', 'subtotal', 'profit', 'rate']);
+});
+
 test('hourCostRows: the last row is the rate, and it is the rows above it added up', () => {
   const rows = DocGen.hourCostRows(settings());
   const last = rows[rows.length - 1];

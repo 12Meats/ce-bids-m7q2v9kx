@@ -298,8 +298,18 @@ test('the hour-cost exhibit is one page', () => {
   const pdf = DocGen.hourCostPage(d.settings, 6500);
   assert.strictEqual(pdf.internal.getNumberOfPages(), 1);
   const text = allText(pdf);
+  // The footer is the two numbers the argument is actually about: what they
+  // pay him today, and what the body of the page just proved the hour has to
+  // bill. It used to print settings.rateCents under the word "Proposed",
+  // which is the default rate on a new bid and has nothing to do with this
+  // page's arithmetic — so a page whose Rate row read $77.01 finished by
+  // proposing $65.00 and handed the argument back.
+  const needed = DocGen.hourCostRows(d.settings).find((r) => r.key === 'rate').cents;
   assert.ok(text.indexOf('Current rate: ' + B.fmt(6500)) !== -1, 'the current rate is not on the exhibit');
-  assert.ok(text.indexOf(B.fmt(d.settings.rateCents)) !== -1, 'the proposed rate is not on the exhibit');
+  assert.ok(text.indexOf('What an hour has to bill: ' + B.fmt(needed)) !== -1,
+    'the footer does not quote the rate the page itself computed');
+  assert.ok(text.indexOf('Proposed:') === -1, 'the settings rate is still in the footer');
+  assert.ok(needed !== d.settings.rateCents, 'fixture is useless: the two rates happen to match');
 });
 
 test('a bare document renders rather than throwing', () => {

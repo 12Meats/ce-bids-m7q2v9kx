@@ -23,6 +23,15 @@
 // one. A percentage he has to interpret standing in a parking lot is a
 // percentage he will not use.
 //
+// AND A SENTENCE IS A CLAIM. Every line under a number here says something
+// that can be true or false, which is a harder standard than the number
+// itself: "the cushion covered them" was printed off a set-aside that is only
+// a budget, and on a job that ran over its hours that money went to the crew
+// before any surprise turned up. The builders below are pure functions of
+// plain data for exactly that reason — tests/reports.test.js pins the exact
+// words, because a wrong number gets noticed and a wrong sentence gets
+// believed.
+//
 // The estimating card needs three finished jobs before it says anything. Two
 // jobs is not a pattern, it is two jobs, and a "you run 40% over" drawn off
 // one bad week would send him into a negotiation with a wrong number.
@@ -34,53 +43,99 @@
 //   HOUR COST       — the exhibit
 //   REGISTER
 
+const REPORTS_HOURCOST_ID = 'hourcost-latest';   // one key, overwritten
+
+let reportsBusy = false;      // building or sharing the hour-cost page
+let reportsLastPdf = null;    // the last page's bytes, in hand before the tap
+let reportsToken = 0;         // a preload that lands after he has walked away
+
+// The bytes are fetched HERE, not in the Share handler. navigator.share only
+// works inside a live tap and reading a blob out of IndexedDB in the handler
+// spends that activation: the share then never resolves and never rejects and
+// the button is dead until the app reloads. Same rule, same reason, as the
+// proposal screen's previous-PDF list.
+function reportsLoadLastPage() {
+  const token = ++reportsToken;
+  Photos.get(REPORTS_HOURCOST_ID).then((blob) => {
+    if (token !== reportsToken) return;
+    reportsLastPdf = blob || null;
+    if (state.screen === 'reports') render();
+  }, (err) => { console.error('Could not read the last hour-cost page', err); });
+}
+
+function enterReports() {
+  reportsBusy = false;
+  reportsLastPdf = null;
+  reportsLoadLastPage();
+}
+
+// The preload is the only thing in flight; a fill that lands after he has
+// walked away would re-render whatever screen he walked to.
+function reportsLeave() { reportsToken += 1; }
+
+function reportsSettings() { return state.data.settings; }
+
 // ---------------------------------------------------------------------------
 // SENTENCES
 // ---------------------------------------------------------------------------
 
-let reportsBusy = false;     // building the hour-cost page
-
-function enterReports() { reportsBusy = false; }
-
-function reportsSettings() { return state.data.settings; }
-
-// '16% over' / '4% under' / 'right on the number'. The stat's headline value,
-// off a percentage where 100 means the estimate was exactly right.
-function reportsOverUnder(pct) {
-  if (pct === null) return null;
-  const off = Math.round(Math.abs(pct - 100) * 10) / 10;
-  if (off === 0) return 'right on the number';
-  return pctText(off) + (pct > 100 ? ' over' : ' under');
+// '16% over' / '4% under' / 'right on the number'. Off the SIGNED figure
+// BidMath already worked out — positive is over — so the screen turns a sign
+// into a word and does no arithmetic of its own.
+function reportsOffText(offPct) {
+  if (offPct === null || offPct === undefined) return null;
+  if (offPct === 0) return 'right on the number';
+  return pctText(Math.abs(offPct)) + (offPct > 0 ? ' over' : ' under');
 }
 
-// 'Over 5 jobs you bid 320 hrs and worked 372. That is 16% over: add it to
-// your cushion.' Everything after the first sentence only appears when there
-// is something to say about it.
+// 'Over 5 jobs you bid 320 hrs and worked 372. That is 16.3% over.'
+// Bid hours, because that is the number the customer was handed. What he
+// FIGURED before the cushion went on is the caption underneath.
 function reportsHoursSays(hours) {
   const head = 'Over ' + hours.count + ' job' + (hours.count === 1 ? '' : 's')
     + ' you bid ' + numText(hours.bidHours) + ' hrs and worked ' + numText(hours.actualHours) + '.';
-  if (hours.pct === null) return head + ' No hours were bid, so there is nothing to compare.';
-  const off = reportsOverUnder(hours.pct);
-  if (off === 'right on the number') return head + ' That is right on the number.';
-  if (hours.pct > 100) return head + ' That is ' + off + ': add it to your cushion.';
-  return head + ' That is ' + off + ', so the cushion is holding.';
+  if (hours.offBidPct === null) return head + ' No hours were bid, so there is nothing to compare.';
+  return head + ' That is ' + reportsOffText(hours.offBidPct) + '.';
 }
 
+// The gut against the cushion — the two things a "16% over" hides. A shop can
+// figure every job 20% light and still come in under the bid because the
+// cushion carried it, and the fix for that shop is not the fix for one whose
+// estimates are honest and whose cushion is too thin. Null only when nothing
+// was figured at all.
+function reportsGutSays(hours) {
+  if (hours.offRealPct === null) return null;
+  const gut = hours.offRealPct === 0
+    ? 'so your own number was right'
+    : 'so your own number was ' + pctText(Math.abs(hours.offRealPct))
+      + (hours.offRealPct > 0 ? ' light' : ' generous');
+  return 'Before the cushion you figured ' + numText(hours.realHours) + ' hrs and worked '
+    + numText(hours.actualHours) + ', ' + gut + '; the cushion '
+    + (hours.actualHours <= hours.bidHours ? 'covered it.' : 'did not cover it.');
+}
+
+// What was set aside is a BUDGET. What was left over is money, and only money
+// pays for a surprise: hours nobody worked, at the rate that job was sold at.
+// coveredBy is BidMath's verdict on which of those two the shop actually had.
 function reportsSurprisesSays(sur) {
   if (sur.setAsideCents <= 0) {
     return sur.surpriseCents > 0
       ? 'Nothing was set aside on these jobs, and surprises came to ' + moneyText(sur.surpriseCents) + '.'
       : 'Nothing set aside, nothing unexpected.';
   }
-  const line = 'Surprises used ' + pctText(sur.pct) + ' of what was set aside. Set aside '
-    + moneyText(sur.setAsideCents) + ', spent ' + moneyText(sur.surpriseCents) + '.';
-  return line + (sur.pct > 100 ? ' The cushion did not cover them.' : ' The cushion covered them.');
+  const head = 'Set aside ' + moneyText(sur.setAsideCents) + ', spent ' + moneyText(sur.surpriseCents);
+  if (sur.coveredBy === 'cushion') return head + '. The unused hours covered them.';
+  if (sur.coveredBy === 'hours') return head + ', but the hours ran over, so that money was already gone.';
+  return head + '. The hours left ' + moneyText(sur.unspentCents) + ' unused, not enough to cover them.';
 }
 
+// The lost clause only appears when there is one reason to name. BidMath hands
+// back a null topReason on a tie, because "he loses on price" drawn off two
+// losses against two other losses sends him to fix the wrong thing.
 function reportsWinSays(win) {
   if (win.heard === 0) return 'Nothing won or lost yet.';
   const line = 'Won ' + win.won + ' of ' + win.heard + ' you heard back on.';
-  if (win.topReason === null) return line + (win.lost ? ' No reason on the ones you lost.' : '');
+  if (win.topReason === null) return line + (win.lost ? ' No one reason stands out on the ones you lost.' : '');
   return line + ' Lost ' + win.reasons[win.topReason] + ' on ' + lostReasonLabel(win.topReason).toLowerCase() + '.';
 }
 
@@ -94,10 +149,33 @@ function reportsLostBreakdown(win) {
   return parts.length ? parts.join('  ·  ') : null;
 }
 
+// DOLLAR-WEIGHTED, not the average of the percentages. A $90,000 project at 6%
+// and a $400 service call at 40% average to 23%, and 23% is a number this shop
+// has never seen: the money says 6.1%. The mean is worth knowing too, so it
+// gets the caption underneath.
 function reportsMarginSays(margin) {
-  const line = 'Bid at ' + pctText(margin.startPct) + ', made ' + pctText(margin.nowPct) + '.';
-  if (marginOnTrack(margin.startPct, margin.nowPct)) return line + ' The jobs came in the way you sold them.';
+  const line = 'Bid at ' + pctText(margin.weightedStartPct) + ', made ' + pctText(margin.weightedNowPct) + '.';
+  if (marginOnTrack(margin.weightedStartPct, margin.weightedNowPct)) return line + ' The jobs came in the way you sold them.';
   return line + ' Surprises and extra hours took the rest.';
+}
+
+function reportsMarginMeanSays(margin) {
+  return 'Job by job the average was ' + pctText(margin.meanStartPct) + ' → ' + pctText(margin.meanNowPct) + '.';
+}
+
+// The gate, with the count in it. 'Finish 3 jobs' on its own reads as a wall;
+// '2 done, 1 to go' reads as a thing that is nearly finished.
+function reportsGateSays(stats) {
+  const left = Math.max(0, stats.needed - stats.completedCount);
+  return 'Finish ' + stats.needed + ' jobs to see estimating stats. '
+    + stats.completedCount + ' done, ' + left + ' to go.';
+}
+
+// '2 jobs · figured 96, bid 111, worked 115'. All three numbers, because two
+// of them is where the argument always is.
+function reportsTypeSays(t) {
+  return t.count + ' job' + (t.count === 1 ? '' : 's') + '  ·  figured ' + numText(t.realHours)
+    + ', bid ' + numText(t.bidHours) + ', worked ' + numText(t.actualHours);
 }
 
 // ---------------------------------------------------------------------------
@@ -111,12 +189,19 @@ function reportsMarginSays(margin) {
 // The heading names the stat and the row's own label names what the number IS,
 // so nothing is said twice and the value stays short enough to sit on one line
 // at the size it is set in.
-function reportsStat(box, heading, label, value, pct, says) {
+//
+// pct null means NO BAR, and that is a judgement, not an omission. A bar reads
+// as "fuller is worse" on hours and on surprises, where 100% is the line you
+// were not supposed to cross. On win rate and on margin fuller is BETTER, and
+// the same shape meaning the opposite thing on the same card is worse than no
+// shape at all.
+function reportsStat(box, heading, label, value, pct, says, cls) {
   const wrap = document.createElement('div');
   wrap.className = 'rep-stat';
   wrap.appendChild(fieldLabel(heading));
   const line = row(label, value);
   line.classList.add('rep-headline');
+  if (cls) line.classList.add(cls);
   wrap.appendChild(line);
   if (pct !== null) wrap.appendChild(barMeter(pct));
   const p = document.createElement('p');
@@ -133,23 +218,27 @@ function buildEstimatingCard(stats) {
   const box = card('Estimating');
 
   if (!stats.ready) {
-    box.appendChild(emptyNote('Complete ' + stats.needed + ' jobs to see estimating stats.'));
-    box.appendChild(caption(stats.completedCount + ' of ' + stats.needed + ' done so far.'));
+    box.appendChild(emptyNote(reportsGateSays(stats)));
     return box;
   }
 
   // --- Bid vs actual hours ---
+  const over = stats.hours.offBidPct !== null && stats.hours.offBidPct > 0;
   const hoursWrap = reportsStat(box, 'Bid vs actual hours', 'All jobs',
-    reportsOverUnder(stats.hours.pct) || '—', stats.hours.pct, reportsHoursSays(stats.hours));
+    reportsOffText(stats.hours.offBidPct) || '—', stats.hours.pct,
+    reportsHoursSays(stats.hours), over ? 'rep-bad' : null);
+  const gut = reportsGutSays(stats.hours);
+  if (gut) hoursWrap.appendChild(caption(gut));
   // The same reading split by the two kinds of work he does. A shop can be
   // dead on its projects and 30% over on service calls, and the average of
   // those two is a number that describes neither of them.
   Object.keys(REPORTS_TYPE_LABELS).forEach((key) => {
     const t = stats.byType[key];
     if (!t || t.count === 0) return;
-    hoursWrap.appendChild(row(REPORTS_TYPE_LABELS[key], reportsOverUnder(t.pct) || '—'));
-    hoursWrap.appendChild(caption(t.count + ' job' + (t.count === 1 ? '' : 's') + ', '
-      + numText(t.bidHours) + ' bid / ' + numText(t.actualHours) + ' worked'));
+    const line = row(REPORTS_TYPE_LABELS[key], reportsOffText(t.offBidPct) || '—');
+    if (t.offBidPct !== null && t.offBidPct > 0) line.classList.add('rep-bad');
+    hoursWrap.appendChild(line);
+    hoursWrap.appendChild(caption(reportsTypeSays(t)));
   });
 
   // --- Surprises ---
@@ -157,32 +246,19 @@ function buildEstimatingCard(stats) {
     stats.surprises.pct === null ? '—' : pctText(stats.surprises.pct),
     stats.surprises.pct, reportsSurprisesSays(stats.surprises));
 
-  // --- Win rate ---
+  // --- Win rate --- no bar: a full bar here is a good thing, and on the two
+  // stats above it is a bad one.
   const winWrap = reportsStat(box, 'Win rate', 'Won',
-    stats.win.pct === null ? '—' : pctText(stats.win.pct), stats.win.pct, reportsWinSays(stats.win));
+    stats.win.pct === null ? '—' : pctText(stats.win.pct), null, reportsWinSays(stats.win));
   const lost = reportsLostBreakdown(stats.win);
   if (lost) winWrap.appendChild(caption(lost));
 
   // --- Margin realized ---
-  // Two bars, not one: what he sold the work at, and what it came in at. The
-  // gap between them is the answer, and a single number cannot show a gap.
-  const marginWrap = document.createElement('div');
-  marginWrap.className = 'rep-stat';
-  marginWrap.appendChild(fieldLabel('Margin realized'));
-  const pair = document.createElement('div');
-  pair.className = 'rep-pair';
-  pair.appendChild(row('Bid at', pctText(stats.margin.startPct)));
-  pair.appendChild(barMeter(stats.margin.startPct));
-  const made = row('Made', pctText(stats.margin.nowPct));
-  made.classList.add(marginOnTrack(stats.margin.startPct, stats.margin.nowPct) ? 'rep-good' : 'rep-bad');
-  pair.appendChild(made);
-  pair.appendChild(barMeter(stats.margin.nowPct));
-  marginWrap.appendChild(pair);
-  const says = document.createElement('p');
-  says.className = 'rep-says';
-  says.textContent = reportsMarginSays(stats.margin);
-  marginWrap.appendChild(says);
-  box.appendChild(marginWrap);
+  const onTrack = marginOnTrack(stats.margin.weightedStartPct, stats.margin.weightedNowPct);
+  const marginWrap = reportsStat(box, 'Margin realized', 'Made',
+    pctText(stats.margin.weightedNowPct), null, reportsMarginSays(stats.margin),
+    onTrack ? 'rep-good' : 'rep-bad');
+  marginWrap.appendChild(caption(reportsMarginMeanSays(stats.margin)));
 
   return box;
 }
@@ -226,6 +302,12 @@ function buildCompletedCard(stats) {
 // under. Nothing is awaited before the share: the page is built synchronously
 // (it has no logo to load), and the archive write is started and checked
 // afterwards, where a failure is a banner rather than a hung button.
+//
+// ONE KEY, OVERWRITTEN. A proposal is a record — which document went to which
+// customer on which day — so those are kept per bid and listed. This page is
+// not a record of anything; it is the current settings printed. Keeping one
+// per tap filled the phone with dated copies of the same page, and the only
+// one worth re-sharing was always the newest.
 function reportsMakeHourCost() {
   if (reportsBusy) return;
   const settings = reportsSettings();
@@ -250,7 +332,8 @@ function reportsMakeHourCost() {
       // Kept on the phone the way a proposal is, so a page he made in the
       // truck is still there when he walks into the meeting. Started, not
       // waited on: the share sheet needs this tap.
-      const stored = Photos.put('hourcost-' + Date.now(), pdfBlob, 'pdf');
+      const stored = Photos.put(REPORTS_HOURCOST_ID, pdfBlob, 'pdf');
+      reportsLastPdf = pdfBlob;
       DocGen.share(pdfBlob, 'What an hour costs.pdf').then((result) => {
         reportsBusy = false;
         if (result === 'downloaded') showBanner('Page downloaded', 'ok');
@@ -269,6 +352,22 @@ function reportsMakeHourCost() {
   });
 }
 
+// The bytes are already in hand (reportsLoadLastPage), so DocGen.share is the
+// first thing this waits on and the tap's activation survives.
+async function reportsReshareHourCost() {
+  if (reportsBusy || !reportsLastPdf) return;
+  reportsBusy = true;
+  render();
+  try {
+    await DocGen.share(reportsLastPdf, 'What an hour costs.pdf');
+  } catch (err) {
+    console.error('Could not re-share the hour-cost page', err);
+    showBanner("Couldn't open the share sheet", 'danger');
+  }
+  reportsBusy = false;
+  render();
+}
+
 // The company's own name, without the LLC the page itself also drops, so the
 // caption and the exhibit's headline are talking about the same shop.
 function reportsShopName(settings) {
@@ -278,9 +377,10 @@ function reportsShopName(settings) {
 
 // The page's own answer, on the glass, off the same function that prints it —
 // so he can check the number without making the PDF, and the card can never
-// quote a rate the exhibit does not.
-function reportsHourCostCents(settings, startsWith) {
-  const hit = DocGen.hourCostRows(settings).find((r) => r.label.indexOf(startsWith) === 0);
+// quote a rate the exhibit does not. Matched on the row's key, never on its
+// label: the labels are wording, and wording gets reworded.
+function reportsHourCostCents(settings, key) {
+  const hit = DocGen.hourCostRows(settings).find((r) => r.key === key);
   return hit ? hit.cents : NaN;
 }
 
@@ -290,11 +390,11 @@ function buildHourCostCard() {
   box.appendChild(caption('One page that shows what an hour of ' + reportsShopName(settings)
     + ' really costs. For the rate conversation.'));
 
-  const line = row('An hour costs', moneyText(reportsHourCostCents(settings, 'Subtotal')) + ' all in');
+  const line = row('An hour costs', moneyText(reportsHourCostCents(settings, 'subtotal')) + ' all in');
   line.classList.add('rep-headline');
   box.appendChild(line);
   box.appendChild(caption('Wage, payroll taxes, truck, consumables and overhead, before any profit.'));
-  box.appendChild(row('Has to bill at', moneyText(reportsHourCostCents(settings, 'Rate'))));
+  box.appendChild(row('Has to bill at', moneyText(reportsHourCostCents(settings, 'rate'))));
   box.appendChild(caption('At the ' + pctText(settings.marginPct) + ' margin in Settings. Your rate there is '
     + moneyText(settings.rateCents) + '.'));
 
@@ -305,6 +405,21 @@ function buildHourCostCard() {
     btn.setAttribute('aria-busy', 'true');
   }
   box.appendChild(btn);
+
+  // The page he already made, one tap from the share sheet again — the
+  // meeting is usually not the same trip as the making of it.
+  if (reportsLastPdf) {
+    const last = document.createElement('div');
+    last.className = 'prop-pdf';
+    const when = document.createElement('span');
+    when.className = 'prop-pdf-when';
+    when.textContent = 'Last page';
+    last.appendChild(when);
+    const share = textButton('Share', 'btn', () => reportsReshareHourCost());
+    if (reportsBusy) share.disabled = true;
+    last.appendChild(share);
+    box.appendChild(last);
+  }
   return box;
 }
 
@@ -326,4 +441,4 @@ function renderReports() {
   host.appendChild(buildHourCostCard());
 }
 
-registerScreen('reports', { id: 'screen-reports', title: 'Reports', back: 'settings', tab: 'settings', enter: enterReports, render: renderReports });
+registerScreen('reports', { id: 'screen-reports', title: 'Reports', back: 'settings', tab: 'settings', enter: enterReports, leave: reportsLeave, render: renderReports });

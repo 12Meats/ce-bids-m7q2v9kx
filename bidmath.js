@@ -308,6 +308,10 @@
       hoursPct: bidHours > 0 ? actualHours / bidHours * 100 : 0,
       setAsideCents, surpriseCents, changeOrderCents, priceCents,
       trueCostCents, overrunCents, actualCostCents,
+      // The rate the job was sold at, carried out so a reading over many jobs
+      // can put each one's unused hours back into money at ITS OWN rate rather
+      // than at whatever the settings say today.
+      rateCents: rate,
       marginStartPct: marginPctOf(priceCents, trueCostCents),
       marginNowPct: marginPctOf(priceCents, actualCostCents),
       loadedWageCents,
@@ -345,7 +349,19 @@
 
   function mean(total, count) { return count > 0 ? total / count : null; }
 
-  function emptyHours() { return { count: 0, bidHours: 0, actualHours: 0, pct: null }; }
+  // realHours is the hours he FIGURED before the cushion was added. Carrying it
+  // alongside bidHours is what lets the screen tell the two failures apart: a
+  // gut number that was light, and a cushion that was too thin to cover it.
+  function emptyHours() {
+    return { count: 0, bidHours: 0, realHours: 0, actualHours: 0, pct: null, offBidPct: null, offRealPct: null };
+  }
+
+  // How far off an estimate was, signed, positive = over, one decimal — the
+  // form the sentence uses. null when there is nothing to be off from: a job
+  // with no hours planned is not "0% over", it is not a reading at all.
+  function offPct(actual, planned) {
+    return planned > 0 ? Math.round((actual / planned * 100 - 100) * 10) / 10 : null;
+  }
 
   // The newest finished job first. completedAt is the day the door closed;
   // dateISO stands in for a job whose status was set some other way (an
@@ -365,22 +381,45 @@
 
     const hours = emptyHours();
     const byType = { service: emptyHours(), project: emptyHours() };
-    let setAsideCents = 0, surpriseCents = 0, startTotal = 0, nowTotal = 0;
+    let setAsideCents = 0, surpriseCents = 0, unspentCents = 0, startTotal = 0, nowTotal = 0;
+    let priceTotal = 0, trueCostTotal = 0, actualCostTotal = 0;
 
     for (const j of jobs) {
       const a = j.actuals;
       hours.count += 1;
       hours.bidHours += a.bidHours;
+      hours.realHours += a.realHours;
       hours.actualHours += a.actualHours;
       const t = byType[j.bid.jobType];
-      if (t) { t.count += 1; t.bidHours += a.bidHours; t.actualHours += a.actualHours; }
+      if (t) {
+        t.count += 1;
+        t.bidHours += a.bidHours;
+        t.realHours += a.realHours;
+        t.actualHours += a.actualHours;
+      }
       setAsideCents += a.setAsideCents;
       surpriseCents += a.surpriseCents;
+      // THE CUSHION IN MONEY THAT ACTUALLY EXISTS. setAside is the cushion as
+      // budgeted; these are the quoted hours nobody worked, at the rate that
+      // job was sold at, which is the only place cushion dollars can come
+      // from. A job that ran over its bid hours contributes nothing — that
+      // money was spent on the crew before any surprise turned up.
+      unspentCents += r(Math.max(0, a.bidHours - a.actualHours) * a.rateCents);
       startTotal += a.marginStartPct;
       nowTotal += a.marginNowPct;
+      priceTotal += a.priceCents;
+      trueCostTotal += a.trueCostCents;
+      actualCostTotal += a.actualCostCents;
     }
     hours.pct = ratioPct(hours.actualHours, hours.bidHours);
-    for (const key of Object.keys(byType)) byType[key].pct = ratioPct(byType[key].actualHours, byType[key].bidHours);
+    hours.offBidPct = offPct(hours.actualHours, hours.bidHours);
+    hours.offRealPct = offPct(hours.actualHours, hours.realHours);
+    for (const key of Object.keys(byType)) {
+      const t = byType[key];
+      t.pct = ratioPct(t.actualHours, t.bidHours);
+      t.offBidPct = offPct(t.actualHours, t.bidHours);
+      t.offRealPct = offPct(t.actualHours, t.realHours);
+    }
 
     // Won counts the jobs he is still working as well as the ones he finished:
     // a won bid is a bid he won, and waiting for it to be complete would read
@@ -393,12 +432,16 @@
       const k = STATS_LOST_REASONS.indexOf(b.lostReason) !== -1 ? b.lostReason : 'none';
       reasons[k] += 1;
     });
-    // The reason he loses most, ties broken by the order above rather than by
-    // whichever bid happened to be entered first.
-    let topReason = null;
+    // The reason he loses most — and only when there IS one. Two reasons level
+    // on the same count is not "he loses on price", it is two reasons, and
+    // naming either of them would send him to fix the wrong thing. A tie is
+    // no answer, so the screen's clause disappears instead.
+    let topCount = 0, topTies = 0, topReason = null;
     STATS_LOST_REASONS.forEach((k) => {
-      if (reasons[k] > 0 && (topReason === null || reasons[k] > reasons[topReason])) topReason = k;
+      if (reasons[k] > topCount) { topCount = reasons[k]; topTies = 1; topReason = k; }
+      else if (reasons[k] > 0 && reasons[k] === topCount) { topTies += 1; }
     });
+    if (topTies !== 1) topReason = null;
     const heard = won + lostBids.length;
 
     return {
@@ -408,9 +451,30 @@
       jobs,
       hours,
       byType,
-      surprises: { setAsideCents, surpriseCents, pct: ratioPct(surpriseCents, setAsideCents) },
+      // coveredBy is the honest verdict the percentage alone cannot give:
+      //   'cushion'  the unused hours were worth more than the surprises
+      //   'hours'    nothing was left unused, so there was no money to cover
+      //              them with, whatever the budget said
+      //   'neither'  something was left, but not enough
+      surprises: {
+        setAsideCents,
+        surpriseCents,
+        unspentCents,
+        pct: ratioPct(surpriseCents, setAsideCents),
+        coveredBy: surpriseCents <= unspentCents ? 'cushion' : (unspentCents === 0 ? 'hours' : 'neither'),
+      },
       win: { won, lost: lostBids.length, heard, pct: ratioPct(won, heard), reasons, topReason },
-      margin: { startPct: mean(startTotal, jobs.length), nowPct: mean(nowTotal, jobs.length) },
+      // Two readings of the same jobs. The weighted pair is the shop's actual
+      // margin over the period (all the money in, all the money out); the mean
+      // pair is the typical JOB, where a $400 service call counts as much as a
+      // $90,000 project. The screen headlines the weighted one, because that
+      // is the one that has to match the bank.
+      margin: {
+        meanStartPct: mean(startTotal, jobs.length),
+        meanNowPct: mean(nowTotal, jobs.length),
+        weightedStartPct: priceTotal > 0 ? marginPctOf(priceTotal, trueCostTotal) : null,
+        weightedNowPct: priceTotal > 0 ? marginPctOf(priceTotal, actualCostTotal) : null,
+      },
     };
   }
 

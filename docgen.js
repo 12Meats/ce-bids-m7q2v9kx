@@ -761,18 +761,33 @@
     const m = Math.min(num(s.marginPct), 99.9) / 100;
     const rate = r(subtotal / (1 - m));
 
+    // Every row carries a stable `key`. The labels are wording, and wording is
+    // the thing most likely to be reworded; a caller that finds its number by
+    // reading 'Subtotal' off the front of a label breaks silently the day that
+    // label reads 'Cost per hour' instead.
     return [
-      { label: 'Wage', cents: wage, note: crew.length > 1 ? 'average of ' + crew.length + ' men on the payroll' : 'hourly wage' },
-      { label: 'Payroll taxes & comp', cents: burden, note: num(s.burdenPct) + '% of the wage' },
-      { label: 'Truck & fuel', cents: truck, note: money(num(s.truckDayCents)) + ' a day, spread over ' + hpd + ' working hours' },
-      { label: 'Consumables & small tools', cents: consumables, note: num(s.consumablesPct) + '% of a $2,000 material job, over 32 hours' },
-      { label: 'Overhead', cents: overhead, note: num(s.overheadPct) + '% of the four lines above' },
-      { label: 'Subtotal (cost per hour)', cents: subtotal, note: 'what the hour costs before any profit' },
-      { label: 'Fair profit', cents: rate - subtotal, note: num(s.marginPct) + '% margin' },
-      { label: 'Rate', cents: rate, note: 'what the hour has to bill at' },
+      { key: 'wage', label: 'Wage', cents: wage, note: crew.length > 1 ? 'average of ' + crew.length + ' men on the payroll' : 'hourly wage' },
+      { key: 'burden', label: 'Payroll taxes & comp', cents: burden, note: num(s.burdenPct) + '% of the wage' },
+      { key: 'truck', label: 'Truck & fuel', cents: truck, note: money(num(s.truckDayCents)) + ' a day, spread over ' + hpd + ' working hours' },
+      { key: 'consumables', label: 'Consumables & small tools', cents: consumables, note: num(s.consumablesPct) + '% of a $2,000 material job, over 32 hours' },
+      { key: 'overhead', label: 'Overhead', cents: overhead, note: num(s.overheadPct) + '% of the four lines above' },
+      { key: 'subtotal', label: 'Subtotal (cost per hour)', cents: subtotal, note: 'what the hour costs before any profit' },
+      { key: 'profit', label: 'Fair profit', cents: rate - subtotal, note: num(s.marginPct) + '% margin' },
+      { key: 'rate', label: 'Rate', cents: rate, note: 'what the hour has to bill at' },
     ];
   }
 
+  // hourCostPage(settings, currentRateCents) — the exhibit.
+  //
+  // currentRateCents is the rate THEY PAY HIM TODAY, typed on the way in; it
+  // is the only number on the page that does not come out of the settings, and
+  // it is there to sit beside the one number the whole page exists to produce:
+  // the Rate row, what an hour has to bill to carry its own costs. The footer
+  // prints exactly those two. It used to print settings.rateCents as well,
+  // under the word "Proposed", which was the rate field on the bid screen and
+  // had nothing to do with this page's arithmetic — so a page whose own body
+  // said $77.01 finished by proposing $65.00, and the argument was lost in
+  // the footer.
   function hourCostPage(settings, currentRateCents) {
     const pdf = newPdf();
     const rows = hourCostRows(settings);
@@ -799,9 +814,9 @@
 
     const amountX = PAGE_W - M;
     rows.forEach((row) => {
-      const heavy = row.label === 'Rate' || row.label.indexOf('Subtotal') === 0;
+      const heavy = row.key === 'rate' || row.key === 'subtotal';
       if (heavy) {
-        setDraw(pdf, BLACK, heavy && row.label === 'Rate' ? 1.2 : 0.8);
+        setDraw(pdf, BLACK, row.key === 'rate' ? 1.2 : 0.8);
         pdf.line(M, y - 12, amountX, y - 12);
       }
       setFont(pdf, heavy ? 11 : 10, heavy ? 'bold' : 'normal', INK);
@@ -822,8 +837,8 @@
     y += 18;
     setFont(pdf, 11, 'bold', INK);
     const cur = money(currentRateCents);
-    const proposed = money((settings || {}).rateCents);
-    pdf.text('Current rate: ' + cur + '  ·  Proposed: ' + proposed, M, y);
+    const needed = money((rows.find((x) => x.key === 'rate') || {}).cents);
+    pdf.text('Current rate: ' + cur + '  ·  What an hour has to bill: ' + needed, M, y);
     y += 20;
 
     setFont(pdf, 8.5, 'normal', MUTED);
