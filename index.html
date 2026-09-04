@@ -831,23 +831,38 @@
       background: var(--color-warn-bg);
       color: var(--color-warn-text);
     }
-    /* A fact about the line, shaped like a chip so it sits in the same row —
-       disabled, because there is nothing to press. */
+    /* A fact about the line, shaped like a chip so it sits in the same row.
+       A <span>, not a disabled button: there is nothing to press, and it must
+       not read as a control that refuses every tap. */
+    .chip-fact { display: inline-flex; align-items: center; }
     .chip-flat { border-style: dashed; color: var(--color-text-muted); }
     .chip-more { min-width: 56px; padding: 0 14px; font-size: 1.1rem; }
     .chip:disabled { opacity: .55; }
-    /* ...but a chip that is only a label should not look broken. */
-    .chip-flat:disabled { opacity: 1; }
 
-    /* A row that reaches past this bid. Same treatment as the labor screen's
-       hours-per-day: accent colored, because it opens a question first. */
-    .price-settings-row .row-value { color: var(--color-accent); }
+    /* A row that reaches past this bid. Color alone is a hint, and a hint is
+       not a warning — so the reach is also written on the row, in words. */
+    .price-settings-row .row-value { color: var(--color-accent); font-weight: 700; }
+    .price-tag {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      white-space: nowrap;
+      background: rgba(4, 30, 66, 0.1);
+      color: var(--color-accent);
+    }
     .price-truecost { font-size: 1.2rem; }
     .price-truecost .row-label, .price-truecost .row-value { font-weight: 800; color: var(--color-text); }
 
     /* The three handles, at the size of the answer they give. */
     .price-handles .row-value { font-size: var(--font-xl); font-weight: 800; }
-    .price-row-off .row-label, .price-row-off .row-value { opacity: .45; }
+    /* Off means "you can't move this yet", not "you can't read this": the
+       label and the tap affordance go quiet, the money stays fully legible —
+       it is still the price of the job. */
+    .price-row-off .row-label { opacity: .45; }
     .price-pills { display: flex; gap: var(--space-1); margin: var(--space-1) 0 var(--space-2); }
     .price-pills .chip { flex: 1 1 0; min-width: 0; padding: 0 8px; }
 

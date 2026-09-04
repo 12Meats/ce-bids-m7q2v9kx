@@ -174,7 +174,11 @@ function laborDaysRow(label, holder) {
     promptNumber(holder.days, {
       label: 'Days on the job',
       allowDecimal: true,
-      maxDigits: 5,
+      // Quarter and half days are real; a third decimal is a fat-fingered tap.
+      maxDecimals: 2,
+      // Characters, not digits — the cap counts the decimal point too, and
+      // "365.25" is six of them.
+      maxChars: 6,
       done: (v) => {
         if (v === null) return;
         if (v > LABOR_MAX_DAYS) {

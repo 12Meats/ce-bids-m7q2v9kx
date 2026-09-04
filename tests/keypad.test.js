@@ -38,15 +38,37 @@ test('the decimal point is inert when the caller does not allow one', () => {
   assert.strictEqual(b.value(), 15);
 });
 
-test('the buffer is capped at maxDigits (12 by default)', () => {
+test('the buffer is capped at maxChars — characters, not digits (12 by default)', () => {
   const b = type('123456789012345');
   assert.strictEqual(b.text(), '123456789012');
   assert.strictEqual(b.text().length, 12);
   assert.strictEqual(b.value(), 123456789012);
 
-  const short = K.createBuffer({ allowDecimal: true, maxDigits: 3 });
+  const short = K.createBuffer({ allowDecimal: true, maxChars: 3 });
   '9999'.split('').forEach((k) => short.press(k));
   assert.strictEqual(short.text(), '999');
+});
+
+// The rename from maxDigits to maxChars is this test: a cap of 3 on a field
+// that allows one decimal does NOT buy three digits, because the point spends
+// one of them. A percentage keypad capped at 3 swallowed the tenths its caller
+// had explicitly allowed, and the option's old name is what made that look
+// right in review.
+test('maxChars counts the decimal point, so a decimal field needs room for it', () => {
+  const tight = K.createBuffer({ allowDecimal: true, maxDecimals: 1, maxChars: 3 });
+  '22.5'.split('').forEach((k) => tight.press(k));
+  assert.strictEqual(tight.text(), '22.');
+  assert.strictEqual(tight.value(), 22);
+
+  const roomy = K.createBuffer({ allowDecimal: true, maxDecimals: 1, maxChars: 5 });
+  '22.5'.split('').forEach((k) => roomy.press(k));
+  assert.strictEqual(roomy.text(), '22.5');
+  assert.strictEqual(roomy.value(), 22.5);
+
+  // and five is exactly enough for the largest percentage the app accepts
+  const full = K.createBuffer({ allowDecimal: true, maxDecimals: 1, maxChars: 5 });
+  '100.0'.split('').forEach((k) => full.press(k));
+  assert.strictEqual(full.text(), '100.0');
 });
 
 test('backspace removes one character at a time and stops at empty', () => {
@@ -126,7 +148,7 @@ test('a full buffer has no room for the decimal point either', () => {
   assert.strictEqual(b.text(), '123456789012');
 
   // one under the cap: the point fits, and then nothing more does
-  const c = K.createBuffer({ allowDecimal: true, maxDigits: 4 });
+  const c = K.createBuffer({ allowDecimal: true, maxChars: 4 });
   '123'.split('').forEach((k) => c.press(k));
   c.press('.');
   assert.strictEqual(c.text(), '123.');

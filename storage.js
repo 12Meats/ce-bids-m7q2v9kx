@@ -401,6 +401,17 @@
       rentals: [], equipment: [],
       // No stored priceCents here: the sell price is always derived from the
       // (rounded) rate below, never persisted as its own independent number.
+      //
+      // marginPct is a SNAPSHOT of the margin at the last handle move, kept so
+      // the field a bid was created with survives a round trip — it is NOT a
+      // live figure. Every cost-side edit after that move (a rental, a change
+      // to overhead, another day of labor) changes the real margin and leaves
+      // this number exactly where it was. The live margin is always
+      //
+      //     BidMath.solve(stack, 'rate', pricing.rateCents).marginPct
+      //
+      // which is what the price screen displays. Reports must compute it that
+      // way and never read this field.
       pricing: { marginPct: s.marginPct, rateCents: s.rateCents, cushionPct: s.cushionPct[jt], markupPct: s.markupPct },
       scope: null, notes: s.notePhrases.length ? [s.notePhrases[0]] : [], clauseIds: [], validityDays: s.validityDays,
       sentAt: null, savedToFilesAt: null, lostReason: null, job: null };

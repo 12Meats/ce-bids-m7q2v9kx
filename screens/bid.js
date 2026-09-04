@@ -221,7 +221,7 @@ function renderBidHeader(bid, host) {
     promptNumber(null, {
       label: 'Date — type 915 for Sep 15, or 91526',
       // Six digits is the whole vocabulary; a seventh is a fat-fingered tap.
-      maxDigits: 6,
+      maxChars: 6,
       // The panel would otherwise say "was not set" for a date that is always
       // set; show the day it currently reads, in the form he reads it in.
       wasText: 'was ' + fmtDate(cur.dateISO),

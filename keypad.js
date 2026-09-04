@@ -8,7 +8,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // createBuffer({ allowDecimal, maxDigits, maxDecimals }) -> { press, backspace, clear, text, value }
+  // createBuffer({ allowDecimal, maxChars, maxDecimals }) -> { press, backspace, clear, text, value }
   //
   // press(key) takes '0'-'9' or '.'; anything else is ignored.
   // text() is the raw string under the big digits.
@@ -17,9 +17,12 @@
   function createBuffer(opts) {
     opts = opts || {};
     const allowDecimal = !!opts.allowDecimal;
-    // Counts every character in the buffer, decimal point included. Twelve is
-    // far past any real bid figure and well inside float-safe integer range.
-    const maxDigits = typeof opts.maxDigits === 'number' ? opts.maxDigits : 12;
+    // Counts every CHARACTER in the buffer, decimal point included — which is
+    // why it is not called maxDigits. A cap of 3 on a decimal field allows
+    // "22." and then refuses the 5, which is how a percentage keypad once
+    // silently ate the tenths a caller had explicitly allowed. Twelve is far
+    // past any real bid figure and well inside float-safe integer range.
+    const maxChars = typeof opts.maxChars === 'number' ? opts.maxChars : 12;
     // Digits allowed after the point. Money passes 2: a third decimal is
     // always a fat-fingered tap, and refusing it at the key is honest, where
     // rounding it away later would silently change what the owner typed.
@@ -40,12 +43,12 @@
         if (!allowDecimal || buf.indexOf('.') !== -1) return;
         // The point is a character like any other: a full buffer has no room
         // for it either.
-        if (buf.length >= maxDigits) return;
+        if (buf.length >= maxChars) return;
         buf = buf === '' ? '0.' : buf + '.';
         return;
       }
       if (typeof key !== 'string' || key.length !== 1 || key < '0' || key > '9') return;
-      if (buf.length >= maxDigits) return;
+      if (buf.length >= maxChars) return;
       if (decimalsTyped() >= maxDecimals) return;
       // A leading zero is a placeholder, not a digit: tapping 0 then 5 means 5.
       // ('0.' is untouched by this — it has a decimal point in it.)

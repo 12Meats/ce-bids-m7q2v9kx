@@ -141,7 +141,7 @@ function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.op
 
 // --- Number keypad ---------------------------------------------------------
 
-// promptNumber(current, { label, allowDecimal, maxDigits, maxDecimals, wasText, done })
+// promptNumber(current, { label, allowDecimal, maxChars, maxDecimals, wasText, done })
 // current: the existing value (Number) or null — shown as "was 12" but never
 // preloaded into the buffer: retyping beats editing on a phone. wasText
 // overrides that line for callers that format their own (see promptMoney).
@@ -153,7 +153,7 @@ function promptNumber(current, opts) {
 
   const allowDecimal = !!opts.allowDecimal;
   keypadCtx.open = true;
-  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal, maxDigits: opts.maxDigits, maxDecimals: opts.maxDecimals });
+  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal, maxChars: opts.maxChars, maxDecimals: opts.maxDecimals });
   keypadCtx.done = typeof opts.done === 'function' ? opts.done : null;
 
   el('keypadLabel').textContent = opts.label || '';

@@ -59,18 +59,23 @@ const PRICE_MARGIN_PILLS = [15, 20, 25, 30];
 const PRICE_MAX_PCT = 100;
 // Keys a percentage may take, decimal point included — "100.0" is five.
 const PRICE_PCT_KEYS = 5;
+// Keys a day count may take: "365.25" is six.
+const PRICE_DAY_KEYS = 6;
 // A year on one line. Not a real limit on the work, a limit on the typo.
 const PRICE_MAX_DAYS = 365;
 const PRICE_TOP_ITEMS = 3;
 
 let priceMenu = null;      // the rental/equipment line showing its Delete row
 let pricePicker = false;   // true while the tool picker is up
-let priceRounded = null;   // the price solve() actually made, after a typed one it had to round
+// Why the price on screen is not the price he typed:
+//   { kind: 'rounded' | 'floored', priceCents, fixedPrice }
+// Two different pieces of news, and they must not wear each other's words.
+let priceWhy = null;
 
 function priceClearTransient() {
   priceMenu = null;
   pricePicker = false;
-  priceRounded = null;
+  priceWhy = null;
 }
 
 // The screen's enter hook. show('price', id) opens that bid; show('price') —
@@ -94,7 +99,7 @@ function pricePlural(n, one, many) { return numText(n) + ' ' + (n === 1 ? one : 
 // typed number, and leaving it under a figure that has since moved would be a
 // sentence about nothing.
 function priceSave(revert) {
-  priceRounded = null;
+  priceWhy = null;
   return persistOr(revert);
 }
 
@@ -130,7 +135,11 @@ function pricePromptPct(current, label, node, apply) {
     label,
     allowDecimal: true,
     maxDecimals: 1,
-    maxDigits: PRICE_PCT_KEYS,
+    maxChars: PRICE_PCT_KEYS,
+    // The panel's own "was 22.5" drops the sign that makes it a percentage,
+    // and would print a solved margin's raw float when the current value is
+    // one (24.99871…). pctText is what the row itself says.
+    wasText: 'was ' + pctText(current),
     done: (v) => {
       if (v === null) return;
       if (v > PRICE_MAX_PCT) {
@@ -143,20 +152,50 @@ function pricePromptPct(current, label, node, apply) {
   });
 }
 
-// A day count he types, for a rental or a piece of equipment. Same shape as
-// the labor screen's: zero is not a rental, and a year is a typo.
-function pricePromptDays(current, node, apply) {
+// Every day count on this screen — a rental's, a tool's, and the two asked
+// while one is being added — comes through here. It was three copies of the
+// same two guards, which is three places for them to drift apart.
+//
+// node is what to shake, when there is something on the glass to shake: the
+// chip he tapped. Mid-flow there is nothing yet (the line does not exist until
+// the last panel closes), so the banner carries the refusal on its own.
+function pricePromptDays(current, label, node, apply) {
   promptNumber(current, {
-    label: 'How many days?',
+    label,
     allowDecimal: true,
-    maxDigits: 5,
+    // Quarter and half days are real; a third decimal is a fat-fingered tap,
+    // and refusing it at the key beats rounding it away afterwards.
+    maxDecimals: 2,
+    maxChars: PRICE_DAY_KEYS,
     done: (v) => {
       if (v === null) return;
-      if (!(v > 0)) { showBanner('A day count has to be more than zero'); shake(node); return; }
-      if (v > PRICE_MAX_DAYS) { showBanner('That is more than a year — check the number of days'); shake(node); return; }
+      if (!(v > 0)) { showBanner('A day count has to be more than zero'); if (node) shake(node); return; }
+      if (v > PRICE_MAX_DAYS) {
+        showBanner('That is more than a year — check the number of days');
+        if (node) shake(node);
+        return;
+      }
       apply(v);
     },
   });
+}
+
+// A chip that is its own tap target and its own shake target, so a rejected
+// number is refused where he typed it.
+function priceDaysChip(days, apply) {
+  const c = chip(pricePlural(days, 'day', 'days'), false,
+    () => pricePromptDays(days, 'How many days?', c, apply));
+  return c;
+}
+
+// A fact shaped like a chip so it sits in the same row — a span, not a
+// disabled button: there is nothing here to press, and a control that refuses
+// every tap is a worse answer than something that never looked like one.
+function priceFactChip(text, extraClass) {
+  const node = document.createElement('span');
+  node.className = 'chip chip-fact' + (extraClass ? ' ' + extraClass : '');
+  node.textContent = text;
+  return node;
 }
 
 // A line on this screen is a name and its money, with the small controls
@@ -192,6 +231,16 @@ function priceLine(name, valueText, onTapMain) {
 // The ⋯ that opens one line's Delete row. Deliberately not a swipe and not a
 // long-press: both are invisible, and this list is short enough that a button
 // costs nothing.
+// A row that reaches past this bid says so in words, not only in color: the
+// accent on the value is a hint, and a hint is not a warning.
+function priceAllBidsTag(line) {
+  const tag = document.createElement('span');
+  tag.className = 'price-tag';
+  tag.textContent = 'all bids';
+  (line.querySelector('.row-label') || line).appendChild(tag);
+  return line;
+}
+
 function priceMoreChip(line) {
   const c = chip('⋯', priceMenu === line, () => {
     priceMenu = priceMenu === line ? null : line;
@@ -250,7 +299,7 @@ function buildRentalLine(bid, x, markup) {
     });
   });
 
-  line.sub.appendChild(pricePromptDaysChip(x.days, (v) => {
+  line.sub.appendChild(priceDaysChip(x.days, (v) => {
     const prev = x.days;
     x.days = v;
     priceSave(() => { x.days = prev; });
@@ -279,39 +328,24 @@ function buildRentalLine(bid, x, markup) {
   return line;
 }
 
-// The days chip both lists use. The chip is its own tap target and its own
-// shake target, so a rejected number is refused where he typed it.
-function pricePromptDaysChip(days, apply) {
-  const c = chip(pricePlural(days, 'day', 'days'), false, () => pricePromptDays(days, c, apply));
-  return c;
-}
-
 // Name, then days, then dollars — one question per panel, in the order he
 // would say them out loud. The naming step is the walk's step, from ui.js, so
 // the chips he gets here are the chips he got standing in the plant.
 function priceAddRental(bid) {
   promptRentalName(state.data.catalog, '', (name) => {
-    promptNumber(1, {
-      label: name + ' — how many days?',
-      allowDecimal: true,
-      maxDigits: 5,
-      done: (days) => {
-        if (days === null) return;
-        if (!(days > 0)) { showBanner('A day count has to be more than zero'); return; }
-        if (days > PRICE_MAX_DAYS) { showBanner('That is more than a year — check the number of days'); return; }
-        promptMoney(null, {
-          label: name + ' — what it costs you',
-          done: (cents) => {
-            const rental = { name, days, cents: cents === null ? 0 : cents, markup: false };
-            bid.rentals.push(rental);
-            priceSave(() => {
-              const i = bid.rentals.indexOf(rental);
-              if (i !== -1) bid.rentals.splice(i, 1);
-            });
-            render();
-          },
-        });
-      },
+    pricePromptDays(1, name + ' — how many days?', null, (days) => {
+      promptMoney(null, {
+        label: name + ' — what it costs you',
+        done: (cents) => {
+          const rental = { name, days, cents: cents === null ? 0 : cents, markup: false };
+          bid.rentals.push(rental);
+          priceSave(() => {
+            const i = bid.rentals.indexOf(rental);
+            if (i !== -1) bid.rentals.splice(i, 1);
+          });
+          render();
+        },
+      });
     });
   });
 }
@@ -373,7 +407,7 @@ function buildEquipment(bid) {
 function buildEquipmentLine(bid, x) {
   const line = priceLine(x.name || 'Equipment', moneyText(BidMath.equipmentLine(x)), null);
 
-  line.sub.appendChild(pricePromptDaysChip(x.days, (v) => {
+  line.sub.appendChild(priceDaysChip(x.days, (v) => {
     const prev = x.days;
     x.days = v;
     priceSave(() => { x.days = prev; });
@@ -381,10 +415,7 @@ function buildEquipmentLine(bid, x) {
   }));
 
   if (x.dayCents > 0) {
-    const rate = chip(moneyText(x.dayCents) + '/day', false, null);
-    rate.disabled = true;                 // a fact about the tool, not a control
-    rate.classList.add('chip-flat');
-    line.sub.appendChild(rate);
+    line.sub.appendChild(priceFactChip(moneyText(x.dayCents) + '/day', 'chip-flat'));
   } else {
     line.sub.appendChild(buildEquipmentRateChip(x));
   }
@@ -398,21 +429,26 @@ function buildEquipmentLine(bid, x) {
 }
 
 // A line the walk left behind carries dayCents 0 — it recorded that the
-// threader is going on this job, not what a day of it is worth. Three ways
-// that gets fixed, all one tap, and all of them yellow so an unpriced line
-// can't be mistaken for a priced one:
+// threader is going on this job, not what a day of it is worth. Two ways that
+// gets fixed, both one tap, and both yellow so an unpriced line can't be
+// mistaken for a priced one:
 //
 //   the tool has a rate      — apply it
 //   the tool has no cost yet — ask what it cost new, then apply what that makes
-//   there is no tool at all  — a line whose tool was deleted out of Settings,
-//                              or was never one: the day rate goes straight on
-//                              the line, because there is nowhere else to put it
+//
+// There is no third branch for a line with no tool behind it: Store.save
+// refuses the whole document over an equipmentId Settings doesn't have, so
+// such a line can never be loaded, and nothing in the app writes the null the
+// validator does allow. The guard below is a statement of that, not a feature
+// — it says what is wrong instead of offering to price a tool that isn't there.
 function buildEquipmentRateChip(x) {
   const s = priceSettings();
   const tool = x.equipmentId ? s.equipment.find((e) => e.id === x.equipmentId) : null;
-  const rate = tool ? equipmentDayCents(tool, s.equipmentPct) : null;
+  if (!tool) return priceFactChip('no tool on this line', 'chip-warn');
 
-  if (tool && rate > 0) {
+  const rate = equipmentDayCents(tool, s.equipmentPct);
+
+  if (rate > 0) {
     const c = chip('tap to apply ' + moneyText(rate) + '/day', false, () => {
       const prev = x.dayCents;
       x.dayCents = rate;
@@ -423,37 +459,20 @@ function buildEquipmentRateChip(x) {
     return c;
   }
 
-  if (tool) {
-    const c = chip('tap to set a day rate', false, () => {
-      promptMoney(tool.costCents, {
-        label: 'What does a ' + (tool.name || x.name) + ' cost new?',
-        done: (cents) => {
-          if (cents === null || !(cents > 0)) return;
-          const prevCost = tool.costCents;
-          const prevDay = x.dayCents;
-          tool.costCents = cents;
-          const made = equipmentDayCents(tool, s.equipmentPct);
-          x.dayCents = made == null ? 0 : made;
-          // One save for both halves: the tool's cost and the line's rate are
-          // one answer to one question, and half of it landing on disk would
-          // leave a tool priced and a line still at $0.
-          priceSave(() => { tool.costCents = prevCost; x.dayCents = prevDay; });
-          render();
-        },
-      });
-    });
-    c.classList.add('chip-warn');
-    return c;
-  }
-
   const c = chip('tap to set a day rate', false, () => {
-    promptMoney(x.dayCents, {
-      label: (x.name || 'Equipment') + ' — rate a day',
+    promptMoney(tool.costCents, {
+      label: 'What does a ' + (tool.name || x.name) + ' cost new?',
       done: (cents) => {
-        if (cents === null) return;
-        const prev = x.dayCents;
-        x.dayCents = cents;
-        priceSave(() => { x.dayCents = prev; });
+        if (cents === null || !(cents > 0)) return;
+        const prevCost = tool.costCents;
+        const prevDay = x.dayCents;
+        tool.costCents = cents;
+        const made = equipmentDayCents(tool, s.equipmentPct);
+        x.dayCents = made == null ? 0 : made;
+        // One save for both halves: the tool's cost and the line's rate are
+        // one answer to one question, and half of it landing on disk would
+        // leave a tool priced and a line still at $0.
+        priceSave(() => { tool.costCents = prevCost; x.dayCents = prevDay; });
         render();
       },
     });
@@ -484,23 +503,16 @@ function pricePickEquipment(bid, equip) {
 }
 
 function priceEquipmentDays(bid, equip, dayCents) {
-  promptNumber(1, {
-    label: (equip.name || 'Equipment') + ' at ' + moneyText(dayCents) + ' a day — how many days?',
-    allowDecimal: true,
-    maxDigits: 5,
-    done: (days) => {
-      if (days === null) return;
-      if (!(days > 0)) { showBanner('A day count has to be more than zero'); return; }
-      if (days > PRICE_MAX_DAYS) { showBanner('That is more than a year — check the number of days'); return; }
-      const eq = { equipmentId: equip.id, name: equip.name, days, dayCents };
-      bid.equipment.push(eq);
-      if (!priceSave(() => {
-        const i = bid.equipment.indexOf(eq);
-        if (i !== -1) bid.equipment.splice(i, 1);
-      })) { render(); return; }
-      pricePicker = false;
-      render();
-    },
+  const label = (equip.name || 'Equipment') + ' at ' + moneyText(dayCents) + ' a day — how many days?';
+  pricePromptDays(1, label, null, (days) => {
+    const eq = { equipmentId: equip.id, name: equip.name, days, dayCents };
+    bid.equipment.push(eq);
+    if (!priceSave(() => {
+      const i = bid.equipment.indexOf(eq);
+      if (i !== -1) bid.equipment.splice(i, 1);
+    })) { render(); return; }
+    pricePicker = false;
+    render();
   });
 }
 
@@ -561,7 +573,7 @@ function priceSettingsPctRow(label, value, current, keypadLabel, what, apply) {
     pricePromptPct(current, keypadLabel, line, apply);
   });
   line.classList.add('price-settings-row');
-  return line;
+  return priceAllBidsTag(line);
 }
 
 function buildCostStack(bid, stack, markup) {
@@ -615,7 +627,7 @@ function buildCostStack(bid, stack, markup) {
     });
   });
   truck.classList.add('price-settings-row');
-  box.appendChild(truck);
+  box.appendChild(priceAllBidsTag(truck));
   box.appendChild(caption(moneyText(s.truckDayCents) + ' a day. The days come from the Labor screen.'));
 
   box.appendChild(priceSettingsPctRow(
@@ -689,14 +701,35 @@ function priceApply(bid, handle, value) {
   const prevRate = bid.pricing.rateCents;
   const prevMargin = bid.pricing.marginPct;
   bid.pricing.rateCents = out.rateCents;
+  // bid.pricing.marginPct is a SNAPSHOT of the margin at this handle move, not
+  // a live figure: any cost-side edit afterwards (a rental, overhead, another
+  // hour of labor) moves the real margin and leaves this number where it was.
+  // The live margin is always BidMath.solve(stack, 'rate', rateCents).marginPct
+  // — which is what this screen displays. Reports must compute it the same way
+  // and never read this field.
   bid.pricing.marginPct = out.marginPct;
 
   if (!persistOr(() => { bid.pricing.rateCents = prevRate; bid.pricing.marginPct = prevMargin; })) {
-    priceRounded = null;
+    priceWhy = null;
     render();
     return;
   }
-  priceRounded = (handle === 'price' && out.priceCents !== value) ? out.priceCents : null;
+
+  // Why the price he is about to look at is not the price he typed. There are
+  // two reasons and they are not the same news:
+  //
+  //   rounded — the rate landed on whole cents an hour and the price was
+  //             re-derived from it. A few cents either way, nothing to decide.
+  //   floored — he typed less than the materials, rentals and equipment cost.
+  //             solve() clamps the labor rate to $0 rather than going negative,
+  //             so the price came back at the fixed cost and the difference is
+  //             not rounding — it is the screen refusing to quote a job at a
+  //             loss without saying so.
+  //
+  // Calling the second one "rounded" would be a lie about a much bigger number.
+  priceWhy = (handle === 'price' && out.priceCents !== value)
+    ? { kind: out.rateCents > 0 ? 'rounded' : 'floored', priceCents: out.priceCents, fixedPrice: stack.fixedPrice }
+    : null;
   render();
 }
 
@@ -710,7 +743,8 @@ function buildHandles(bid, stack, solved) {
       label: 'Margin %',
       allowDecimal: true,
       maxDecimals: 1,
-      maxDigits: PRICE_PCT_KEYS,
+      maxChars: PRICE_PCT_KEYS,
+      wasText: 'was ' + pctText(solved.marginPct),
       done: (v) => {
         if (v === null) return;
         // solve() clamps at 99.9% rather than dividing by zero. Say so, then
@@ -752,8 +786,13 @@ function buildHandles(bid, stack, solved) {
 
   if (off) {
     box.appendChild(caption('Add labor first — the handles need hours to work with.'));
-  } else if (priceRounded !== null) {
-    box.appendChild(caption('Rounded to whole cents per hour: ' + moneyText(priceRounded) + '.'));
+  } else if (priceWhy && priceWhy.kind === 'floored') {
+    const note = inlineWarn('Your materials, rentals, and equipment alone come to '
+      + moneyText(priceWhy.fixedPrice)
+      + '. A price under that means paying to work, so the labor rate is $0/hr.');
+    box.appendChild(note);
+  } else if (priceWhy) {
+    box.appendChild(caption('Rounded to whole cents per hour: ' + moneyText(priceWhy.priceCents) + '.'));
   }
 
   return box;
