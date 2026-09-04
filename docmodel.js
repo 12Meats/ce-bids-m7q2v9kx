@@ -197,6 +197,13 @@
 
     const baseDoc = {
       level, header, meta, terms, clauses, totalCents, fileName: fileName(bid, data),
+      // Full prints his past bids' tail: Subtotal, then the tax line, then the
+      // total. The subtotal is the sum of the priced rows BEFORE the tax line,
+      // which is the same number totalCents already holds — tax is always
+      // folded into material pricing, so taxLine is 0 and no second sum is
+      // worth keeping honest. Summary and Scope have no tax line, so they have
+      // nothing for a subtotal to sit above either.
+      subtotalCents: level === 'full' ? totalCents : null,
       taxLine: level === 'full' ? 0 : null,
       signatures: { left: `Accepted by (${cust})`, right: s.company.name, signName: s.company.signName },
     };

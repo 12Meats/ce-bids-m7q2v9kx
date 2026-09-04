@@ -284,6 +284,29 @@ test('taxLine: 0 on full, null on summary and scope', () => {
   assert.strictEqual(D.build(b, d, 'summary').taxLine, null);
   assert.strictEqual(D.build(b, d, 'scope').taxLine, null);
 });
+// The Subtotal line his past bids print. Tax is always folded into material
+// pricing, so the subtotal is the total: what makes this worth asserting is
+// that the two stay equal, and that the levels with no tax line have no
+// subtotal to sit above it.
+test('subtotalCents: on full it equals totalCents with taxLine 0, and it is absent on summary and scope', () => {
+  const { d, b } = fixture();
+  const full = D.build(b, d, 'full');
+  assert.strictEqual(full.taxLine, 0);
+  assert.ok(full.subtotalCents > 0, 'the full-level subtotal is not a real number');
+  assert.strictEqual(full.subtotalCents, full.totalCents);
+  assert.strictEqual(D.build(b, d, 'summary').subtotalCents, null);
+  assert.strictEqual(D.build(b, d, 'scope').subtotalCents, null);
+});
+test('subtotalCents follows the total when a change order is added, and the total is unchanged across levels', () => {
+  const { d, b } = fixture();
+  const before = D.build(b, d, 'full');
+  const co = { id: 'co1', name: 'Add a receptacle', areas: [], labor: { crewIds: ['c1'], days: 1, tasks: null } };
+  b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [co], completedAt: null };
+  const after = D.build(b, d, 'full');
+  assert.ok(after.totalCents > before.totalCents, 'the change order did not move the total');
+  assert.strictEqual(after.subtotalCents, after.totalCents);
+  ['full', 'summary', 'scope'].forEach((l) => assert.strictEqual(D.build(b, d, l).totalCents, after.totalCents, l));
+});
 test('signatures: left names the customer, right and signName come from settings.company', () => {
   const { d, b } = fixture();
   const doc = D.build(b, d, 'full');

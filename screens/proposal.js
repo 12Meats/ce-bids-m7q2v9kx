@@ -255,7 +255,14 @@ function buildPreview(bid, doc) {
       paper.appendChild(h);
       sec.rows.forEach((r) => paper.appendChild(proposalPreviewLine(r.desc, r.qtyText, r.unitCents, r.cents)));
     });
-    if (doc.taxLine === 0) paper.appendChild(proposalPreviewLine('Tax', '', null, 0));
+    // The paper's tail, in the paper's order: Subtotal, tax, then the total
+    // block below.
+    if (doc.taxLine === 0) {
+      if (doc.subtotalCents != null) {
+        paper.appendChild(proposalPreviewLine('Subtotal', '', null, doc.subtotalCents));
+      }
+      paper.appendChild(proposalPreviewLine('Tax', '', null, 0));
+    }
   } else if (doc.level === 'summary') {
     const h = document.createElement('div');
     h.className = 'prop-sec-title';

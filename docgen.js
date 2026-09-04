@@ -367,21 +367,36 @@
 
   // keepWith lists the body rows that must not be the last row on a page: a
   // section band ("Labor") stranded from its first line item reads as a
-  // section with nothing in it, and Tax without the Total under it reads as
-  // the end of the bid.
+  // section with nothing in it, and Subtotal or Tax without the row under it
+  // reads as the end of the bid.
   function table(ctx, doc, head, body, columnStyles, topRuleRow, keepWith) {
     const pdf = ctx.pdf;
     const accent = accentOf(doc);
     const keep = (keepWith || []).filter((i) => i >= 0 && i < body.length - 1);
     const heights = keep.length ? measureRows(accent, head, body, columnStyles) : null;
-    const held = (i) => !!(heights && keep.indexOf(i) !== -1 && heights[i] && heights[i + 1]);
+    // A RUN of held rows binds as one block, not as a chain of pairs: Subtotal
+    // holds Tax and Tax holds Total, so Subtotal's claim has to cover all
+    // three or the page can still break under it. heldHeight returns the
+    // height of the whole run starting at i (0 when the row is not held).
+    const heldHeight = (i) => {
+      if (!heights || keep.indexOf(i) === -1 || !heights[i]) return 0;
+      let total = heights[i];
+      let j = i;
+      for (;;) {
+        if (!heights[j + 1]) return 0;
+        total += heights[j + 1];
+        if (keep.indexOf(j + 1) === -1) return total;
+        j += 1;
+      }
+    };
+    const held = (i) => heldHeight(i) > 0;
     const opts = tableOpts(accent, head, body, columnStyles, ctx.y);
 
     // Claim the next row's height as well, so autoTable's own does-this-fit
     // test is answered for the pair and it breaks the page BEFORE the band.
     opts.didParseCell = (data) => {
       if (data.section !== 'body' || !held(data.row.index)) return;
-      data.cell.styles.minCellHeight = heights[data.row.index] + heights[data.row.index + 1];
+      data.cell.styles.minCellHeight = heldHeight(data.row.index);
     };
     // The claim was for that test only. Give the row its own height back before
     // a fill, a rule or a line of text is drawn from it.
@@ -406,8 +421,9 @@
     ctx.y = pdf.lastAutoTable.finalY + 16;
   }
 
-  // Full detail — his UDA format. One table, a styled band per section, the
-  // $0.00 tax line the plant's accounts payable expects to see, then the total.
+  // Full detail — his UDA format. One table, a styled band per section, then
+  // the tail his past bids print: a Subtotal, the $0.00 tax line the plant's
+  // accounts payable expects to see, and the total.
   function drawFull(ctx, doc) {
     // Optional here, and only ever his own words (DocModel drafts no scope at
     // this level). It sits above the table for the same reason it does on
@@ -430,6 +446,10 @@
       ]));
     });
     if (doc.taxLine === 0) {
+      if (doc.subtotalCents != null) {
+        keepWith.push(body.length);
+        body.push([{ content: 'Subtotal', colSpan: 3, styles: { halign: 'right' } }, money(doc.subtotalCents)]);
+      }
       keepWith.push(body.length);
       body.push([{ content: 'Tax', colSpan: 3, styles: { halign: 'right' } }, money(0)]);
     }

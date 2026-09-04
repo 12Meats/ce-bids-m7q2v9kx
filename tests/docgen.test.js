@@ -180,18 +180,26 @@ test('full level with an explicit scope renders, and the scope lands above the l
   assert.ok(table !== -1 && head < table, 'the scope printed under the line items');
 });
 
-test('1 to 40 items: no section band is ever the last row on its page', () => {
+test('1 to 40 items: no section band is ever the last row on its page, and Subtotal / Tax / Total stay together', () => {
   for (let n = 1; n <= 40; n += 1) {
     const rows = tableRows(docFor(n, 'full', { rentals: true }));
     assert.ok(rows.length > 1, n + ' items: the priced table drew no rows');
     rows.forEach((row, i) => {
-      if (!row.band && row.text !== 'Tax') return;
+      if (!row.band && row.text !== 'Subtotal' && row.text !== 'Tax') return;
       const next = rows[i + 1];
       assert.ok(next, n + ' items: "' + row.text + '" is the last row in the table');
       assert.strictEqual(next.page, row.page,
         n + ' items: "' + row.text + '" is on page ' + row.page
           + ' and the row under it ("' + next.text + '") is on page ' + next.page);
     });
+
+    // The tail is three rows now, and a chain of pairs is not the same promise
+    // as one block: assert the three of them outright, in order, on one page.
+    const tail = rows.slice(-3);
+    assert.deepStrictEqual(tail.map((r) => r.text), ['Subtotal', 'Tax', 'Total'],
+      n + ' items: the table does not end Subtotal / Tax / Total');
+    assert.strictEqual(new Set(tail.map((r) => r.page)).size, 1,
+      n + ' items: the tail splits across pages ' + tail.map((r) => r.page).join(', '));
   }
 });
 
