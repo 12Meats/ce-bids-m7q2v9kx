@@ -56,19 +56,6 @@
 // VIEW STATE
 // ---------------------------------------------------------------------------
 
-// The clause library's groups, in the order they matter to him: the ones that
-// go on everything, then the three kinds of job that carry their own risk,
-// then subs. Anything in settings.clauses with a group not named here still
-// gets shown, under "Other" — a clause that is invisible is a clause he
-// thinks is on the document when it isn't.
-const PROPOSAL_CLAUSE_GROUPS = [
-  ['always', 'Always'],
-  ['trench', 'Trenching & underground'],
-  ['site', 'Site & pavement'],
-  ['hazmat', 'Hazardous waste'],
-  ['subs', 'Subcontractors'],
-];
-
 const PROPOSAL_MIN_VALIDITY = 1;
 const PROPOSAL_MAX_VALIDITY = 365;   // a year on one line: a limit on the typo
 const PROPOSAL_PDF_KEEP = 10;        // previous PDFs listed for one bid
@@ -533,8 +520,8 @@ function buildClauses(bid) {
     return box;
   }
 
-  const named = new Set(PROPOSAL_CLAUSE_GROUPS.map(([k]) => k));
-  PROPOSAL_CLAUSE_GROUPS.forEach(([key, title]) => {
+  const named = new Set(CLAUSE_GROUPS.map(([k]) => k));
+  CLAUSE_GROUPS.forEach(([key, title]) => {
     const group = list.filter((c) => c.group === key);
     if (group.length) box.appendChild(proposalClauseGroup(bid, title, group));
   });

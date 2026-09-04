@@ -38,15 +38,6 @@
 // VIEW STATE
 // ---------------------------------------------------------------------------
 
-const WALK_CATEGORIES = [
-  ['conduit', 'Conduit'],
-  ['wire', 'Wire'],
-  ['boxes', 'Boxes & fittings'],
-  ['lighting', 'Lighting'],
-  ['gear', 'Gear & parts'],
-  ['rentals', 'Rentals/Equipment'],
-];
-const WALK_UNITS = ['ft', 'ea', 'roll', 'lot', 'day'];
 const WALK_GENERAL_AREA = 'General';
 const WALK_MISC_LABEL = 'Supports, anchors, and hardware';
 const WALK_HIGHLIGHT_MS = 1000;
@@ -140,10 +131,6 @@ function walkCurrentArea(edit) { return (edit.areas || []).find((a) => a.id === 
 // the Price screen, rather than being a second opinion that rounds differently.
 function walkAreaCost(area) { return BidMath.materialCost({ areas: [area] }); }
 
-function walkCatLabel(key) {
-  const hit = WALK_CATEGORIES.find(([k]) => k === key);
-  return hit ? hit[1] : key;
-}
 
 function walkPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
@@ -504,7 +491,7 @@ function renderWalkAdd(bid, edit, area, host) {
 function buildCategoryTiles(onChangeOrder) {
   const grid = document.createElement('div');
   grid.className = 'walk-tiles';
-  WALK_CATEGORIES.filter(([key]) => !(onChangeOrder && key === 'rentals')).forEach(([key, label]) => {
+  CATALOG_CATEGORIES.filter(([key]) => !(onChangeOrder && key === 'rentals')).forEach(([key, label]) => {
     grid.appendChild(textButton(label, 'walk-tile', () => {
       // Rentals and owned equipment are not material lines — they are priced
       // per day on the Costs & price screen (Task 9). All this tile does is
@@ -536,7 +523,7 @@ function buildCatalogList(bid, area, box) {
 
   const h = document.createElement('h3');
   h.className = 'card-title';
-  h.textContent = searching ? 'All parts' : walkCatLabel(walkAddCat);
+  h.textContent = searching ? 'All parts' : catalogCategoryLabel(walkAddCat);
   box.appendChild(h);
 
   const list = walkCatalogMatches();
@@ -547,7 +534,7 @@ function buildCatalogList(bid, area, box) {
       // Search crosses categories on purpose — typing "3/4" should find the
       // hubs as well as the EMT — so each row has to say which drawer it came
       // out of, or two identical-looking names are indistinguishable.
-      const sub = searching ? walkCatLabel(p.category) : '';
+      const sub = searching ? catalogCategoryLabel(p.category) : '';
       const value = p.lastCostCents === null
         ? p.unit
         : BidMath.fmt(p.lastCostCents) + ' / ' + p.unit;
@@ -574,7 +561,7 @@ function buildUnitPicker(bid, area) {
   const box = card('How is ' + walkAddNew.name + ' counted?');
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
-  WALK_UNITS.forEach((unit) => {
+  CATALOG_UNITS.forEach((unit) => {
     nav.appendChild(textButton(unit, 'btn btn-block', () => walkCreatePart(bid, area, unit)));
   });
   box.appendChild(nav);

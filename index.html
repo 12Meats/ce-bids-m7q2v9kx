@@ -266,6 +266,8 @@
       max-width: 320px;
     }
     .pin-hint[hidden] { display: none; }
+    .pin-cancel { min-width: 200px; }
+    .pin-cancel[hidden] { display: none; }
 
     .pin-dots {
       display: flex;
@@ -1092,6 +1094,83 @@
 
     .mt-3 { margin-top: var(--space-3); }
 
+    /* ---------- Settings ---------- */
+    /* An override is a fact about the row, not a second value, so it rides
+       along at the end of the value in small italics rather than taking a
+       line of its own. */
+    .set-override {
+      margin-left: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--color-text-muted);
+    }
+
+    /* A plain-string list (did-you-forget, note phrases): the words on the
+       left, the small controls on the right. The text wraps; the buttons
+       never shrink, because a 44px target that has been squeezed to 20px is
+       not a target. */
+    .set-list-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      min-height: 56px;
+      padding: var(--space-1) 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .set-list-row:last-of-type { border-bottom: none; }
+    .set-list-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+    .set-list-btns { flex: 0 0 auto; display: flex; gap: 6px; }
+    .set-mini {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0;
+      border-radius: 10px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-family: inherit;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+    .set-mini:active { background: #e2e8f0; }
+    .set-mini:disabled { opacity: .35; }
+    .set-mini-danger { color: var(--color-danger); }
+
+    /* The six category buttons over the parts list, and the five group
+       buttons in the clause picker. */
+    .set-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
+
+    /* A clause group's header: name on the left, how many it holds on the
+       right, the whole line the tap target. */
+    .set-group {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      width: 100%;
+      min-height: 56px;
+      padding: var(--space-1) 0;
+      text-align: left;
+      font-family: inherit;
+      font-size: var(--font-body);
+      font-weight: 700;
+      color: var(--color-text);
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .set-group:active { background: #eef2f7; }
+    .set-group-count { flex: 0 0 auto; font-weight: 600; color: var(--color-text-muted); }
+
+    /* A hidden row is on screen only because "Show hidden" is on, and it has
+       to read as put away rather than as a live setting. */
+    .set-hidden .row-label,
+    .set-hidden .row-value,
+    .set-hidden .set-list-text { opacity: .55; }
+
+    .set-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: 0 0 var(--space-2); }
+    .set-actions .btn { flex: 1 1 40%; min-height: 48px; padding: 0 12px; }
+
     /* Off-screen but still focusable/clickable — the camera input, which is
        opened by a button rather than shown. display:none would stop the click
        from reaching it. */
@@ -1257,6 +1336,9 @@
           <button type="button" class="key key-back" id="backspaceBtn" aria-label="Backspace">&#9003;</button>
         </div>
         <p id="pinHint" class="pin-hint" hidden></p>
+        <!-- Only shown while Settings is changing the PIN: on the lock screen
+             there is nowhere for a cancel to go. -->
+        <button type="button" id="pinCancel" class="btn pin-cancel" hidden>Cancel</button>
       </div>
     </section>
 
@@ -1306,10 +1388,8 @@
 
     <!-- ---------- Settings -- Task 13 ---------- -->
     <section id="screen-settings" class="screen" hidden>
-      <div id="settingsContent" class="screen-content">
-        <h2 class="section-heading">Settings</h2>
-        <p class="screen-placeholder">Company, crew, rates, and backups.</p>
-      </div>
+      <!-- Filled entirely by screens/settings.js. -->
+      <div id="settingsContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- Reports -- Task 14 ---------- -->

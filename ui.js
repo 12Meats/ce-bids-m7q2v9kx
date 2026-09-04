@@ -182,6 +182,47 @@ function statusPill(status) {
 }
 
 // ---------------------------------------------------------------------------
+// The catalog's and the library's own vocabulary
+// ---------------------------------------------------------------------------
+// Three lists that two screens each read from. The walk offers the category
+// tiles and Settings edits the parts inside them; the walk names a new part's
+// unit and Settings renames it; the proposal groups the clause library and
+// Settings adds to it. Written once here rather than once per screen, because
+// two copies is how "Boxes & fittings" becomes "Boxes" on one of them and the
+// same part looks like two different parts.
+//
+// The keys are Store's enums (CATALOG_CATEGORY, CLAUSE_GROUP) and must stay in
+// step with them; the labels are his words and are only ever on screen.
+
+const CATALOG_CATEGORIES = [
+  ['conduit', 'Conduit'],
+  ['wire', 'Wire'],
+  ['boxes', 'Boxes & fittings'],
+  ['lighting', 'Lighting'],
+  ['gear', 'Gear & parts'],
+  ['rentals', 'Rentals/Equipment'],
+];
+
+const CATALOG_UNITS = ['ft', 'ea', 'roll', 'lot', 'day'];
+
+// Order matters: what goes on everything, then the three kinds of job that
+// carry their own risk, then subs. A clause whose group is not named here is
+// still shown by both screens, under "Other" — a clause that is invisible is a
+// clause he thinks is on the document when it isn't.
+const CLAUSE_GROUPS = [
+  ['always', 'Always'],
+  ['trench', 'Trenching & underground'],
+  ['site', 'Site & pavement'],
+  ['hazmat', 'Hazardous waste'],
+  ['subs', 'Subcontractors'],
+];
+
+function catalogCategoryLabel(key) {
+  const hit = CATALOG_CATEGORIES.find(([k]) => k === key);
+  return hit ? hit[1] : key;
+}
+
+// ---------------------------------------------------------------------------
 // Rentals and owned equipment
 // ---------------------------------------------------------------------------
 // Two screens reach for a lift. The walk only remembers it exists — standing

@@ -392,6 +392,14 @@ let firstPinDigits = null;
 let pinBusy = false;   // true while a mismatch message is on screen
 let pinWrongTries = 0;
 
+// Settings changes the PIN through THIS screen rather than a fourth panel:
+// one keypad, one set of dots, one definition of what a PIN is, and leading
+// zeros survive (the number keypad would turn 0412 into 412). pinChanging is
+// what tells handlePinComplete to go back to Settings instead of unlocking,
+// and it puts a Cancel under the keys — a man who opened the wrong row must
+// not be shut out of an app he is already inside.
+let pinChanging = false;
+
 const PIN_HINT_AFTER = 3;
 const PIN_HINT_TEXT = 'Forgot it? Import a backup from Settings to reset.';
 
@@ -438,6 +446,23 @@ function handlePinComplete() {
 
   if (pinMode === 'confirm') {
     if (entered === firstPinDigits) {
+      // Changing a PIN is a write to a document that is already on disk, so it
+      // gets the same treatment every other mutation gets: put the old one
+      // back if the save is refused, and never navigate away from a change
+      // that isn't saved. The first run is left alone — there is nothing on
+      // disk to put back, and refusing to let him in would strand him.
+      if (pinChanging) {
+        const prev = state.data.pin;
+        state.data.pin = entered;
+        if (!persistOr(() => { state.data.pin = prev; })) {
+          firstPinDigits = null;
+          resetPinEntry('choose');
+          return;
+        }
+        endPinChange();
+        showBanner('PIN changed', 'ok');
+        return;
+      }
       state.data.pin = entered;
       persist();
       unlock();
@@ -447,6 +472,10 @@ function handlePinComplete() {
       updateDots();
       shake(el('pinDots'));
       setPinMessage("PINs didn't match — start over");
+      // On the first run the message line IS the screen; mid-change the banner
+      // says it too, because the screen he came from is the one he is thinking
+      // about and the message under the dots is easy to walk past.
+      if (pinChanging) showBanner("PINs didn't match — start over");
       setTimeout(() => {
         firstPinDigits = null;
         pinBusy = false;
@@ -477,6 +506,32 @@ function handlePinComplete() {
     pinBusy = false;
     resetPinEntry('enter'); // also drops the shake class, independent of animationend
   }, 1200);
+}
+
+// Opened from Settings. Everything the first run resets, reset again — a
+// previous unlock's wrong-try count has nothing to do with picking a new PIN.
+function startPinChange() {
+  pinChanging = true;
+  firstPinDigits = null;
+  pinBusy = false;
+  pinWrongTries = 0;
+  const hint = el('pinHint');
+  hint.textContent = '';
+  hint.hidden = true;
+  el('pinCancel').hidden = false;
+  show('pin');
+  resetPinEntry('choose');
+}
+
+// Back to Settings, and the screen is left the way the lock screen expects to
+// find it: no Cancel, no half-typed first entry.
+function endPinChange() {
+  pinChanging = false;
+  firstPinDigits = null;
+  el('pinCancel').hidden = true;
+  pinBuffer = [];
+  updateDots();
+  show('settings');
 }
 
 function handleDigit(digit) {
@@ -601,6 +656,9 @@ function wirePinKeypad() {
     if (btn.id === 'backspaceBtn') handleBackspace();
     else if (btn.dataset.digit !== undefined) handleDigit(btn.dataset.digit);
   });
+  // Only ever visible during a Settings-initiated change; on the lock screen
+  // there is nowhere for a cancel to go.
+  el('pinCancel').addEventListener('click', () => { if (pinChanging) endPinChange(); });
 }
 
 function wirePanels() {
