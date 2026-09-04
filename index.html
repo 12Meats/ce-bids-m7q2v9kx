@@ -614,8 +614,147 @@
     }
     .bid-nav .btn { min-height: 60px; font-size: 1.15rem; }
 
+    /* ---------- The walk ---------- */
+    /* One screen, three views (areas / one area / adding an item), plus two
+       full-screen overlays of its own: the photo viewer and the small
+       rental-or-equipment sheet. Both sit above the tab bar at z-index 90 and
+       below the shell's panels at 100, so a keypad opened from a sheet still
+       covers it. */
+    .walk-head { margin-bottom: var(--space-3); }
+    .walk-head-title { font-size: var(--font-lg); font-weight: 800; }
+    .walk-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+
+    .walk-caption {
+      margin: -4px 0 var(--space-1);
+      font-size: 0.9rem;
+      color: var(--color-text-muted);
+    }
+
+    /* A two-line version of .row: a name and its money on the first line, the
+       counts underneath. The whole block is the tap target. */
+    .walk-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      width: 100%;
+      min-height: 60px;
+      padding: var(--space-1) 0;
+      text-align: left;
+      font-family: inherit;
+      font-size: var(--font-body);
+      color: var(--color-text);
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .walk-row:last-child { border-bottom: none; }
+    button.walk-row:active { background: #eef2f7; }
+    .walk-row-text { flex: 1; min-width: 0; }
+    .walk-row-name { font-weight: 700; }
+    .walk-row-sub { margin-top: 2px; font-size: 0.9rem; color: var(--color-text-muted); }
+    .walk-row-value { font-weight: 700; white-space: nowrap; }
+    /* The line he just added, for about a second — on a list of twenty parts,
+       "did that go in?" is answered without reading. */
+    .walk-row-new { animation: walk-flash 1s ease-out; }
+    @keyframes walk-flash {
+      from { background: rgba(21, 128, 61, 0.22); }
+      to { background: transparent; }
+    }
+
+    .walk-item-actions {
+      display: flex;
+      gap: var(--space-1);
+      padding: 0 0 var(--space-2);
+      border-bottom: 1px solid var(--color-border);
+    }
+    .walk-item-actions .btn { flex: 1; min-height: 48px; padding: 0 8px; font-size: 0.95rem; }
+
+    .walk-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+    .walk-tile {
+      min-height: 88px;
+      padding: var(--space-2);
+      border-radius: 12px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      font-family: inherit;
+      font-size: 1.05rem;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--color-text);
+    }
+    .walk-tile:active { background: #eef2f7; }
+
+    .walk-search { margin-bottom: var(--space-2); }
+
+    .walk-thumbs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+    .walk-thumb {
+      width: 88px;
+      height: 88px;
+      padding: 0;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1px solid var(--color-border);
+      background: #e2e8f0;
+    }
+    .walk-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+    /* Full-size photo: dark ground, because a photo of a dim mechanical room
+       read against white is a photo he can't see. */
+    .walk-photo-view {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      background: #0f172a;
+      padding: calc(var(--space-3) + var(--sai-top)) var(--space-3);
+      padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+    }
+    .walk-photo-view img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+    .walk-photo-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+    .walk-photo-actions .btn { flex: 1; min-height: 56px; }
+
+    .walk-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: var(--color-bg);
+      padding: calc(var(--space-4) + var(--sai-top)) 20px;
+      padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    }
+
+    .walk-forget {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      min-height: 56px;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .walk-forget:last-child { border-bottom: none; }
+    .walk-forget-label { flex: 1; min-width: 0; }
+    .walk-forget-actions { display: flex; gap: var(--space-1); }
+    .walk-forget-actions .btn { min-height: 44px; padding: 0 16px; font-size: 0.95rem; }
+    .walk-forget-tick { padding-right: 8px; font-size: 1.3rem; font-weight: 800; color: var(--color-confirm); }
+
     /* ---------- Utilities ---------- */
     .mt-3 { margin-top: var(--space-3); }
+
+    /* Off-screen but still focusable/clickable — the camera input, which is
+       opened by a button rather than shown. display:none would stop the click
+       from reaching it. */
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     /* ---------- Overlay panels (keypad / text / confirm) ---------- */
     /* Full-screen sheets rather than dialogs: one thing on screen, thumb-sized
@@ -767,12 +906,16 @@
       <div id="bidContent" class="screen-content"></div>
     </section>
 
-    <!-- ---------- Walkthrough (areas, items, photos) -- Task 8 ---------- -->
+    <!-- ---------- Walkthrough (areas, items, photos) -- Task 7 ---------- -->
     <section id="screen-walk" class="screen" hidden>
-      <div id="walkContent" class="screen-content">
-        <h2 class="section-heading">Walkthrough</h2>
-        <p class="screen-placeholder">Areas and materials.</p>
-      </div>
+      <div id="walkContent" class="screen-content"></div>
+      <!-- The camera, and the only native control in the app. It lives out
+           here rather than inside #walkContent because the content is rebuilt
+           on every render and the input is wired exactly once; `capture` asks
+           iOS for the back camera straight away instead of the photo library,
+           and iOS hands back a JPEG even on a phone that stores HEIC. -->
+      <input type="file" id="walkPhotoInput" class="visually-hidden"
+             accept="image/*" capture="environment" aria-hidden="true" tabindex="-1">
     </section>
 
     <!-- ---------- Labor -- Task 9 ---------- -->
