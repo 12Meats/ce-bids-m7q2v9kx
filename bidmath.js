@@ -121,6 +121,18 @@
     return { ok: true, crewIds, days: crewIds.length ? crewDayUnits / crewIds.length : 0 };
   }
 
+  // The tasks that say a day of work and name nobody to do it. They are worth
+  // no hours (lineHours multiplies by a crew of zero) and yet their days still
+  // bill truck and gas through truckDays, so the bid quietly carries a cost
+  // with no labor behind it — and mergeTasks refuses to fold them at all. The
+  // rule is written here, once, so the Labor screen's card flag and the Costs
+  // & price screen's labor flag are the same question asked twice, not two
+  // guesses. A crewless task with 0 days is an empty line he hasn't filled in
+  // and is not one of these.
+  function crewlessTasks(labor) {
+    return ((labor && labor.tasks) || []).filter((t) => t && t.days > 0 && ((t.crewIds || []).length === 0));
+  }
+
   // The day count the truck and gas bill off: the sum of the tasks' days once
   // the job has been split, the single line's days before that. costStack uses
   // it, and it is exported because the Price screen has to show the figure the
@@ -487,7 +499,7 @@
   }
 
   return {
-    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, costStack, solve,
+    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, crewlessTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,

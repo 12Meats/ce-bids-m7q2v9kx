@@ -314,6 +314,13 @@ function buildTaskCard(edit, task, only) {
   box.appendChild(laborDaysRow('Days', task));
   box.appendChild(caption(laborTaskHoursText(task)));
 
+  // Days on it and nobody on it. The caption above already says "0 hours", but
+  // a zero reads like a number he is about to fill in; this says the days are
+  // costing him truck and gas in the meantime, and it is the same sentence the
+  // Costs & price screen puts on the labor line. Merge back refuses this card
+  // by name, so flagging it here is what stops him meeting that refusal cold.
+  if (BidMath.crewlessTasks({ tasks: [task] }).length) box.appendChild(inlineWarn(CREWLESS_TASK_WARN));
+
   const actions = document.createElement('div');
   actions.className = 'labor-task-actions';
   const del = textButton('Delete', 'btn btn-danger-outline', only ? null : () => laborDeleteTask(edit, task));

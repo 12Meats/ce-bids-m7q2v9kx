@@ -82,6 +82,36 @@ test('mergeTasks does not round to half days: 20 hours over 2 guys is 1.25 days,
   // The old rule rounded this to 1.5 and quietly added 4 hours to the bid.
   assert.strictEqual(laborHours(labor), 20);
 });
+// crewlessTasks is the same condition mergeTasks refuses on, named so the two
+// screens can flag it BEFORE he meets that refusal. It has to agree with
+// mergeTasks exactly: anything it misses is a task that silently bills truck
+// days with no hours behind it, and anything it over-reports is a yellow line
+// on a bid that is fine.
+test('crewlessTasks finds the tasks with days on them and nobody on them', () => {
+  const found = B.crewlessTasks({ tasks: [
+    { name: 'crewed', crewIds: ['c1'], days: 2 },
+    { name: 'nobody yet', crewIds: [], days: 3 },
+    { name: 'empty line', crewIds: [], days: 0 },
+    { name: 'half a day, nobody', crewIds: [], days: 0.5 } ] });
+  assert.deepStrictEqual(found.map((t) => t.name), ['nobody yet', 'half a day, nobody']);
+});
+test('crewlessTasks is empty on a single line, a null task list, and a clean split', () => {
+  assert.deepStrictEqual(B.crewlessTasks({ crewIds: [], days: 4, tasks: null }), []);
+  assert.deepStrictEqual(B.crewlessTasks(null), []);
+  assert.deepStrictEqual(B.crewlessTasks({ tasks: [{ name: 'a', crewIds: ['c1'], days: 1 }] }), []);
+});
+test('crewlessTasks flags exactly what mergeTasks refuses', () => {
+  const cases = [
+    { tasks: [{ name: 'a', crewIds: ['c1'], days: 2 }, { name: 'b', crewIds: [], days: 3 }] },
+    { tasks: [{ name: 'a', crewIds: ['c1'], days: 2 }, { name: 'b', crewIds: [], days: 0 }] },
+    { tasks: [{ name: 'a', crewIds: ['c1', 'c2'], days: 1 }] },
+    { tasks: [{ name: 'a', crewIds: [], days: 1 }, { name: 'b', crewIds: [], days: 2 }] },
+  ];
+  cases.forEach((labor) => {
+    assert.strictEqual(B.crewlessTasks(labor).length > 0, B.mergeTasks(labor).ok === false,
+      'crewlessTasks and mergeTasks disagree about ' + JSON.stringify(labor));
+  });
+});
 test('mergeTasks REFUSES while a task has days on it and nobody on it', () => {
   // Adding those days to the merged line multiplies them by the union crew:
   // 32 real hours came out as 80. Neither reading is right, so it names the
