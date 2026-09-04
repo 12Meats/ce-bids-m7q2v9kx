@@ -110,7 +110,12 @@
         taxMode: 'included',
         equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false })),
         forgetList: SEED_FORGET.slice(), notePhrases: SEED_NOTES.slice(), clauses: SEED_CLAUSES.map((c) => ({ ...c, hidden: false })),
-        nextNumber: 1, backupEmail: 'adriancantu95@gmail.com',
+        // Seeded past his real bids rather than at 1: his paper book is at
+        // #3052, and a fresh install handing out #1 would put a bid number on
+        // a customer's desk that collides with one he wrote by hand years ago.
+        // Settings has the field, and its caption tells him to set it to his
+        // real next invoice number on day one.
+        nextNumber: 3053, backupEmail: 'adriancantu95@gmail.com',
         // Two different questions. lastBackupAt is the day a backup file last
         // left the phone and it is what the home band nags off.
         // pdfsSentThroughMs is the archive stamp of the newest PROPOSAL PDF
@@ -452,6 +457,23 @@
   // checks are one definition.
   function newJob() { return { weeks: [], surprises: [], changeOrders: [], completedAt: null }; }
 
+  // Has anything been logged against this job yet? The bid screen asks before
+  // it offers to undo a Won: a mis-tap costs one tap to put back, but a job
+  // with a week of hours or a change order in it holds work that was never
+  // written down anywhere else, and no undo may throw that away. A job that is
+  // finished counts as logged even if it is otherwise bare, so a completed
+  // job is never mistaken for an untouched one.
+  function jobIsEmpty(job) {
+    // No job block at all is the emptiest a job gets: there is nothing in it
+    // to lose. Anything that is not a job object is refused instead, because
+    // a shape this cannot read is a shape it cannot promise is bare.
+    if (job === null || job === undefined) return true;
+    if (typeof job !== 'object') return false;
+    if (job.completedAt !== null && job.completedAt !== undefined) return false;
+    const len = (a) => (Array.isArray(a) ? a.length : 0);
+    return len(job.weeks) === 0 && len(job.surprises) === 0 && len(job.changeOrders) === 0;
+  }
+
   // A change order is a small bid inside the job: areas and labor, nothing
   // else. Its crew is seeded the way a new bid's is — the visible crew, first
   // two — because the men already on the job are the men who do the extra.
@@ -507,5 +529,5 @@
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, uid, todayISO, mondayOf, emptyData, validateImport, load, save, check, loadProblem,
-    findOrCreateCustomer, newBid, newJob, newChangeOrder, duplicateBid, addCatalogItem, newTool, recordCatalogUse, numberInUse };
+    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, recordCatalogUse, numberInUse };
 });

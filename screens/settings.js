@@ -293,9 +293,19 @@ function buildSetCompany() {
     });
   });
 
+  // The same far-reach question the tax line asks, for the same reason: this
+  // is not a setting that only touches new bids. A proposal is re-printed off
+  // whatever the settings say TODAY, so flipping this restyles the PDF for a
+  // bid that went out in March. The caption already said so and the toggle
+  // still changed on one tap; now the tap has to be meant.
   box.appendChild(fieldLabel('Proposal style'));
-  box.appendChild(toggleRow([[false, 'Blue & logo'], [true, 'Plain black']], co.plainStyle, (v) => {
+  box.appendChild(toggleRow([[false, 'Blue & logo'], [true, 'Plain black']], co.plainStyle, async (v) => {
     if (v === co.plainStyle) return;
+    const ok = await confirmPanel('Change how the proposal looks? This changes every proposal you print '
+      + 'from now on, including ones already sent.');
+    // Cancel leaves the setting alone, and the re-render puts the toggle back
+    // on the side it was already on.
+    if (!ok) { render(); return; }
     const prev = co.plainStyle;
     co.plainStyle = v;
     settingsSaveAndRender(() => { co.plainStyle = prev; });
@@ -1033,7 +1043,8 @@ function buildSetCounter() {
         s.nextNumber = v;
         settingsSaveAndRender(() => { s.nextNumber = prev; });
       });
-  }, 'The number the next new bid gets. It counts up on its own after that.');
+  }, 'The number the next new bid gets. Set this to your real next invoice number the first day '
+     + 'you use the app. It counts up on its own after that.');
 
   if (Store.numberInUse(state.data, s.nextNumber)) {
     box.appendChild(inlineWarn('Bid #' + s.nextNumber + ' already exists. The next new bid would '

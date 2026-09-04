@@ -329,6 +329,52 @@ function startTheWalk() {
 // The bid screen
 // ---------------------------------------------------------------------------
 
+// --- Taking back a Won or a Lost -------------------------------------------
+//
+// Won and Lost are one tap each, side by side, on a phone held in a truck.
+// The wrong half gets tapped, and without a way back the only fix is a bid
+// that reads as lost forever. So both answers come back, with a question
+// first because both of them throw something away.
+//
+// A lost bid always reopens: the reason is one tap to pick again. A won bid
+// reopens only while its job is still bare, because the moment a week of
+// hours, a surprise, or a change order is on that job the app is the only
+// place that work is written down, and no undo may delete it. Those bids keep
+// the Job button and nothing else. A complete job is a finished record and
+// never reopens at all.
+
+async function bidReopenLost(bid) {
+  const ok = await confirmPanel('Put this bid back to Sent? The lost reason is cleared.',
+    { ok: 'Reopen' });
+  if (!ok) { render(); return; }
+  // The question is answered on a later turn of the loop, so the bid may have
+  // moved on under it. Anything but a lost bid is left alone.
+  if (bid.status !== 'lost') { render(); return; }
+  const prevStatus = bid.status;
+  const prevReason = bid.lostReason;
+  bid.status = 'sent';
+  bid.lostReason = null;
+  // sentAt is untouched on purpose: the day the proposal went out is a fact
+  // about the paper, and picking the wrong button today did not change it.
+  persistOr(() => { bid.status = prevStatus; bid.lostReason = prevReason; });
+  render();
+}
+
+async function bidUndoWon(bid) {
+  const ok = await confirmPanel('Put this bid back to Sent? Nothing has been logged on the job yet.',
+    { ok: 'Undo Won' });
+  if (!ok) { render(); return; }
+  // Re-asked after the question, not just before it: a job that filled up
+  // while the panel was open is a job this must not drop.
+  if (bid.status !== 'won' || !Store.jobIsEmpty(bid.job)) { render(); return; }
+  const prevStatus = bid.status;
+  const prevJob = bid.job;
+  bid.status = 'sent';
+  bid.job = null;
+  persistOr(() => { bid.status = prevStatus; bid.job = prevJob; });
+  render();
+}
+
 function renderBidScreen(bid, host) {
   // --- Summary ---
   const box = card();
@@ -436,6 +482,15 @@ function renderBidScreen(bid, host) {
       ask.appendChild(pair);
     }
     host.appendChild(ask);
+  } else if (bid.status === 'lost') {
+    const undo = card('Wrong button?');
+    undo.appendChild(caption('Marked lost: ' + lostReasonLabel(bid.lostReason).toLowerCase() + '.'));
+    undo.appendChild(textButton('Reopen', 'btn btn-block', () => bidReopenLost(bid)));
+    host.appendChild(undo);
+  } else if (bid.status === 'won' && Store.jobIsEmpty(bid.job)) {
+    const undo = card('Wrong button?');
+    undo.appendChild(textButton('Undo Won', 'btn btn-block', () => bidUndoWon(bid)));
+    host.appendChild(undo);
   }
 }
 

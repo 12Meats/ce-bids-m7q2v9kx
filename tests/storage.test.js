@@ -43,6 +43,45 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
     ['boxes', 'conduit', 'gear', 'lighting', 'rentals', 'wire']);
   assert.strictEqual(d.settings.equipment.length, 6);
   assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always').length, 19);
+  // Seeded past the bids he has already written by hand, not at 1.
+  assert.strictEqual(d.settings.nextNumber, 3053);
+});
+test('a fresh install hands the first new bid #3053 and counts up from there', () => {
+  const d = S.emptyData();
+  const first = S.newBid(d, { customerName: 'UDA', title: 'One', jobType: 'service' });
+  const second = S.newBid(d, { customerName: 'UDA', title: 'Two', jobType: 'service' });
+  assert.strictEqual(first.number, 3053);
+  assert.strictEqual(second.number, 3054);
+  assert.strictEqual(d.settings.nextNumber, 3055);
+});
+test('jobIsEmpty: true for a job with nothing logged, false once anything is', () => {
+  // No job block at all: a Won with nothing under it has nothing to lose.
+  assert.strictEqual(S.jobIsEmpty(null), true);
+  assert.strictEqual(S.jobIsEmpty(undefined), true);
+  // The block a bid gets the moment it is Won.
+  assert.strictEqual(S.jobIsEmpty(S.newJob()), true);
+
+  // One entry of any kind is enough to make it not empty.
+  const withWeek = S.newJob(); withWeek.weeks.push({ weekISO: '2026-09-07', hours: 40 });
+  assert.strictEqual(S.jobIsEmpty(withWeek), false);
+
+  const withSurprise = S.newJob(); withSurprise.surprises.push({ cents: 500, note: 'extra', at: '2026-09-08' });
+  assert.strictEqual(S.jobIsEmpty(withSurprise), false);
+
+  const withCO = S.newJob(); withCO.changeOrders.push(S.newChangeOrder(S.emptyData(), 'CO1'));
+  assert.strictEqual(S.jobIsEmpty(withCO), false);
+
+  // Finished counts as logged even when the job is otherwise bare.
+  const done = S.newJob(); done.completedAt = '2026-09-30';
+  assert.strictEqual(S.jobIsEmpty(done), false);
+
+  // Zero hours is still a week he wrote down.
+  const zeroWeek = S.newJob(); zeroWeek.weeks.push({ weekISO: '2026-09-07', hours: 0 });
+  assert.strictEqual(S.jobIsEmpty(zeroWeek), false);
+
+  // Not a job at all: refused rather than called bare.
+  assert.strictEqual(S.jobIsEmpty('nope'), false);
+  assert.strictEqual(S.jobIsEmpty(7), false);
 });
 test('validateImport: accepts emptyData round-trip; rejects garbage, wrong version, bad money', () => {
   const d = S.emptyData();
