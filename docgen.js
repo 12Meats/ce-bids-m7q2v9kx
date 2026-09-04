@@ -33,6 +33,9 @@
   const CONTENT_W = PAGE_W - M * 2;
   const BOTTOM = PAGE_H - 56;          // last y a line of body text may sit on
   const FOOTER_Y = PAGE_H - 26;
+  // Page one opens with the letterhead; every page after it opens with a
+  // one-line running head, so body text on those pages starts lower down.
+  const TOP_NEXT = M + 14;
 
   const NAVY = [4, 30, 66];            // #041E42
   const BLACK = [0, 0, 0];
@@ -93,10 +96,21 @@
     pdf.setLineWidth(width);
   }
 
+  // Text is measured with whatever font jsPDF last had set, which is not
+  // always the font the text is about to be drawn in — measure a 10 pt bullet
+  // in 8.5 pt type and it wraps a line short, or long enough to run off the
+  // paper. Every measurement below names the font it is measuring in.
+  function useFont(pdf, size, style) {
+    if (size == null) return;
+    pdf.setFont('helvetica', style || 'normal');
+    pdf.setFontSize(size);
+  }
+
   // Wraps to a column. splitTextToSize handles the spaces; the second pass
   // handles what it can't — a part number or a URL longer than the column,
   // which would otherwise run off the edge of the paper.
-  function wrap(pdf, text, width) {
+  function wrap(pdf, text, width, size, style) {
+    useFont(pdf, size, style);
     const src = pdf.splitTextToSize(str(text), width) || [];
     const out = [];
     src.forEach((line) => {
@@ -111,13 +125,22 @@
     return out.length ? out : [''];
   }
 
-  // One line that must not overflow its cell — a customer name in the meta
-  // grid, a caption under a signature rule.
-  function fit(pdf, text, width) {
+  // One line that must not overflow its cell.
+  function fit(pdf, text, width, size, style) {
+    useFont(pdf, size, style);
     let s = str(text);
     if (pdf.getTextWidth(s) <= width) return s;
     while (s.length > 1 && pdf.getTextWidth(s + '...') > width) s = s.slice(0, -1);
     return s + '...';
+  }
+
+  // Two lines, and only then an ellipsis: the customer's own name and the line
+  // he signs on are the two things on the page he checks first, and a name cut
+  // off at "Kraft Foods Group, Tolles..." is the one that gets queried.
+  function wrapTwo(pdf, text, width, size, style) {
+    const lines = wrap(pdf, text, width, size, style);
+    if (lines.length <= 2) return lines;
+    return [lines[0], fit(pdf, lines.slice(1).join(' '), width)];
   }
 
   // The drawing cursor. Screens of text are drawn top-down; need(h) is how
@@ -126,7 +149,7 @@
   function need(ctx, h) {
     if (ctx.y + h <= BOTTOM) return false;
     ctx.pdf.addPage();
-    ctx.y = M;
+    ctx.y = TOP_NEXT;
     return true;
   }
 
@@ -186,7 +209,7 @@
       logoBottom = M + LOGO_H;
     } else {
       setFont(pdf, 13, 'bold', accent);
-      pdf.text(fit(pdf, h.name, CONTENT_W * 0.5), M, M + 12);
+      pdf.text(fit(pdf, h.name, CONTENT_W * 0.5, 13, 'bold'), M, M + 12);
       logoBottom = M + 16;
     }
 
@@ -201,7 +224,7 @@
     let y = M + 8;
     lines.forEach((l) => {
       setFont(pdf, 8.5, l.bold ? 'bold' : 'normal', l.bold ? accent : GRAY);
-      pdf.text(fit(pdf, l.t, CONTENT_W * 0.62), right, y, { align: 'right' });
+      pdf.text(fit(pdf, l.t, CONTENT_W * 0.62, 8.5, l.bold ? 'bold' : 'normal'), right, y, { align: 'right' });
       y += 10.5;
     });
 
@@ -217,26 +240,33 @@
   function drawMeta(ctx, doc) {
     const pdf = ctx.pdf;
     const meta = doc.meta || {};
-    const cells = [
-      ['Bid for:', meta.customer],
-      ['Bid #:', meta.number],
-      ['Date:', dateText(meta.dateISO)],
-      ['Valid through:', dateText(meta.validThrough)],
-    ].filter((c) => str(c[1]).trim() !== '');
+    // Explicit [left, right] rows rather than one list paired by index: a bid
+    // with no valid-through date has to leave that slot empty, not slide the
+    // date up into the column beside it and re-label everything below.
+    const rows = [
+      [['Bid for:', meta.customer], ['Bid #:', meta.number]],
+      [['Date:', dateText(meta.dateISO)], ['Valid through:', dateText(meta.validThrough)]],
+    ];
 
     const colW = CONTENT_W / 2;
     const xs = [M, M + colW];
     let y = ctx.y;
-    cells.forEach((c, i) => {
-      if (i > 0 && i % 2 === 0) y += 13;
-      const x = xs[i % 2];
-      setFont(pdf, 8.5, 'normal', MUTED);
-      pdf.text(str(c[0]), x, y);
-      const lw = pdf.getTextWidth(str(c[0])) + 5;
-      setFont(pdf, 9, 'bold', INK);
-      pdf.text(fit(pdf, c[1], colW - lw - 10), x + lw, y);
+    rows.forEach((row) => {
+      if (row.every((c) => str(c[1]).trim() === '')) return;
+      let tall = 1;
+      row.forEach((c, i) => {
+        if (str(c[1]).trim() === '') return;
+        setFont(pdf, 8.5, 'normal', MUTED);
+        pdf.text(str(c[0]), xs[i], y);
+        const lw = pdf.getTextWidth(str(c[0])) + 5;
+        const value = wrapTwo(pdf, c[1], colW - lw - 10, 9, 'bold');
+        setFont(pdf, 9, 'bold', INK);
+        value.forEach((line, k) => pdf.text(line, xs[i] + lw, y + k * 11));
+        tall = Math.max(tall, value.length);
+      });
+      y += 13 + (tall - 1) * 11;
     });
-    ctx.y = y + 20;
+    ctx.y = y + 7;
   }
 
   function drawTitle(ctx, doc) {
@@ -244,7 +274,7 @@
     const title = str((doc.meta || {}).title).trim();
     if (title === '') return;
     setFont(pdf, 14, 'bold', accentOf(doc));
-    wrap(pdf, title, CONTENT_W).forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 17; });
+    wrap(pdf, title, CONTENT_W, 14, 'bold').forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 17; });
     ctx.y += 6;
   }
 
@@ -252,12 +282,16 @@
   // BODY
   // ---------------------------------------------------------------------------
 
-  function heading(ctx, doc, text, size) {
+  // A heading reserves room for the first line of what follows it as well as
+  // for itself. A heading alone at the foot of a page is a promise the page
+  // does not keep, and on a two-line section it reads as a missing section.
+  function heading(ctx, doc, text, size, nextH) {
     const pdf = ctx.pdf;
-    need(ctx, (size || 10.5) + 8);
-    setFont(pdf, size || 10.5, 'bold', accentOf(doc));
+    const s = size || 10.5;
+    need(ctx, s + 5 + (nextH == null ? 14 : nextH));
+    setFont(pdf, s, 'bold', accentOf(doc));
     pdf.text(str(text), M, ctx.y);
-    ctx.y += (size || 10.5) + 5;
+    ctx.y += s + 5;
   }
 
   function drawBullets(ctx, items, size) {
@@ -267,7 +301,7 @@
     (items || []).forEach((item) => {
       const text = str(item).trim();
       if (text === '') return;
-      const lines = wrap(pdf, text, CONTENT_W - indent);
+      const lines = wrap(pdf, text, CONTENT_W - indent, size, 'normal');
       need(ctx, Math.min(lines.length, 2) * step);
       setFont(pdf, size, 'normal', INK);
       pdf.text('•', M + 2, ctx.y);
@@ -289,33 +323,80 @@
   // topRuleRow is the body row that gets the heavy accent rule above it (the
   // Total). It is drawn from the row's LAST cell so it lands on top of the
   // fills of the cells to its left, which are painted after the first one.
-  function table(ctx, doc, head, body, columnStyles, topRuleRow) {
-    const pdf = ctx.pdf;
-    const accent = accentOf(doc);
-    pdf.autoTable({
-      startY: ctx.y,
-      margin: { left: M, right: M, top: M, bottom: PAGE_H - BOTTOM },
+  // The options both passes of a table are built from: the pass that is
+  // measured, and the pass that is drawn.
+  function tableOpts(accent, head, body, columnStyles, startY) {
+    return {
+      startY,
+      margin: { left: M, right: M, top: TOP_NEXT, bottom: PAGE_H - BOTTOM },
       head: [head],
       body,
       theme: 'plain',
+      // A row that does not fit moves to the next page whole. Half a line item
+      // above the fold and half below it is not a line item anyone can read.
+      rowPageBreak: 'avoid',
       styles: {
         font: 'helvetica', fontSize: 9.5, textColor: INK, overflow: 'linebreak',
         cellPadding: { top: 4, right: 6, bottom: 4, left: 6 },
       },
       headStyles: { fillColor: accent, textColor: WHITE, fontStyle: 'bold', fontSize: 8.5 },
       columnStyles,
-      didDrawCell: (data) => {
-        if (data.section !== 'body') return;
-        const cell = data.cell;
-        setDraw(pdf, HAIRLINE, 0.5);
-        pdf.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
-        const last = data.column.index === data.table.columns.length - 1;
-        if (topRuleRow != null && data.row.index === topRuleRow && last) {
-          setDraw(pdf, accent, 1.5);
-          pdf.line(M, cell.y, PAGE_W - M, cell.y);
-        }
-      },
-    });
+    };
+  }
+
+  // autoTable decides where a page breaks from the height of the row in front
+  // of it and has no notion of keeping one row with the next. So the table is
+  // laid out twice: once on a throwaway document, purely to learn how tall
+  // every row comes out, and then for real with those heights in hand.
+  function measureRows(head, body, columnStyles) {
+    const heights = [];
+    const scratch = newPdf();
+    const opts = tableOpts(NAVY, head, body, columnStyles, M);
+    opts.willDrawCell = (data) => {
+      if (data.section === 'body') heights[data.row.index] = data.row.height;
+    };
+    scratch.autoTable(opts);
+    return heights;
+  }
+
+  // keepWith lists the body rows that must not be the last row on a page: a
+  // section band ("Labor") stranded from its first line item reads as a
+  // section with nothing in it, and Tax without the Total under it reads as
+  // the end of the bid.
+  function table(ctx, doc, head, body, columnStyles, topRuleRow, keepWith) {
+    const pdf = ctx.pdf;
+    const accent = accentOf(doc);
+    const keep = (keepWith || []).filter((i) => i >= 0 && i < body.length - 1);
+    const heights = keep.length ? measureRows(head, body, columnStyles) : null;
+    const held = (i) => !!(heights && keep.indexOf(i) !== -1 && heights[i] && heights[i + 1]);
+    const opts = tableOpts(accent, head, body, columnStyles, ctx.y);
+
+    // Claim the next row's height as well, so autoTable's own does-this-fit
+    // test is answered for the pair and it breaks the page BEFORE the band.
+    opts.didParseCell = (data) => {
+      if (data.section !== 'body' || !held(data.row.index)) return;
+      data.cell.styles.minCellHeight = heights[data.row.index] + heights[data.row.index + 1];
+    };
+    // The claim was for that test only. Give the row its own height back before
+    // a fill, a rule or a line of text is drawn from it.
+    opts.willDrawCell = (data) => {
+      if (data.section !== 'body' || !held(data.row.index)) return;
+      data.cell.styles.minCellHeight = 0;
+      data.cell.height = heights[data.row.index];
+      data.row.height = heights[data.row.index];
+    };
+    opts.didDrawCell = (data) => {
+      if (data.section !== 'body') return;
+      const cell = data.cell;
+      setDraw(pdf, HAIRLINE, 0.5);
+      pdf.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+      const last = data.column.index === data.table.columns.length - 1;
+      if (topRuleRow != null && data.row.index === topRuleRow && last) {
+        setDraw(pdf, accent, 1.5);
+        pdf.line(M, cell.y, PAGE_W - M, cell.y);
+      }
+    };
+    pdf.autoTable(opts);
     ctx.y = pdf.lastAutoTable.finalY + 16;
   }
 
@@ -324,7 +405,9 @@
   function drawFull(ctx, doc) {
     const accent = accentOf(doc);
     const body = [];
+    const keepWith = [];
     (doc.sections || []).forEach((sec) => {
+      keepWith.push(body.length);
       body.push([{
         content: str(sec.title), colSpan: 4,
         styles: { fillColor: SEC_FILL, textColor: accent, fontStyle: 'bold' },
@@ -337,6 +420,7 @@
       ]));
     });
     if (doc.taxLine === 0) {
+      keepWith.push(body.length);
       body.push([{ content: 'Tax', colSpan: 3, styles: { halign: 'right' } }, money(0)]);
     }
     body.push([
@@ -348,7 +432,7 @@
       1: { halign: 'right', cellWidth: 72 },
       2: { halign: 'right', cellWidth: 72 },
       3: { halign: 'right', cellWidth: 84 },
-    }, body.length - 1);
+    }, body.length - 1, keepWith);
   }
 
   // Summary — the shape of the price without the parts list.
@@ -366,9 +450,16 @@
   }
 
   function drawScopeList(ctx, doc) {
-    const scope = (doc.scope || []).filter((s) => str(s).trim() !== '');
-    if (!scope.length) return;
-    heading(ctx, doc, 'Scope of work');
+    let scope = (doc.scope || []).filter((s) => str(s).trim() !== '');
+    // A labor-only bid drafts no scope, and "Total price for the above" with
+    // nothing above it is a band that makes the document look truncated. The
+    // job's own title is the scope in that case, which is how he would say it.
+    if (!scope.length) {
+      const title = str((doc.meta || {}).title).trim();
+      if (title === '') return;
+      scope = [title];
+    }
+    heading(ctx, doc, 'Scope of work', 10.5, 13.5);
     drawBullets(ctx, scope, 10);
   }
 
@@ -395,7 +486,7 @@
   function drawTerms(ctx, doc) {
     const terms = (doc.terms || []).filter((t) => str(t).trim() !== '');
     if (!terms.length) return;
-    heading(ctx, doc, doc.level === 'scope' ? 'Terms' : 'Notes & exclusions');
+    heading(ctx, doc, doc.level === 'scope' ? 'Terms' : 'Notes & exclusions', 10.5, 13);
     drawBullets(ctx, terms, 9.5);
   }
 
@@ -409,7 +500,7 @@
     let text = 'We appreciate the opportunity to earn your business and look forward to working with you.';
     if (phone) text += ' Questions — call ' + (who || 'us') + ' at ' + phone + '.';
     const pdf = ctx.pdf;
-    const lines = wrap(pdf, text, CONTENT_W);
+    const lines = wrap(pdf, text, CONTENT_W, 9.5, 'normal');
     need(ctx, lines.length * 13);
     setFont(pdf, 9.5, 'normal', INK);
     lines.forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 13; });
@@ -424,21 +515,21 @@
     if (!clauses.length) return;
     const pdf = ctx.pdf;
     pdf.addPage();
-    ctx.y = M;
-    heading(ctx, doc, 'Terms and conditions', 12);
+    ctx.y = TOP_NEXT;
+    heading(ctx, doc, 'Terms and conditions', 12, 12);
     ctx.y += 2;
 
     clauses.forEach((c, i) => {
       const title = (i + 1) + '. ' + str(c && c.title).trim();
       const text = str(c && c.text).trim();
-      const titleLines = wrap(pdf, title, CONTENT_W);
+      const titleLines = wrap(pdf, title, CONTENT_W, 9.5, 'bold');
       // Keep a heading with at least the first line of its clause.
       need(ctx, titleLines.length * 12 + 11);
       setFont(pdf, 9.5, 'bold', accentOf(doc));
       titleLines.forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 12; });
       ctx.y += 1;
       setFont(pdf, 8.5, 'normal', INK);
-      wrap(pdf, text, CONTENT_W).forEach((line) => {
+      wrap(pdf, text, CONTENT_W, 8.5, 'normal').forEach((line) => {
         need(ctx, 11);
         pdf.text(line, M, ctx.y);
         ctx.y += 11;
@@ -456,30 +547,53 @@
   function drawSignatures(ctx, doc) {
     const pdf = ctx.pdf;
     const sig = doc.signatures || {};
-    need(ctx, 90);
     const gap = 34;
     const colW = (CONTENT_W - gap) / 2;
     const xs = [M, M + colW + gap];
-    const caps = [str(sig.left), str(sig.right)];
+    // "Accepted by (Kraft Foods Group, Tolleson Plant)" wraps to a second line
+    // rather than losing its closing paren to an ellipsis. Both columns are
+    // set from the taller caption, so the two rules stay level with each other.
+    const caps = [
+      wrapTwo(pdf, str(sig.left), colW, 9, 'normal'),
+      wrapTwo(pdf, str(sig.right), colW, 9, 'normal'),
+    ];
+    const extra = (Math.max(caps[0].length, caps[1].length) - 1) * 11;
     const under = ['Signature / date', str(sig.signName)];
+    need(ctx, 90 + extra);
     const top = ctx.y + 8;
-    caps.forEach((cap, i) => {
+    const ruleY = top + 34 + extra;
+    caps.forEach((lines, i) => {
       setFont(pdf, 9, 'normal', INK);
-      pdf.text(fit(pdf, cap, colW), xs[i], top);
+      lines.forEach((line, k) => pdf.text(line, xs[i], top + k * 11));
       setDraw(pdf, INK, 0.7);
-      pdf.line(xs[i], top + 34, xs[i] + colW * 0.92, top + 34);
+      pdf.line(xs[i], ruleY, xs[i] + colW * 0.92, ruleY);
       setFont(pdf, 8.5, 'normal', MUTED);
-      pdf.text(fit(pdf, under[i], colW), xs[i], top + 45);
+      pdf.text(fit(pdf, under[i], colW, 8.5, 'normal'), xs[i], ruleY + 11);
     });
-    ctx.y = top + 56;
+    ctx.y = ruleY + 22;
   }
 
-  function drawFooters(pdf) {
+  // Page one carries the letterhead. Every page after it carries a running
+  // head as well as its number, because a continuation page that gets
+  // separated from the stack on a plant manager's desk has to be able to say
+  // whose bid it belongs to; "Page 2 of 3" cannot.
+  function drawFooters(pdf, doc) {
     const n = pdf.internal.getNumberOfPages();
+    const meta = (doc && doc.meta) || {};
+    const parts = [
+      str(meta.number).trim() === '' ? '' : 'Bid #' + str(meta.number).trim(),
+      str(meta.customer).trim(),
+      str(((doc || {}).header || {}).name).trim(),
+    ].filter((x) => x !== '');
+    const running = parts.join('  ·  ');
     for (let i = 1; i <= n; i += 1) {
       pdf.setPage(i);
       setFont(pdf, 8, 'normal', MUTED);
       pdf.text('Page ' + i + ' of ' + n, PAGE_W - M, FOOTER_Y, { align: 'right' });
+      if (i > 1 && running !== '') {
+        setFont(pdf, 8.5, 'normal', MUTED);
+        pdf.text(fit(pdf, running, CONTENT_W, 8.5, 'normal'), M, M - 12);
+      }
     }
   }
 
@@ -520,7 +634,7 @@
     drawCourtesy(ctx, d);
     drawSignatures(ctx, d);
     drawClauses(ctx, d);
-    drawFooters(pdf);
+    drawFooters(pdf, d);
     return pdf;
   }
 
@@ -577,10 +691,10 @@
   const CONSUMABLES_JOB_CENTS = 200000;   // a typical $2,000 material job
   const CONSUMABLES_JOB_HOURS = 32;
 
-  // currentRateCents is not part of the arithmetic — what he charges today
-  // cannot change what the hour costs. It is named here only because it is the
-  // page's other headline number, and the page reads both off one call site.
-  function hourCostRows(settings, currentRateCents) {   // eslint-disable-line no-unused-vars
+  // What he charges today cannot change what the hour costs, so the current
+  // rate is not an argument here at all: it is the page's other headline
+  // number, and hourCostPage prints it beside this function's answer.
+  function hourCostRows(settings) {
     const s = settings || {};
     const r = Math.round;
     const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
@@ -612,17 +726,17 @@
 
   function hourCostPage(settings, currentRateCents) {
     const pdf = newPdf();
-    const rows = hourCostRows(settings, currentRateCents);
+    const rows = hourCostRows(settings);
     // Off the settings, not hard-coded: the shop's name is his to change, and
     // an exhibit with the wrong name on it is not an exhibit.
     const company = str(((settings || {}).company || {}).name).trim() || 'this shop';
     let y = M + 6;
 
     setFont(pdf, 16, 'bold', BLACK);
-    pdf.text(fit(pdf, 'What an hour of ' + company.replace(/\s+LLC\.?$/i, '') + ' costs', CONTENT_W), M, y);
+    pdf.text(fit(pdf, 'What an hour of ' + company.replace(/\s+LLC\.?$/i, '') + ' costs', CONTENT_W, 16, 'bold'), M, y);
     y += 18;
     setFont(pdf, 9, 'normal', MUTED);
-    pdf.text(fit(pdf, company + '  ·  ' + dateText(todayISO()), CONTENT_W), M, y);
+    pdf.text(fit(pdf, company + '  ·  ' + dateText(todayISO()), CONTENT_W, 9, 'normal'), M, y);
     y += 10;
     setDraw(pdf, BLACK, 1.5);
     pdf.line(M, y, PAGE_W - M, y);
@@ -630,7 +744,7 @@
 
     setFont(pdf, 10, 'normal', INK);
     wrap(pdf, 'Every line below is a cost the hour has to carry before anyone is paid for '
-      + 'their trouble. The numbers come out of the settings this shop actually runs on.', CONTENT_W)
+      + 'their trouble. The numbers come out of the settings this shop actually runs on.', CONTENT_W, 10, 'normal')
       .forEach((line) => { pdf.text(line, M, y); y += 13; });
     y += 12;
 
@@ -642,12 +756,12 @@
         pdf.line(M, y - 12, amountX, y - 12);
       }
       setFont(pdf, heavy ? 11 : 10, heavy ? 'bold' : 'normal', INK);
-      pdf.text(fit(pdf, row.label, CONTENT_W - 130), M, y);
+      pdf.text(fit(pdf, row.label, CONTENT_W - 130, heavy ? 11 : 10, heavy ? 'bold' : 'normal'), M, y);
       pdf.text(money(row.cents), amountX, y, { align: 'right' });
       y += 12;
       if (row.note) {
         setFont(pdf, 8, 'normal', MUTED);
-        pdf.text(fit(pdf, row.note, CONTENT_W - 130), M, y);
+        pdf.text(fit(pdf, row.note, CONTENT_W - 130, 8, 'normal'), M, y);
         y += 8;
       }
       y += 10;
@@ -667,7 +781,7 @@
     wrap(pdf, 'Consumables and small tools are figured as ' + ((settings || {}).consumablesPct || 0)
       + '% of a typical $2,000 material job spread over 32 hours. Overhead is the shop’s own '
       + 'percentage on the lines above it. "Fair profit" is margin on the price, not markup on the cost.',
-    CONTENT_W).forEach((line) => { pdf.text(line, M, y); y += 11; });
+    CONTENT_W, 8.5, 'normal').forEach((line) => { pdf.text(line, M, y); y += 11; });
 
     drawFooters(pdf);
     return pdf;

@@ -36,7 +36,7 @@ function byLabel(rows, label) {
 }
 
 test('hourCostRows: every line off a known settings fixture', () => {
-  const rows = DocGen.hourCostRows(settings(), 6500);
+  const rows = DocGen.hourCostRows(settings());
 
   // Hidden crew are off the payroll: (3400 + 2800) / 2, not a three-man average.
   const wage = Math.round((3400 + 2800) / 2);                       // 3100
@@ -62,7 +62,7 @@ test('hourCostRows: every line off a known settings fixture', () => {
 });
 
 test('hourCostRows: the last row is the rate, and it is the rows above it added up', () => {
-  const rows = DocGen.hourCostRows(settings(), 6500);
+  const rows = DocGen.hourCostRows(settings());
   const last = rows[rows.length - 1];
 
   assert.strictEqual(last.label, 'Rate');
@@ -73,7 +73,7 @@ test('hourCostRows: the last row is the rate, and it is the rows above it added 
 
   // A page that says the hour costs X and then bills X is what a 0% margin
   // means; the exhibit must not invent profit that isn't in the settings.
-  const free = DocGen.hourCostRows(Object.assign(settings(), { marginPct: 0 }), 6500);
+  const free = DocGen.hourCostRows(Object.assign(settings(), { marginPct: 0 }));
   assert.strictEqual(byLabel(free, 'Fair profit').cents, 0);
   assert.strictEqual(byLabel(free, 'Rate').cents, byLabel(free, 'Subtotal (cost per hour)').cents);
 });
