@@ -17,6 +17,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const SW_SRC = read('sw.js');
 const HTML = read('index.html');
 const MANIFEST = JSON.parse(read('manifest.json'));
+const APP_SRC = read('app.js');
 
 // Evaluate just the two top-level const declarations out of sw.js. Running the
 // whole file would need a service worker global scope; slicing out the array
@@ -40,15 +41,23 @@ const ASSETS = [...swConst('ASSETS')];
 const CACHE = swConst('CACHE');
 
 // Everything index.html pulls over the network: <script src>, <link href>,
-// <img src>. Absolute URLs and data: URIs are somebody else's problem.
+// <img src>, and any url(...) in the inline stylesheet. Absolute URLs and
+// data: URIs are somebody else's problem. There are no CSS url() references
+// today; the scan covers them so the first background-image or @font-face
+// someone adds cannot slip past precaching unnoticed.
 function htmlRefs() {
   const refs = new Set();
-  const re = /<(?:script|link|img)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
-  let m;
-  while ((m = re.exec(HTML)) !== null) {
-    const ref = m[1];
-    if (/^(https?:|data:|#|\/\/)/i.test(ref)) continue;
-    refs.add(ref.replace(/^\.\//, ''));
+  const patterns = [
+    /<(?:script|link|img)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']/gi,
+    /\burl\(\s*["']?([^"')]+?)["']?\s*\)/gi,
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(HTML)) !== null) {
+      const ref = m[1].trim();
+      if (/^(https?:|data:|#|\/\/)/i.test(ref)) continue;
+      refs.add(ref.replace(/^\.\//, ''));
+    }
   }
   return [...refs];
 }
@@ -102,6 +111,16 @@ test('the manifest matches the app chrome', () => {
 test('index.html links the manifest and the apple touch icon', () => {
   assert.match(HTML, /<link\s+rel="manifest"\s+href="manifest\.json">/i);
   assert.match(HTML, /<link\s+rel="apple-touch-icon"\s+href="apple-touch-icon\.png">/i);
+});
+
+test('APP_VERSION in app.js matches CACHE in sw.js', () => {
+  // The version line at the bottom of Settings is the only way the owner can
+  // tell from his phone which build he is running, so it has to name the cache
+  // that is actually serving him. Bump one and forget the other and the line
+  // lies, which is worse than not having the line at all.
+  const m = APP_SRC.match(/^const APP_VERSION = '([^']+)';$/m);
+  assert.ok(m, 'app.js declares a top-level APP_VERSION string');
+  assert.strictEqual(m[1], CACHE, 'APP_VERSION and sw.js CACHE must be bumped together');
 });
 
 test('the cache name is namespaced to this app', () => {

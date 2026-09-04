@@ -1759,6 +1759,15 @@ function renderSettings() {
   host.appendChild(buildSetLock());
   host.appendChild(buildSetReports());
   host.appendChild(buildSetBackup());
+
+  // Last line on the screen, and the only way he can tell from the phone which
+  // build he is running. index.html is served cache-first, so a deploy that
+  // forgets to bump CACHE in sw.js leaves him on old code with no symptom at
+  // all; this line is the symptom. APP_VERSION lives in app.js and is checked
+  // against CACHE by tests/sw.test.js, so the two cannot drift.
+  const version = caption('CE Bids · version ' + APP_VERSION);
+  version.className = 'caption app-version';
+  host.appendChild(version);
 }
 
 registerScreen('settings', {

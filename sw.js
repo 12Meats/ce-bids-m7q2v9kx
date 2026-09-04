@@ -38,6 +38,12 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE)
       .then((cache) => cache.addAll(ASSETS))
       .then(() => self.skipWaiting())
+      // addAll is all-or-nothing, but caches.open already created the cache,
+      // so a failed install would leave an empty cache named for the new
+      // version sitting there. The next activate would then keep that empty
+      // cache and delete the good one. Throw the half-built cache away and
+      // let the install fail, so the old worker stays in charge.
+      .catch((err) => caches.delete(CACHE).then(() => { throw err; }))
   );
 });
 
@@ -71,8 +77,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // ignoreSearch so a cache-busting query string a future deploy might add
+  // ("app.js?v=3") still matches the precached "app.js" instead of missing
+  // the cache and blanking that screen offline.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.match(event.request, { ignoreSearch: true }).then((cached) => {
       if (cached) return cached;
       return fetch(event.request);
     })

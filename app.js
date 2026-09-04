@@ -23,6 +23,11 @@
 // show('<key>', arg) — so no screen ever has to call into another screen's
 // file to set that up.
 
+// The build the phone is actually running, shown at the bottom of Settings.
+// Must match CACHE in sw.js; both bump on every deploy that changes a cached
+// file. tests/sw.test.js fails if the two ever drift.
+const APP_VERSION = 'bids-v1';
+
 // ---------------------------------------------------------------------------
 // STATE
 // ---------------------------------------------------------------------------
@@ -724,6 +729,14 @@ if ('serviceWorker' in navigator) {
   // foreground.
   let reloadedForNewWorker = false; // guards against a reload loop
 
+  // On a first-ever install there is no controller yet, so the worker's
+  // clients.claim() fires controllerchange about a second in and the handler
+  // below would reload a page that is already running the newest code — a
+  // visible blink on the PIN screen, twice on iOS (once in Safari, once on
+  // the first standalone launch). Snapshot whether a controller existed when
+  // this ran: a real update always has one by then, so updates still reload.
+  const hadController = !!navigator.serviceWorker.controller;
+
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js')
       .then((reg) => {
@@ -741,6 +754,7 @@ if ('serviceWorker' in navigator) {
   // user has committed lives in localStorage (every screen saves on change), so
   // a reload here can only lose an in-progress, not-yet-committed field edit.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;   // first install claiming the page, not an update
     if (reloadedForNewWorker) return;
     reloadedForNewWorker = true;
     location.reload();
