@@ -140,7 +140,7 @@
   function wrapTwo(pdf, text, width, size, style) {
     const lines = wrap(pdf, text, width, size, style);
     if (lines.length <= 2) return lines;
-    return [lines[0], fit(pdf, lines.slice(1).join(' '), width)];
+    return [lines[0], fit(pdf, lines.slice(1).join(' '), width, size, style)];
   }
 
   // The drawing cursor. Screens of text are drawn top-down; need(h) is how
@@ -302,11 +302,14 @@
       const text = str(item).trim();
       if (text === '') return;
       const lines = wrap(pdf, text, CONTENT_W - indent, size, 'normal');
-      need(ctx, Math.min(lines.length, 2) * step);
+      // The whole bullet is reserved, not the first line or two of it: an
+      // exclusion broken across a page break is read as two half-sentences,
+      // and the half on the next page has no bullet in front of it. A single
+      // bullet taller than a page is not a case worth handling.
+      need(ctx, lines.length * step);
       setFont(pdf, size, 'normal', INK);
       pdf.text('•', M + 2, ctx.y);
-      lines.forEach((line, i) => {
-        if (i > 0) need(ctx, step);
+      lines.forEach((line) => {
         pdf.text(line, M + indent, ctx.y);
         ctx.y += step;
       });
@@ -348,10 +351,13 @@
   // of it and has no notion of keeping one row with the next. So the table is
   // laid out twice: once on a throwaway document, purely to learn how tall
   // every row comes out, and then for real with those heights in hand.
-  function measureRows(head, body, columnStyles) {
+  // The accent is handed in rather than assumed: the measuring pass has to be
+  // built from the same options as the drawing pass, or the heights it hands
+  // back are heights of a table nobody is going to print.
+  function measureRows(accent, head, body, columnStyles) {
     const heights = [];
     const scratch = newPdf();
-    const opts = tableOpts(NAVY, head, body, columnStyles, M);
+    const opts = tableOpts(accent, head, body, columnStyles, M);
     opts.willDrawCell = (data) => {
       if (data.section === 'body') heights[data.row.index] = data.row.height;
     };
@@ -367,7 +373,7 @@
     const pdf = ctx.pdf;
     const accent = accentOf(doc);
     const keep = (keepWith || []).filter((i) => i >= 0 && i < body.length - 1);
-    const heights = keep.length ? measureRows(head, body, columnStyles) : null;
+    const heights = keep.length ? measureRows(accent, head, body, columnStyles) : null;
     const held = (i) => !!(heights && keep.indexOf(i) !== -1 && heights[i] && heights[i + 1]);
     const opts = tableOpts(accent, head, body, columnStyles, ctx.y);
 
@@ -449,16 +455,15 @@
     }, body.length - 1);
   }
 
+  function scopeOf(doc) { return (doc.scope || []).filter((s) => str(s).trim() !== ''); }
+
+  // A labor-only bid drafts no scope. Repeating the job's own title as its one
+  // bullet printed the title twice in a row, an inch apart, so the section is
+  // left out altogether: the title above the price is the description, and the
+  // band under it says so in its own words.
   function drawScopeList(ctx, doc) {
-    let scope = (doc.scope || []).filter((s) => str(s).trim() !== '');
-    // A labor-only bid drafts no scope, and "Total price for the above" with
-    // nothing above it is a band that makes the document look truncated. The
-    // job's own title is the scope in that case, which is how he would say it.
-    if (!scope.length) {
-      const title = str((doc.meta || {}).title).trim();
-      if (title === '') return;
-      scope = [title];
-    }
+    const scope = scopeOf(doc);
+    if (!scope.length) return;
     heading(ctx, doc, 'Scope of work', 10.5, 13.5);
     drawBullets(ctx, scope, 10);
   }
@@ -473,7 +478,8 @@
     pdf.setFillColor(accent[0], accent[1], accent[2]);
     pdf.rect(M, ctx.y, CONTENT_W, bandH, 'F');
     setFont(pdf, 11, 'bold', WHITE);
-    pdf.text('Total price for the above', M + 14, ctx.y + bandH / 2 + 4);
+    const label = scopeOf(doc).length ? 'Total price for the above' : 'Total price for the work described above';
+    pdf.text(label, M + 14, ctx.y + bandH / 2 + 4);
     setFont(pdf, 16, 'bold', WHITE);
     pdf.text(money(doc.totalCents), PAGE_W - M - 14, ctx.y + bandH / 2 + 5.5, { align: 'right' });
     ctx.y += bandH + 18;
@@ -490,21 +496,17 @@
     drawBullets(ctx, terms, 9.5);
   }
 
-  // Straight off his own bids, in his own words.
-  function drawCourtesy(ctx, doc) {
-    if (doc.level === 'scope') return;
+  // Straight off his own bids, in his own words — and punctuated the way he
+  // writes: a question mark, not a dash.
+  function courtesyLines(pdf, doc) {
+    if (doc.level === 'scope') return [];
     const h = doc.header || {};
     // First name only — "call Andy at", the way he says it on the phone.
     const who = str(h.person).trim().split(/\s+/)[0] || '';
     const phone = str(h.phone).trim();
     let text = 'We appreciate the opportunity to earn your business and look forward to working with you.';
-    if (phone) text += ' Questions — call ' + (who || 'us') + ' at ' + phone + '.';
-    const pdf = ctx.pdf;
-    const lines = wrap(pdf, text, CONTENT_W, 9.5, 'normal');
-    need(ctx, lines.length * 13);
-    setFont(pdf, 9.5, 'normal', INK);
-    lines.forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 13; });
-    ctx.y += 10;
+    if (phone) text += ' Questions? Call ' + (who || 'us') + ' at ' + phone + '.';
+    return wrap(pdf, text, CONTENT_W, 9.5, 'normal');
   }
 
   // The addendum, on its own page — the way his signed proposals are put
@@ -544,12 +546,16 @@
 
   // Never split across a page: a signature rule alone at the top of page two,
   // with nothing above it, is how a proposal comes back unsigned.
-  function drawSignatures(ctx, doc) {
-    const pdf = ctx.pdf;
+  //
+  // The plan is measured before anything is drawn, and what it asks the page
+  // for is what it actually puts on it — the caption under the rule is the
+  // last ink in the block, so its baseline is the height that has to fit. The
+  // fixed 90 pt this used to reserve was 37 pt of room the block never used,
+  // which is a whole block pushed onto a page of its own for nothing.
+  function signaturePlan(pdf, doc) {
     const sig = doc.signatures || {};
     const gap = 34;
     const colW = (CONTENT_W - gap) / 2;
-    const xs = [M, M + colW + gap];
     // "Accepted by (Kraft Foods Group, Tolleson Plant)" wraps to a second line
     // rather than losing its closing paren to an ellipsis. Both columns are
     // set from the taller caption, so the two rules stay level with each other.
@@ -558,19 +564,44 @@
       wrapTwo(pdf, str(sig.right), colW, 9, 'normal'),
     ];
     const extra = (Math.max(caps[0].length, caps[1].length) - 1) * 11;
-    const under = ['Signature / date', str(sig.signName)];
-    need(ctx, 90 + extra);
+    return {
+      caps, colW, extra,
+      xs: [M, M + colW + gap],
+      under: ['Signature / date', str(sig.signName)],
+      height: 8 + 34 + extra + 11,     // top offset, rule drop, caption baseline
+    };
+  }
+
+  function drawSignatures(ctx, doc, plan) {
+    const pdf = ctx.pdf;
     const top = ctx.y + 8;
-    const ruleY = top + 34 + extra;
-    caps.forEach((lines, i) => {
+    const ruleY = top + 34 + plan.extra;
+    plan.caps.forEach((lines, i) => {
       setFont(pdf, 9, 'normal', INK);
-      lines.forEach((line, k) => pdf.text(line, xs[i], top + k * 11));
+      lines.forEach((line, k) => pdf.text(line, plan.xs[i], top + k * 11));
       setDraw(pdf, INK, 0.7);
-      pdf.line(xs[i], ruleY, xs[i] + colW * 0.92, ruleY);
+      pdf.line(plan.xs[i], ruleY, plan.xs[i] + plan.colW * 0.92, ruleY);
       setFont(pdf, 8.5, 'normal', MUTED);
-      pdf.text(fit(pdf, under[i], colW, 8.5, 'normal'), xs[i], ruleY + 11);
+      pdf.text(fit(pdf, plan.under[i], plan.colW, 8.5, 'normal'), plan.xs[i], ruleY + 11);
     });
     ctx.y = ruleY + 22;
+  }
+
+  // The courtesy line and the signature block are one thing, not two: the line
+  // is what introduces the block, and a break between them leaves the customer
+  // a bare rule at the top of a page with no sentence in front of it. Measured
+  // together, and if the pair does not fit, the page breaks BEFORE the line.
+  function drawSignOff(ctx, doc) {
+    const pdf = ctx.pdf;
+    const lines = courtesyLines(pdf, doc);
+    const plan = signaturePlan(pdf, doc);
+    need(ctx, lines.length * 13 + (lines.length ? 10 : 0) + plan.height);
+    if (lines.length) {
+      setFont(pdf, 9.5, 'normal', INK);
+      lines.forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 13; });
+      ctx.y += 10;
+    }
+    drawSignatures(ctx, doc, plan);
   }
 
   // Page one carries the letterhead. Every page after it carries a running
@@ -631,8 +662,7 @@
     else drawScope(ctx, d);
 
     drawTerms(ctx, d);
-    drawCourtesy(ctx, d);
-    drawSignatures(ctx, d);
+    drawSignOff(ctx, d);
     drawClauses(ctx, d);
     drawFooters(pdf, d);
     return pdf;

@@ -122,29 +122,54 @@ test('every level renders, and all three print the same total', () => {
   assert.strictEqual(totals[1], totals[2]);
 });
 
-test('1 to 40 items: no section band is ever the last row on its page', () => {
-  const bands = ['Materials', 'Equipment & rentals', 'Labor'];
-  for (let n = 1; n <= 40; n += 1) {
-    const doc = docFor(n, 'full', { rentals: true });
-    const pdf = DocGen.render(doc, {});
-    pageTexts(pdf).forEach((items, page) => {
-      items.forEach((item) => {
-        if (bands.indexOf(item.text) === -1) return;
-        // The Labor section's one line item is also called "Labor". A band is
-        // the only row with a single cell on its baseline; a line item always
-        // has its cost beside it.
-        if (items.filter((z) => Math.abs(z.y - item.y) < 0.5).length > 1) return;
-        // Something has to follow the band on the same page. The page number
-        // and the running head sit outside the body, so they don't count.
-        const below = items.filter((z) => z.y > item.y + 1 && z.y <= BOTTOM);
-        assert.ok(below.length > 0,
-          n + ' items: band "' + item.text + '" is stranded at the foot of page ' + (page + 1));
-      });
-      // Same rule for the two rows the eye reads as one line.
-      if (items.some((z) => z.text === 'Tax')) {
-        assert.ok(items.some((z) => z.text === 'Total'),
-          n + ' items: Tax is on page ' + (page + 1) + ' without its Total');
+// Which page each body row of the priced table landed on, straight from
+// autoTable. "Is there text lower down the page" is too weak a question — the
+// courtesy line and the signature block are also lower down the page, and they
+// would answer yes for a band that had lost its line items to the next one.
+// The only thing that settles it is where the NEXT ROW went.
+//
+// The last table autoTable draws is the real one; the pass before it is
+// docgen's throwaway measuring pass, on a scratch document of its own.
+// jsPDF copies jsPDF.API onto each instance as it is constructed, so the hook
+// goes on API — patching a prototype would never reach the documents render()
+// makes for itself.
+function tableRows(doc) {
+  const api = jspdf.jsPDF.API;
+  const original = api.autoTable;
+  const passes = [];
+  api.autoTable = function patched(opts) {
+    const rows = [];
+    passes.push(rows);
+    const userHook = opts.didDrawCell;
+    opts.didDrawCell = (data) => {
+      if (data.section === 'body' && data.column.index === 0) {
+        const raw = data.cell.raw;
+        rows[data.row.index] = {
+          page: data.pageNumber,
+          text: String(raw && raw.content != null ? raw.content : raw),
+          // A section band is the one body row built from a single cell.
+          band: Array.isArray(data.row.raw) && data.row.raw.length === 1,
+        };
       }
+      if (userHook) userHook(data);
+    };
+    return original.call(this, opts);
+  };
+  try { DocGen.render(doc, {}); } finally { api.autoTable = original; }
+  return passes[passes.length - 1] || [];
+}
+
+test('1 to 40 items: no section band is ever the last row on its page', () => {
+  for (let n = 1; n <= 40; n += 1) {
+    const rows = tableRows(docFor(n, 'full', { rentals: true }));
+    assert.ok(rows.length > 1, n + ' items: the priced table drew no rows');
+    rows.forEach((row, i) => {
+      if (!row.band && row.text !== 'Tax') return;
+      const next = rows[i + 1];
+      assert.ok(next, n + ' items: "' + row.text + '" is the last row in the table');
+      assert.strictEqual(next.page, row.page,
+        n + ' items: "' + row.text + '" is on page ' + row.page
+          + ' and the row under it ("' + next.text + '") is on page ' + next.page);
     });
   }
 });
@@ -168,15 +193,57 @@ test('a long bid runs to several pages, and every page after the first names the
   }
 });
 
-test('a labor-only bid still has something above "Total price for the above"', () => {
+test('a labor-only bid names the job once, and the band says what it is pricing', () => {
+  const title = 'Two days of troubleshooting';
   ['scope', 'summary'].forEach((level) => {
-    const doc = docFor(0, level, { title: 'Two days of troubleshooting' });
+    const doc = docFor(0, level, { title });
     assert.strictEqual(doc.scope.length, 0, 'fixture should have no drafted scope');
-    const text = allText(DocGen.render(doc, {}));
-    assert.ok(text.indexOf('Scope of work') !== -1, level + ' dropped the scope heading');
-    assert.ok(text.indexOf('Two days of troubleshooting') !== -1,
-      level + ' does not fall back to the title for its scope');
+    const items = pageTexts(DocGen.render(doc, {}))[0];
+    const text = items.map((z) => z.text).join('\n');
+    // With no drafted scope there is no scope section: the title above the
+    // price is the description, and printing it again as the lone bullet put
+    // the same sentence on the page twice in a row.
+    assert.strictEqual(text.indexOf('Scope of work'), -1,
+      level + ' kept an empty scope heading');
+    assert.strictEqual(items.filter((z) => z.text === title).length, 1,
+      level + ' prints the job title twice');
   });
+
+  const band = allText(DocGen.render(docFor(0, 'scope', { title }), {}));
+  assert.ok(band.indexOf('Total price for the work described above') !== -1,
+    'the band does not say what it is pricing');
+
+  // A bid that does have a scope is untouched: heading, bullets, short label.
+  const withScope = docFor(0, 'scope', { title });
+  withScope.scope = ['Replace two failed ballasts', 'Test and label the panel'];
+  const full = allText(DocGen.render(withScope, {}));
+  assert.ok(full.indexOf('Scope of work') !== -1, 'a drafted scope lost its heading');
+  assert.ok(full.indexOf('Replace two failed ballasts') !== -1, 'a drafted scope lost a bullet');
+  assert.ok(full.indexOf('Total price for the above') !== -1, 'the short band label changed');
+});
+
+test('the courtesy line is punctuated the way he writes, with no em-dash', () => {
+  const text = allText(DocGen.render(docFor(4, 'full'), {}));
+  assert.strictEqual(text.indexOf('—'), -1, 'an em-dash reached the customer copy');
+  assert.ok(text.indexOf('Questions? Call Andy at') !== -1,
+    'the courtesy line does not invite the call the way he says it');
+});
+
+test('the signature block stays with its courtesy line at every body height', () => {
+  for (let n = 6; n <= 18; n += 1) {
+    const pdf = DocGen.render(docFor(n, 'full', { rentals: true }), {});
+    const pages = pageTexts(pdf);
+    let courtesy = -1;
+    let signature = -1;
+    pages.forEach((items, page) => {
+      if (items.some((z) => z.text.indexOf('We appreciate the opportunity') === 0)) courtesy = page;
+      if (items.some((z) => z.text === 'Signature / date')) signature = page;
+    });
+    assert.ok(courtesy !== -1, n + ' items: the courtesy line is missing');
+    assert.ok(signature !== -1, n + ' items: the signature block is missing');
+    assert.strictEqual(signature, courtesy,
+      n + ' items: the signature block left its courtesy line behind on page ' + (courtesy + 1));
+  }
 });
 
 test('a long customer name wraps instead of losing its tail', () => {
