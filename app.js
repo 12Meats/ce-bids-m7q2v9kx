@@ -86,14 +86,16 @@ function showBanner(text, kind, opts) {
 
   area.appendChild(banner);
 
-  // Never let banners eat the screen: past three, the oldest drops off.
-  while (area.children.length > BANNER_MAX) area.removeChild(area.firstElementChild);
-
-  // A danger banner reports something that did NOT happen (a save refused, a
-  // storage read that failed). The area is sticky under the top bar, but on a
-  // screen scrolled deep down the sticky element can still be below the fold
-  // mid-scroll, so scroll the page up to put it under the owner's eyes.
-  if (kind === 'danger') window.scrollTo(0, 0);
+  // Never let banners eat the screen: past three, the oldest drops off — but
+  // only ever a transient one. A persistent banner describes a condition that
+  // is still true (storage unreadable), and three routine notices in a row
+  // must not be able to push that warning off the screen. If everything
+  // showing is persistent, they all stay.
+  while (area.children.length > BANNER_MAX) {
+    const victim = Array.prototype.find.call(area.children, (b) => b.dataset.persistent !== '1');
+    if (!victim) break;
+    victim.remove();
+  }
 
   return banner;
 }
@@ -123,7 +125,7 @@ function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.op
 
 // --- Number keypad ---------------------------------------------------------
 
-// promptNumber(current, { label, allowDecimal, wasText, done })
+// promptNumber(current, { label, allowDecimal, maxDecimals, wasText, done })
 // current: the existing value (Number) or null — shown as "was 12" but never
 // preloaded into the buffer: retyping beats editing on a phone. wasText
 // overrides that line for callers that format their own (see promptMoney).
@@ -135,7 +137,7 @@ function promptNumber(current, opts) {
 
   const allowDecimal = !!opts.allowDecimal;
   keypadCtx.open = true;
-  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal });
+  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal, maxDecimals: opts.maxDecimals });
   keypadCtx.done = typeof opts.done === 'function' ? opts.done : null;
 
   el('keypadLabel').textContent = opts.label || '';
@@ -211,6 +213,7 @@ function promptMoney(cents, opts) {
   promptNumber(has ? cents / 100 : null, {
     label: opts.label,
     allowDecimal: true,
+    maxDecimals: 2, // cents are the smallest thing money has
     wasText: has ? 'was ' + BidMath.fmt(cents) : 'was not set',
     done: (v) => { if (done) done(v === null ? null : Math.round(v * 100)); },
   });

@@ -43,11 +43,9 @@
       --font-xl: 2rem;
       /* Height reserved at the bottom of every screen for the tab bar. */
       --tabbar-height: 64px;
-      /* The top bar's height excluding the safe-area inset. The sticky banner
-         area offsets by exactly this, so it must stay in sync with .topbar:
-         4px padding + a 48px back button + 4px padding = 56px, the same 56px
-         the title-only state gets from min-height. */
-      --topbar-height: 56px;
+      /* The notch/status-bar inset, behind a variable so a test can inject a
+         real device value on a desktop browser. */
+      --sai-top: env(safe-area-inset-top, 0px);
     }
 
     * { box-sizing: border-box; }
@@ -75,17 +73,31 @@
       touch-action: manipulation;
     }
 
-    /* ---------- Top bar ---------- */
-    .topbar {
+    /* ---------- Chrome (top bar + banners) ---------- */
+    /* One sticky block rather than two independently-stuck elements: the
+       banner area used to offset itself by the top bar's height, which was
+       wrong by exactly the safe-area inset on a notched phone (a 21px gap of
+       scrolling content showing through under the bar). Sticking the pair
+       together means there is no offset to get wrong. */
+    .chrome {
       position: sticky;
       top: 0;
       z-index: 10;
+      background: var(--color-bg);
+    }
+
+    .topbar {
       display: flex;
       align-items: center;
       gap: var(--space-1);
-      min-height: var(--topbar-height);
+      /* 4px padding + a 48px back button = 56px, and min-height carries the
+         title-only state to the same 56px, so the chrome does not change
+         height as the owner moves between screens. The inset has to be inside
+         min-height or the title-only bar comes up short by exactly the notch
+         (82px vs 103px on an iPhone 14 Pro). */
+      min-height: calc(56px + var(--sai-top));
       padding: 4px var(--space-2);
-      padding-top: calc(4px + env(safe-area-inset-top));
+      padding-top: calc(4px + var(--sai-top));
       background: var(--color-accent);
       color: #ffffff;
     }
@@ -122,17 +134,18 @@
     /* Sits directly under the top bar. Persistent banners (storage corrupt)
        stay until clearBanner(); transient ones carry a dismiss X and clear
        themselves after a few seconds. */
-    /* Sticky, directly under the top bar: a failed save on a long screen has
-       to be visible where the thumb already is, not only at scroll-top. */
+    /* Inside .chrome, so a failed save on a long screen is visible where the
+       thumb already is rather than only at scroll-top — and without the app
+       scrolling the page back to the top and losing the owner's place. */
     .banner-area {
-      position: sticky;
-      top: calc(var(--topbar-height) + env(safe-area-inset-top));
-      z-index: 9; /* under .topbar (10), over page content */
       padding: 0 20px;
       background: var(--color-bg);
     }
     .banner-area:empty { display: none; }
-    .banner-area > :first-child { margin-top: var(--space-3); }
+    /* Padding, not a margin on the first banner: a child margin collapses out
+       through the area and .chrome, which would put a 16px seam between the
+       top bar and the banner block instead of inside it. */
+    .banner-area:not(:empty) { padding-top: var(--space-3); }
 
     .banner {
       display: flex;
@@ -219,7 +232,7 @@
       min-height: 100vh;
       min-height: 100dvh;
       padding: var(--space-5) var(--space-4);
-      padding-top: calc(var(--space-5) + env(safe-area-inset-top));
+      padding-top: calc(var(--space-5) + var(--sai-top));
       padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
       gap: 28px;
       text-align: center;
@@ -435,7 +448,7 @@
       flex-direction: column;
       align-items: center;
       padding: var(--space-4) 20px;
-      padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+      padding-top: calc(var(--space-4) + var(--sai-top));
       padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
@@ -513,12 +526,14 @@
   </style>
 </head>
 <body>
-  <header id="topbar" class="topbar" hidden>
-    <button type="button" id="backBtn" class="back-btn" hidden aria-label="Back">&#8249; Back</button>
-    <h1 id="topbarTitle" class="topbar-title"></h1>
-  </header>
+  <div class="chrome">
+    <header id="topbar" class="topbar" hidden>
+      <button type="button" id="backBtn" class="back-btn" hidden aria-label="Back">&#8249; Back</button>
+      <h1 id="topbarTitle" class="topbar-title"></h1>
+    </header>
 
-  <div id="banner" class="banner-area" aria-live="polite"></div>
+    <div id="banner" class="banner-area" aria-live="polite"></div>
+  </div>
 
   <main>
     <!-- ---------- PIN ---------- -->

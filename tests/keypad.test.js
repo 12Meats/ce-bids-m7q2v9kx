@@ -94,3 +94,43 @@ test('two buffers do not share state', () => {
   assert.strictEqual(a.value(), 11);
   assert.strictEqual(b.value(), 22);
 });
+
+test('maxDecimals refuses a third decimal digit at the key', () => {
+  const b = K.createBuffer({ allowDecimal: true, maxDecimals: 2 });
+  '12.345'.split('').forEach((k) => b.press(k));
+  assert.strictEqual(b.text(), '12.34');
+  assert.strictEqual(b.value(), 12.34);
+
+  // digits before the point are unaffected by the decimal cap
+  const c = K.createBuffer({ allowDecimal: true, maxDecimals: 2 });
+  '123456.78'.split('').forEach((k) => c.press(k));
+  assert.strictEqual(c.text(), '123456.78');
+
+  // and backspacing frees the slot back up
+  b.backspace();
+  b.press('9');
+  assert.strictEqual(b.text(), '12.39');
+});
+
+test('no decimal cap by default', () => {
+  const b = type('1.23456');
+  assert.strictEqual(b.text(), '1.23456');
+});
+
+test('a full buffer has no room for the decimal point either', () => {
+  const b = K.createBuffer({ allowDecimal: true });
+  '123456789012'.split('').forEach((k) => b.press(k)); // 12 chars, at the cap
+  b.press('.');
+  assert.strictEqual(b.text(), '123456789012');
+  b.press('5');
+  assert.strictEqual(b.text(), '123456789012');
+
+  // one under the cap: the point fits, and then nothing more does
+  const c = K.createBuffer({ allowDecimal: true, maxDigits: 4 });
+  '123'.split('').forEach((k) => c.press(k));
+  c.press('.');
+  assert.strictEqual(c.text(), '123.');
+  c.press('5');
+  assert.strictEqual(c.text(), '123.');
+  assert.strictEqual(c.value(), 123);
+});

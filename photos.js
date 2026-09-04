@@ -131,9 +131,11 @@ const Photos = (function () {
 
   // delMany(ids) -> Promise<boolean>. One transaction for the whole set, so
   // deleting an area's photos is atomic: either they all go or none do, and a
-  // half-cleared area can never be left behind. Ids that aren't there are fine.
+  // half-cleared area can never be left behind. Ids that aren't there are
+  // fine; anything that isn't an array is a caller bug and reports false.
   function delMany(ids) {
-    if (!Array.isArray(ids) || ids.length === 0) return Promise.resolve(true);
+    if (!Array.isArray(ids)) return Promise.resolve(false);
+    if (ids.length === 0) return Promise.resolve(true);
     const clean = ids.filter((id) => typeof id === 'string' && id);
     if (clean.length === 0) return Promise.resolve(true);
     return openDb().then((db) => {
