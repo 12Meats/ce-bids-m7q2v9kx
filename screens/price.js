@@ -546,9 +546,11 @@ function priceNewTool(bid) {
           if (cents === null || !(cents > 0)) return;
           const s = priceSettings();
           // Store.newTool builds it whole and pushes it — the same entry the
-          // Settings screen's + Tool makes, so the two doors cannot drift.
+          // Settings screen's + Tool makes, so the two doors cannot drift. It
+          // only ever refuses a blank name or a cost that isn't a whole number
+          // above zero, and both are already guarded two lines up, so there is
+          // no null to check for here.
           const tool = Store.newTool(state.data, name, cents);
-          if (!tool) return;
           if (!priceSave(() => {
             const i = s.equipment.indexOf(tool);
             if (i !== -1) s.equipment.splice(i, 1);

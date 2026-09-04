@@ -23,21 +23,13 @@ let bidsSuppressTapUntil = 0; // a long press must not also count as a tap
 // ---------------------------------------------------------------------------
 // Reading a bid
 // ---------------------------------------------------------------------------
-// bidCustomerName and bidPriceText live in ui.js: the bid screen prints the
-// same two things and the two screens must never disagree about either.
+// bidCustomerName and bidPriceText live in ui.js, and so does bidPhotoIds:
+// the bid screen prints the same two things and Settings exports the same
+// photos, and none of the three screens may disagree about any of them.
 
 // Newest first — the ordering itself lives in dates.js, where it is tested.
 function bidsSorted() {
   return state.data.bids.slice().sort(Dates.bidsSortCompare);
-}
-
-// Every photo this bid owns — its own areas plus any change-order areas — so
-// deleting a bid doesn't leave orphaned blobs in IndexedDB forever.
-function bidPhotoIds(bid) {
-  const areas = (bid.areas || []).slice();
-  const cos = (bid.job && bid.job.changeOrders) || [];
-  cos.forEach((co) => { (co.areas || []).forEach((a) => areas.push(a)); });
-  return areas.reduce((ids, a) => ids.concat(a.photoIds || []), []);
 }
 
 // ---------------------------------------------------------------------------
@@ -147,22 +139,30 @@ async function bidsDelete(id) {
   );
   if (!ok) { render(); return; }
 
-  // Photos first, and only carry on if they actually went: dropping the bid
-  // while its photos survive strands blobs in IndexedDB that nothing will ever
-  // point at again, and the owner has no way to find or clear them.
-  const photosGone = await Photos.delMany(bidPhotoIds(bid));
-  if (!photosGone) {
-    showBanner("Couldn't remove the photos — bid kept", 'danger');
-    render();
-    return;
-  }
-
+  // The document goes FIRST and the blobs only once it is really off disk.
+  // A refused save with the photos already deleted is the one outcome there is
+  // no way back from: the bid survives, its pictures do not, and nothing on
+  // screen says why. Stranded blobs are the cheaper failure by far — they cost
+  // storage, not work — so they are cleaned up after, never before.
   const i = state.data.bids.findIndex((b) => b.id === id);
-  if (i !== -1) {
-    const [removed] = state.data.bids.splice(i, 1);
-    persistOr(() => { state.data.bids.splice(i, 0, removed); });
-  }
+  if (i === -1) { render(); return; }
+  const [removed] = state.data.bids.splice(i, 1);
+  if (!persistOr(() => { state.data.bids.splice(i, 0, removed); })) { render(); return; }
   render();
+  bidsDeleteBlobs(removed);
+}
+
+// Everything in IndexedDB that belonged to a bid that is now gone: the photos
+// its areas (and its change orders' areas) point at, and every PDF it ever
+// produced. Not awaited by the caller — the bid is already deleted and the
+// list has already been redrawn — so this only ever has news, never a decision.
+function bidsDeleteBlobs(bid) {
+  const prefix = bidPdfPrefix(bid.id);
+  Photos.list('pdf')
+    .then((ids) => Photos.delMany(bidPhotoIds(bid).concat(ids.filter((x) => x.indexOf(prefix) === 0))))
+    .then((ok) => {
+      if (!ok) showBanner('Bid deleted. Some of its photos are still on this phone.');
+    });
 }
 
 // ---------------------------------------------------------------------------

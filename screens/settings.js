@@ -65,7 +65,8 @@
 //   CATALOG     — the parts list, by category
 //   COUNTER     — the next bid number
 //   LOCK        — the PIN
-//   ELSEWHERE   — Reports, and the Backup placeholder
+//   ELSEWHERE   — Reports
+//   BACKUP      — sending it off, getting it back, and how stale it is
 //   RENDER
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,10 @@ function enterSettings() {
   settingsAddGroup = false;
   settingsGroupOpen = null;
   settingsShowHidden = { crew: false, equipment: false, clauses: false, catalog: false };
+  // The backup card's blobs have to be in memory before its buttons are drawn,
+  // never read inside the tap that presses one — see the BACKUP header for why.
+  settingsResetBackup();
+  settingsLoadBackupPdfs();
 }
 
 function setS() { return state.data.settings; }
@@ -347,18 +352,37 @@ function buildSetCrewRow(box, c) {
     ['Wage', '', async () => {
       const ok = await settingsConfirmCost('what ' + (c.name || 'he') + ' is paid');
       if (!ok) { render(); return; }
-      promptMoney(c.wageCents, {
-        label: (c.name || 'Worker') + ' — paid an hour',
-        done: (cents) => {
-          if (cents === null) return;
-          const prev = c.wageCents;
-          c.wageCents = cents;
-          settingsSaveAndRender(() => { c.wageCents = prev; });
-        },
-      });
+      settingsEditWage(c);
     }],
     settingsHideAction(c),
   ]));
+}
+
+// Changing a wage, after the question about how far it reaches has been
+// answered. Its own function because a typed 0 asks again, and asking again
+// must not re-ask the confirm — he already said yes to changing the wage; what
+// he has not done yet is name one.
+//
+// Zero is not a wage. costStack multiplies it by every hour on every bid this
+// man is on, so a man at $0.00/hr works for free on paper and quietly eats the
+// margin — the same reason + Worker refuses one. Clear is different and is
+// left alone: on a man who already has a wage, "clear" is "leave it as it is",
+// the way it is everywhere else on this screen.
+function settingsEditWage(c) {
+  promptMoney(c.wageCents, {
+    label: (c.name || 'Worker') + ' — paid an hour',
+    done: (cents) => {
+      if (cents === null) return;
+      if (!(cents > 0)) {
+        showBanner('Enter his hourly wage');
+        settingsEditWage(c);
+        return;
+      }
+      const prev = c.wageCents;
+      c.wageCents = cents;
+      settingsSaveAndRender(() => { c.wageCents = prev; });
+    },
+  });
 }
 
 function settingsAddCrew() {
@@ -661,12 +685,15 @@ function settingsAskToolCost(name) {
   promptMoney(null, {
     label: name + ' — what it cost new',
     done: (cents) => {
-      const tool = (cents === null || !(cents > 0)) ? null : Store.newTool(state.data, name, cents);
-      if (!tool) {
+      if (cents === null || !(cents > 0)) {
         showBanner('Enter what it cost new');
         settingsAskToolCost(name);
         return;
       }
+      // Store.newTool only ever refuses a blank name or a cost that isn't a
+      // whole number above zero. Both are guarded — the name by the caller,
+      // the cost one line up — so there is no null to check for here.
+      const tool = Store.newTool(state.data, name, cents);
       const s = setS();
       settingsSaveAndRender(() => {
         const i = s.equipment.indexOf(tool);
@@ -1055,10 +1082,467 @@ function buildSetReports() {
   return box;
 }
 
+// ---------------------------------------------------------------------------
+// BACKUP
+// ---------------------------------------------------------------------------
+// This app is the only place the bids live. His wife used to file them; she is
+// out, and there is no server behind this — so the backup is not a nicety, it
+// is the reason a dropped phone is a bad week instead of a lost year.
+//
+// A web app on iOS cannot save a file or send an email on its own. There is no
+// way around that and no point pretending otherwise, so the two human steps
+// are made unavoidable and visible instead: the app copies Adrian's address to
+// the clipboard, says so, and opens the share sheet with the file already in
+// it. He picks Mail and pastes. Two taps he can see, rather than a promise the
+// browser cannot keep.
+//
+// What goes:
+//   the JSON  — the whole document, every bid, every setting. THIS is the
+//               backup; everything below is a convenience.
+//   the PDFs  — every proposal made since the last backup, so the paper the
+//               customer is holding has an off-phone copy too.
+//   photos    — NOT in the routine backup. A walk of a dairy plant is tens of
+//               megabytes and would make the one thing he has to do every two
+//               weeks the one thing that fails. They go on their own, one bid
+//               at a time, from their own button.
+//
+// THE RULE THIS CARD LIVES BY: navigator.share only works inside a live tap,
+// and an await that crosses a task boundary spends it — Chrome then neither
+// resolves nor rejects, which on screen is a button that never comes back. So
+// every blob is already in memory before its button is drawn (the same thing
+// the proposal screen does with Previous PDFs), the clipboard write is fired
+// and NOT awaited, and each handler awaits exactly one share.
+
+const SET_BACKUP_STALE_DAYS = 14;   // the home screen's band uses the same number
+const SET_BACKUP_PDF_MAX = 25;      // how many new PDFs one share sheet is asked to carry
+const SET_BACKUP_TITLE = 'CE Bids backup';
+
+let settingsBackupBusy = false;
+let settingsBackupPdfs = [];         // { id, bidId, at, blob } made since the last backup
+let settingsBackupPdfExtra = 0;      // how many more there were than the cap allows
+let settingsBackupQueue = null;      // Files still to be offered one at a time
+let settingsBackupPhotoPick = false; // the bid chips are showing
+let settingsBackupPhotos = null;     // { bidId, label, files } once its blobs are in memory
+// Two counters, not one: the PDF load and a photo load run against different
+// buttons and must not be able to cancel each other. Tapping Export photos
+// while the PDFs were still coming in used to leave Send backup saying there
+// were none.
+let settingsBackupPdfToken = 0;
+let settingsBackupPhotoToken = 0;
+
+function settingsResetBackup() {
+  settingsBackupBusy = false;
+  settingsBackupPdfs = [];
+  settingsBackupPdfExtra = 0;
+  settingsBackupQueue = null;
+  settingsBackupPhotoPick = false;
+  settingsBackupPhotos = null;
+  settingsBackupPdfToken += 1;
+  settingsBackupPhotoToken += 1;
+}
+
+// --- What is pending --------------------------------------------------------
+
+// Midnight of the day of the last backup, in local time. The whole day is
+// included on purpose: a PDF made an hour before he backed up would otherwise
+// fall in the gap between "already sent" and "made since". Sending one twice
+// costs an attachment; missing one costs the document.
+function settingsBackupSinceMs() {
+  const at = setS().lastBackupAt;
+  if (!at) return 0;   // never backed up: everything is pending
+  const t = new Date(at + 'T00:00:00').getTime();
+  return isFinite(t) ? t : 0;
+}
+
+// The bytes, in memory, before the Send button is drawn. Newest first and
+// capped: a share sheet handed two hundred files is a share sheet that does
+// not open, and the JSON — the actual backup — is unaffected either way.
+function settingsLoadBackupPdfs() {
+  const token = ++settingsBackupPdfToken;
+  const since = settingsBackupSinceMs();
+  Photos.list('pdf').then((ids) => {
+    if (token !== settingsBackupPdfToken) return;
+    const all = ids.map(bidPdfParse).filter((x) => x && x.at >= since).sort((a, b) => b.at - a.at);
+    const take = all.slice(0, SET_BACKUP_PDF_MAX).map((x) => ({ id: x.id, bidId: x.bidId, at: x.at, blob: null }));
+    return Promise.all(take.map((e) => Photos.get(e.id).then((b) => { e.blob = b; }))).then(() => {
+      if (token !== settingsBackupPdfToken) return;
+      // A PDF whose blob has been evicted is not a PDF that can be sent.
+      settingsBackupPdfs = take.filter((e) => e.blob);
+      settingsBackupPdfExtra = all.length - take.length;
+      if (state.screen === 'settings') render();
+    });
+  });
+}
+
+// --- Files ------------------------------------------------------------------
+
+function settingsBackupJsonName() { return 'ce-bids-backup-' + Store.todayISO() + '.json'; }
+
+function settingsBackupJsonFile() {
+  return new File([JSON.stringify(state.data)], settingsBackupJsonName(), { type: 'application/json' });
+}
+
+// The proposal's own file name with the millisecond it was made on the end, so
+// three revisions of one bid arrive as three files rather than one that
+// overwrote the other two.
+function settingsBackupPdfName(entry) {
+  const bid = state.data.bids.find((b) => b.id === entry.bidId);
+  let base = 'proposal';
+  if (bid) {
+    try { base = String(DocModel.fileName(bid, state.data)).replace(/\.pdf$/i, ''); }
+    catch (err) { base = 'bid-' + bid.number; }
+  }
+  return base + '-' + entry.at + '.pdf';
+}
+
+function settingsBackupPdfFiles() {
+  return settingsBackupPdfs.map((e) => new File([e.blob], settingsBackupPdfName(e), { type: 'application/pdf' }));
+}
+
+// --- Sharing ----------------------------------------------------------------
+
+// One share, and nothing awaited in front of it. 'unsupported' means the
+// browser would not take these files at all; whether it WILL is decided with
+// canShare BEFORE the await, never after it.
+function settingsShareFiles(files) {
+  return navigator.share({ files, title: SET_BACKUP_TITLE }).then(
+    () => 'shared',
+    (err) => ((err && err.name === 'AbortError') ? 'cancelled' : 'unsupported')
+  );
+}
+
+function settingsCanShareFiles(files) {
+  try { return !!(navigator.canShare && navigator.canShare({ files })); }
+  catch (err) { return false; }
+}
+
+// The desktop end of the same job: no share sheet, so the file goes to the
+// downloads folder and he attaches it himself.
+function settingsDownloadFile(file) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+// Fired, never awaited: awaiting the clipboard would spend the tap the share
+// sheet needs. The banner is the whole point of the step — it is what tells
+// him there is something in the clipboard worth pasting.
+function settingsCopyBackupEmail() {
+  const email = setS().backupEmail;
+  if (!navigator.clipboard || !navigator.clipboard.writeText) {
+    showBanner('Send it to ' + email);
+    return;
+  }
+  navigator.clipboard.writeText(email).then(
+    () => showBanner("Adrian's email copied. Paste it in the To field.", 'ok'),
+    () => showBanner('Send it to ' + email)
+  );
+}
+
+// --- Send backup ------------------------------------------------------------
+
+async function settingsSendBackup() {
+  if (settingsBackupBusy) return;
+
+  const jsonFile = settingsBackupJsonFile();
+  const pdfFiles = settingsBackupPdfFiles();
+  const all = pdfFiles.length ? [jsonFile].concat(pdfFiles) : [jsonFile];
+
+  // Everything that decides WHICH share happens is settled here, synchronously,
+  // because after the first await there is no activation left to start a second
+  // one with.
+  const canAll = settingsCanShareFiles(all);
+  const canJson = canAll ? true : settingsCanShareFiles([jsonFile]);
+
+  settingsCopyBackupEmail();
+  settingsBackupBusy = true;
+  render();
+
+  let result;
+  if (canAll) {
+    result = await settingsShareFiles(all);
+  } else if (canJson) {
+    // iOS takes a whole set; some browsers take exactly one file. The backup
+    // itself goes now and the PDFs queue up behind their own button.
+    result = await settingsShareFiles([jsonFile]);
+    if (result === 'shared' && pdfFiles.length) settingsBackupQueue = pdfFiles.slice();
+  } else {
+    settingsDownloadFile(jsonFile);
+    if (pdfFiles.length) settingsBackupQueue = pdfFiles.slice();
+    result = 'downloaded';
+  }
+
+  settingsBackupBusy = false;
+
+  if (result === 'cancelled') { settingsBackupQueue = null; render(); return; }
+  if (result === 'unsupported') {
+    settingsBackupQueue = null;
+    showBanner("Couldn't open the share sheet — nothing was sent", 'danger');
+    render();
+    return;
+  }
+
+  // ONLY here. A sheet he backed out of is not a backup, and a date that says
+  // otherwise turns the home screen's warning off for two weeks.
+  const prev = setS().lastBackupAt;
+  setS().lastBackupAt = Store.todayISO();
+  if (!settingsSaveAndRender(() => { setS().lastBackupAt = prev; })) return;
+  settingsLoadBackupPdfs();
+  showBanner(result === 'downloaded' ? 'Backup downloaded' : 'Backup sent', 'ok');
+}
+
+// The queue, one tap per file. No await in front of the share, so each tap
+// keeps its own activation.
+function settingsSendQueuedPdf() {
+  if (!settingsBackupQueue || !settingsBackupQueue.length) return;
+  const file = settingsBackupQueue[0];
+  const done = () => {
+    settingsBackupQueue.shift();
+    if (!settingsBackupQueue.length) settingsBackupQueue = null;
+    render();
+  };
+  if (!settingsCanShareFiles([file])) { settingsDownloadFile(file); done(); return; }
+  settingsShareFiles([file]).then((result) => {
+    if (result === 'cancelled') { render(); return; }
+    if (result === 'unsupported') { showBanner("Couldn't open the share sheet", 'danger'); render(); return; }
+    done();
+  });
+}
+
+// --- Export photos ----------------------------------------------------------
+
+function settingsBidsWithPhotos() {
+  return state.data.bids.filter((b) => bidPhotoIds(b).length > 0);
+}
+
+function settingsBidLabel(bid) {
+  return bidCustomerName(bid, state.data) + ' · #' + bid.number;
+}
+
+// Two taps on purpose. Reading a walk's worth of photos out of IndexedDB takes
+// long enough to spend a tap, so the pick loads them and the SEND button — the
+// one that has to keep its activation — is only drawn once they are in hand.
+function settingsLoadPhotos(bid) {
+  const token = ++settingsBackupPhotoToken;
+  const ids = bidPhotoIds(bid);
+  const label = settingsBidLabel(bid);
+  settingsBackupPhotos = { bidId: bid.id, label, files: null };
+  settingsBackupPhotoPick = false;
+  render();
+  Promise.all(ids.map((id) => Photos.get(id))).then((blobs) => {
+    if (token !== settingsBackupPhotoToken) return;
+    const files = [];
+    blobs.forEach((b, i) => {
+      if (!b) return;   // evicted by iOS; the ones that are still here still go
+      const type = b.type || 'image/jpeg';
+      const ext = type.indexOf('png') !== -1 ? 'png' : 'jpg';
+      files.push(new File([b], 'bid-' + bid.number + '-photo-' + (i + 1) + '.' + ext, { type }));
+    });
+    settingsBackupPhotos = { bidId: bid.id, label, files };
+    if (state.screen === 'settings') render();
+  });
+}
+
+function settingsSendPhotos() {
+  const held = settingsBackupPhotos;
+  if (!held || !held.files || !held.files.length) return;
+  const files = held.files;
+  const after = (result) => {
+    if (result === 'cancelled') { render(); return; }
+    if (result === 'unsupported') { showBanner("Couldn't open the share sheet", 'danger'); render(); return; }
+    settingsBackupPhotos = null;
+    showBanner('Photos sent', 'ok');
+    render();
+  };
+  if (!settingsCanShareFiles(files)) {
+    files.forEach(settingsDownloadFile);
+    after('downloaded');
+    return;
+  }
+  settingsShareFiles(files).then(after);
+}
+
+// --- Restore ----------------------------------------------------------------
+
+// The file name is the fallback answer to "from when?": a backup whose
+// lastBackupAt is null is the first one he ever made, and its name still
+// carries the day it was made on.
+function settingsBackupDateFromName(name) {
+  const hit = /(\d{4}-\d{2}-\d{2})/.exec(String(name || ''));
+  return hit ? hit[1] : null;
+}
+
+// Store.validateImport is the ONE gate: it parses (in its own try/catch, so a
+// truncated file comes back null rather than throwing), runs the migrations for
+// an older version, and then checks every level of the shape. Anything it will
+// not vouch for never gets near the disk.
+function settingsRestoreFrom(file) {
+  const read = file && typeof file.text === 'function' ? file.text() : Promise.reject(new Error('no text()'));
+  read.then((text) => {
+    const data = Store.validateImport(text);
+    if (!data) {
+      showBanner("That file isn't a CE Bids backup", 'danger');
+      render();
+      return;
+    }
+    const when = data.settings.lastBackupAt || settingsBackupDateFromName(file.name);
+    const theirs = data.bids.length;
+    const mine = state.data.bids.length;
+    return confirmPanel(
+      'Replace everything on this phone with the backup from '
+      + (when ? fmtDate(when) : 'an unknown date') + '? '
+      + 'The backup has ' + theirs + (theirs === 1 ? ' bid' : ' bids') + '. '
+      + 'This phone has ' + mine + (mine === 1 ? ' bid' : ' bids') + '. '
+      + "This can't be undone.",
+      { ok: 'Replace', danger: true }
+    ).then((ok) => {
+      if (!ok) { render(); return; }
+      // Straight to disk and then a reload, rather than swapping state.data
+      // under a screen that is still holding pieces of the old document. The
+      // app comes back the way it comes back every morning: off the file, at
+      // the lock screen, asking for the PIN that is in the backup.
+      if (!Store.save(data)) {
+        showBanner("Couldn't save the backup — nothing changed", 'danger');
+        render();
+        return;
+      }
+      location.reload();
+    });
+  }, () => {
+    showBanner("Couldn't read that file", 'danger');
+    render();
+  });
+}
+
+// --- The card ---------------------------------------------------------------
+
+function settingsAgeWords(days) {
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return days + ' days ago';
+}
+
+function settingsBackupAgeLine() {
+  const s = setS();
+  const p = document.createElement('p');
+  p.className = 'caption';
+  const age = daysSince(s.lastBackupAt);
+  if (!s.lastBackupAt || age === null) {
+    p.textContent = 'No backup yet';
+    p.classList.add('caption-danger');
+    return p;
+  }
+  p.textContent = 'Last backup: ' + fmtDate(s.lastBackupAt) + ' (' + settingsAgeWords(age) + ')';
+  if (age > SET_BACKUP_STALE_DAYS) p.classList.add('caption-danger');
+  return p;
+}
+
 function buildSetBackup() {
+  const s = setS();
   const box = card('Backup');
-  box.appendChild(caption('Coming in the next update.'));
+  box.appendChild(settingsBackupAgeLine());
+
+  const pdfCount = settingsBackupPdfs.length;
+  const sendLabel = settingsBackupBusy
+    ? 'Opening…'
+    : 'Send backup' + (pdfCount ? ' + ' + pdfCount + (pdfCount === 1 ? ' PDF' : ' PDFs') : '');
+  const sendBtn = textButton(sendLabel, 'btn btn-primary btn-block', settingsSendBackup);
+  if (settingsBackupBusy) {
+    sendBtn.disabled = true;
+    sendBtn.setAttribute('aria-busy', 'true');
+  }
+  box.appendChild(sendBtn);
+  box.appendChild(caption('This sends everything on this phone to Adrian. Do it every couple of '
+    + 'weeks, or after a big bid.'));
+
+  if (settingsBackupPdfExtra > 0) {
+    box.appendChild(inlineWarn('There are ' + (pdfCount + settingsBackupPdfExtra) + ' new PDFs. The '
+      + SET_BACKUP_PDF_MAX + ' newest go with this one. The backup file itself always has every bid.'));
+  }
+
+  if (settingsBackupQueue && settingsBackupQueue.length) {
+    const n = settingsBackupQueue.length;
+    box.appendChild(textButton('Share PDFs (' + n + ')', 'btn btn-block mt-3', settingsSendQueuedPdf));
+    box.appendChild(caption('This browser takes one file at a time. One tap each.'));
+  }
+
+  // --- Where it goes
+  const emailRow = settingRow(box, 'Send it to', s.backupEmail, () => {
+    settingsPromptText(s.backupEmail, 'Backup email', 'name@example.com', emailRow, { required: true }, (text) => {
+      if (!isEmailAddress(text)) {
+        showBanner("That doesn't look like an email address.", 'danger');
+        shake(emailRow);
+        return;
+      }
+      const prev = s.backupEmail;
+      s.backupEmail = text;
+      settingsSaveAndRender(() => { s.backupEmail = prev; });
+    });
+  }, 'Whoever keeps the copy that is not on this phone.');
+
+  // --- Photos, on their own
+  buildSetBackupPhotos(box);
+
+  // --- Restore
+  // The one native input in the app. There is no other way to let somebody
+  // pick a file off their own phone, so it is hidden behind a button that
+  // looks like every other button on this screen.
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.id = 'backupFile';
+  picker.accept = '.json,application/json';
+  picker.hidden = true;
+  picker.addEventListener('change', () => {
+    const f = picker.files && picker.files[0];
+    if (f) settingsRestoreFrom(f);
+  });
+  box.appendChild(picker);
+  box.appendChild(textButton('Restore from backup', 'btn btn-danger-outline btn-block mt-3', () => picker.click()));
+  box.appendChild(caption('Pick a backup file. Everything on this phone is replaced by what is in it.'));
+
   return box;
+}
+
+function buildSetBackupPhotos(box) {
+  const held = settingsBackupPhotos;
+  if (held) {
+    if (held.files === null) {
+      box.appendChild(row('Photos for ' + held.label, 'Getting them…'));
+      return;
+    }
+    if (held.files.length === 0) {
+      box.appendChild(inlineWarn('None of those photos are on this phone any more.'));
+      box.appendChild(textButton('Cancel', 'btn btn-block mt-3', () => { settingsBackupPhotos = null; render(); }));
+      return;
+    }
+    const n = held.files.length;
+    box.appendChild(textButton('Send ' + n + (n === 1 ? ' photo' : ' photos') + ' · ' + held.label,
+      'btn btn-block mt-3', settingsSendPhotos));
+    box.appendChild(textButton('Cancel', 'btn btn-block', () => { settingsBackupPhotos = null; render(); }));
+    return;
+  }
+
+  const withPhotos = settingsBidsWithPhotos();
+  if (withPhotos.length === 0) return;   // nothing to export, so no button to press
+
+  if (!settingsBackupPhotoPick) {
+    box.appendChild(textButton('Export photos', 'btn btn-block mt-3',
+      () => { settingsBackupPhotoPick = true; render(); }));
+    box.appendChild(caption('Photos are too big to go with every backup. Send one job at a time.'));
+    return;
+  }
+
+  box.appendChild(fieldLabel('Which job?'));
+  const chips = document.createElement('div');
+  chips.className = 'set-chips';
+  withPhotos.forEach((b) => {
+    const n = bidPhotoIds(b).length;
+    chips.appendChild(chip(settingsBidLabel(b) + ' · ' + n, false, () => settingsLoadPhotos(b)));
+  });
+  box.appendChild(chips);
+  box.appendChild(textButton('Cancel', 'btn btn-block', () => { settingsBackupPhotoPick = false; render(); }));
 }
 
 // ---------------------------------------------------------------------------

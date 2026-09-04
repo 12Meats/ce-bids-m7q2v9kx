@@ -670,7 +670,10 @@ function buildScope(bid) {
 // Every PDF this bid produces is kept. Storage is cheap next to "what exactly
 // did I send them in March", and a proposal is the one document in this app
 // that somebody else is holding a copy of.
-function proposalPdfPrefix(bid) { return 'pdf-' + bid.id + '-'; }
+// The id shape itself lives in ui.js (bidPdfPrefix): the home list has to
+// recognize this bid's PDFs to delete them with it, and Settings has to
+// recognize every bid's to send the new ones off with a backup.
+function proposalPdfPrefix(bid) { return bidPdfPrefix(bid.id); }
 
 // The list AND the bytes, together, before either Share button is drawn.
 //
@@ -839,15 +842,6 @@ async function proposalSaveToFiles(bid) {
   await proposalAfterShare(bid, { askSent: false });
 }
 
-// One @, with something on both sides of it. Not a check that the mailbox
-// exists — nothing on this phone can know that — but the field gets filled in
-// with a name ("andy") or half an address often enough, and an address that
-// isn't one is a Copy button that pastes garbage into a To: line.
-function proposalIsEmail(value) {
-  const parts = String(value).split('@');
-  return parts.length === 2 && parts[0].trim() !== '' && parts[1].trim() !== '';
-}
-
 // Mail cannot be pre-addressed from a web app: there is no way to hand iOS a
 // recipient without also handing it a body, and an attachment can only go
 // through the share sheet. So the address is put where his thumb can copy it
@@ -863,7 +857,7 @@ function buildEmail(bid, box) {
         done: (value) => {
           if (!value) return;
           const email = String(value).trim();
-          if (!proposalIsEmail(email)) {
+          if (!isEmailAddress(email)) {
             showBanner("That doesn't look like an email address.", 'danger');
             render();
             return;

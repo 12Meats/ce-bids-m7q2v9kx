@@ -285,7 +285,13 @@ function equipmentPickerCard(title, equipment, equipmentPct, onPick) {
   chips.className = 'equip-chips';
   list.forEach((e) => {
     const rate = equipmentDayCents(e, equipmentPct);
-    chips.appendChild(chip(rate == null ? e.name : e.name + ' · ' + moneyText(rate) + '/day', false, () => onPick(e)));
+    // A tool with no cost on it yet is SAID to have none. A bare name next to
+    // six priced ones reads as a tool the app forgot to price, and the answer
+    // to that looks like adding a second one under the same name — which is
+    // exactly how this list grew two "Bender" rows. Tapping it is still the
+    // right move: the price screen asks what it cost new before it asks for
+    // days, so the chip leads to the missing number instead of a $0 line.
+    chips.appendChild(chip(rate == null ? e.name + ' · no cost yet' : e.name + ' · ' + moneyText(rate) + '/day', false, () => onPick(e)));
   });
   box.appendChild(chips);
   return box;
@@ -340,6 +346,46 @@ function daysSince(iso) { return Dates.daysSince(iso, Store.todayISO()); }
 function bidCustomerName(bid, data) {
   const c = data.customers.find((x) => x.id === bid.customerId);
   return (c && c.name && c.name.trim()) || 'Customer';
+}
+
+// Every photo a bid owns — its own areas plus any change-order areas. The home
+// list deletes them with the bid and Settings exports them for one bid at a
+// time, so the definition of "this bid's photos" lives here rather than once
+// per screen.
+function bidPhotoIds(bid) {
+  const areas = (bid.areas || []).slice();
+  const cos = (bid.job && bid.job.changeOrders) || [];
+  cos.forEach((co) => { (co.areas || []).forEach((a) => areas.push(a)); });
+  return areas.reduce((ids, a) => ids.concat(a.photoIds || []), []);
+}
+
+// Every PDF this bid has ever produced is stored under this prefix, with the
+// millisecond it was made after it. Three screens need to recognize one - the
+// proposal lists them, the home list deletes them with the bid, Settings sends
+// the new ones off with a backup — so the shape is written once.
+function bidPdfPrefix(bidId) { return 'pdf-' + bidId + '-'; }
+
+// Splits a stored PDF id back into the bid it belongs to and when it was made.
+// The bid id is a UUID and has its own dashes in it, so the timestamp is taken
+// from the LAST dash, never the first. null for anything that isn't one.
+function bidPdfParse(id) {
+  if (typeof id !== 'string' || id.indexOf('pdf-') !== 0) return null;
+  const cut = id.lastIndexOf('-');
+  if (cut <= 3) return null;
+  const at = Number(id.slice(cut + 1));
+  if (!isFinite(at) || at <= 0) return null;
+  const bidId = id.slice(4, cut);
+  return bidId ? { id, bidId, at } : null;
+}
+
+// One @, with something on both sides of it. Not a check that the mailbox
+// exists — nothing on this phone can know that — but a field meant for an
+// address gets filled in with a name ("andy") or half of one often enough, and
+// an address that isn't one is a Copy button that pastes garbage into a To:
+// line. Both places that take an email address use this one.
+function isEmailAddress(value) {
+  const parts = String(value).split('@');
+  return parts.length === 2 && parts[0].trim() !== '' && parts[1].trim() !== '';
 }
 
 // A bid that can't price itself must not take the whole list down with it, so

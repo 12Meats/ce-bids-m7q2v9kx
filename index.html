@@ -398,6 +398,11 @@
       color: var(--color-text-muted);
     }
 
+    /* The same line when what it says is a problem: how long it has been since
+       the last backup, past the point where that is news. Red and bold, so it
+       stops being furniture. */
+    .caption-danger { color: var(--color-danger); font-weight: 700; }
+
     /* The line at the top of a screen that says which bid he is looking at.
        Costs & price and Proposal both print it, so it is one rule and not two:
        the title, then the customer under it in muted type. */
