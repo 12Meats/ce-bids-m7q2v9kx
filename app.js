@@ -1,3 +1,5 @@
+'use strict';
+
 // app.js — app shell: state, navigation, banners, the three overlay panels,
 // and the PIN screen. Depends on globals BidMath (bidmath.js), Store
 // (storage.js), DocModel (docmodel.js), Photos (photos.js) and DocGen
@@ -68,6 +70,7 @@ function shake(node) {
 // ---------------------------------------------------------------------------
 
 const BANNER_TIMEOUT_MS = 6000;
+const BANNER_MAX = 3;
 
 // kind: 'warn' (default) | 'danger' | 'ok'.
 // opts.persistent: stays until clearBanner(true) — no dismiss X, no timeout.
@@ -104,6 +107,16 @@ function showBanner(text, kind, opts) {
   }
 
   area.appendChild(banner);
+
+  // Never let banners eat the screen: past three, the oldest drops off.
+  while (area.children.length > BANNER_MAX) area.removeChild(area.firstElementChild);
+
+  // A danger banner reports something that did NOT happen (a save refused, a
+  // storage read that failed). The area is sticky under the top bar, but on a
+  // screen scrolled deep down the sticky element can still be below the fold
+  // mid-scroll, so scroll the page up to put it under the owner's eyes.
+  if (kind === 'danger') window.scrollTo(0, 0);
+
   return banner;
 }
 
@@ -132,9 +145,10 @@ function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.op
 
 // --- Number keypad ---------------------------------------------------------
 
-// promptNumber(current, { label, allowDecimal, done })
+// promptNumber(current, { label, allowDecimal, wasText, done })
 // current: the existing value (Number) or null — shown as "was 12" but never
-// preloaded into the buffer: retyping beats editing on a phone.
+// preloaded into the buffer: retyping beats editing on a phone. wasText
+// overrides that line for callers that format their own (see promptMoney).
 // done(value) fires with a Number on Done and with null on Clear. Cancel calls
 // nothing. There is no native number input anywhere in this app.
 function promptNumber(current, opts) {
@@ -147,9 +161,9 @@ function promptNumber(current, opts) {
   keypadCtx.done = typeof opts.done === 'function' ? opts.done : null;
 
   el('keypadLabel').textContent = opts.label || '';
-  el('keypadWas').textContent = (typeof current === 'number' && isFinite(current))
+  el('keypadWas').textContent = opts.wasText || ((typeof current === 'number' && isFinite(current))
     ? 'was ' + numText(current)
-    : 'was not set';
+    : 'was not set');
 
   // The decimal key only exists for callers that allow one; otherwise it stays
   // blanked so 0 and backspace never shift under the thumb.
@@ -187,10 +201,11 @@ function keypadBackspace() {
   renderKeypad();
 }
 
-// null when nothing usable has been typed ('' or a lone '.').
+// null only when nothing has been typed. '0.' is a real zero (the owner tapped
+// the decimal point and stopped), not a rejection — Number('0.') === 0.
 function keypadValue() {
   const d = keypadCtx.digits;
-  if (d === '' || d === '.' || d === '0.') return null;
+  if (d === '') return null;
   const n = Number(d);
   return isFinite(n) ? n : null;
 }
@@ -214,6 +229,23 @@ function keypadClear() {
   const done = keypadCtx.done;
   closeKeypad();
   if (done) done(null);
+}
+
+// promptMoney(cents, { label, done }) — the ONE money entry point. Every later
+// screen that takes dollars goes through this, so the cents<->dollars
+// conversion and its rounding live in exactly one place: the keypad speaks
+// dollars, the data model only ever sees integer cents.
+// done(cents) fires with an integer, or null on Clear.
+function promptMoney(cents, opts) {
+  opts = opts || {};
+  const done = typeof opts.done === 'function' ? opts.done : null;
+  const has = typeof cents === 'number' && isFinite(cents);
+  promptNumber(has ? cents / 100 : null, {
+    label: opts.label,
+    allowDecimal: true,
+    wasText: has ? 'was ' + BidMath.fmt(cents) : 'was not set',
+    done: (v) => { if (done) done(v === null ? null : Math.round(v * 100)); },
+  });
 }
 
 // --- Text prompt -----------------------------------------------------------
@@ -444,6 +476,9 @@ function render() {
 // writing and returns false rather than minting a document that the next
 // load() couldn't read — in that case nothing changed on disk, and the owner
 // has to be told so he doesn't walk away trusting a number that isn't saved.
+// Invariant: never call persist() while a panel is open — panels cover the
+// banner area, so the failure notice would be invisible. Close the panel in
+// the done() callback first, then persist.
 function persist() {
   if (!Store.save(state.data)) {
     showBanner("Couldn't save — nothing changed", 'danger');

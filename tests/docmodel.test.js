@@ -196,12 +196,15 @@ test('meta.customer, signatures.left, and fileName all fall back to "Customer" f
   assert.strictEqual(D.fileName(b, d), 'CE Bid 3052 - Customer - Warehouse emergency lights.pdf');
 });
 
-test('a customer record with a blank name also falls back to "Customer"', () => {
-  const { d, b } = fixture();
-  d.customers.find((c) => c.id === b.customerId).name = '';
-  const doc = D.build(b, d, 'full');
-  assert.strictEqual(doc.meta.customer, 'Customer');
-  assert.strictEqual(doc.signatures.left, 'Accepted by (Customer)');
+test('a customer record with a blank or whitespace-only name falls back to "Customer"', () => {
+  ['', '   '].forEach((blank) => {
+    const { d, b } = fixture();
+    d.customers.find((c) => c.id === b.customerId).name = blank;
+    const doc = D.build(b, d, 'full');
+    assert.strictEqual(doc.meta.customer, 'Customer');
+    assert.strictEqual(doc.signatures.left, 'Accepted by (Customer)');
+    assert.strictEqual(D.fileName(b, d), 'CE Bid 3052 - Customer - Warehouse emergency lights.pdf');
+  });
 });
 
 // 8. Dead doc.notes field removed (terms already carries the notes)

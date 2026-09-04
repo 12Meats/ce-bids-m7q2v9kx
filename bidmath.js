@@ -3,6 +3,8 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.BidMath = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
   const r = Math.round;
 
   function unitPrice(costCents, markupPct) { return r(costCents * (1 + markupPct / 100)); }

@@ -1,3 +1,5 @@
+'use strict';
+
 // photos.js — binary side store (walkthrough photos and generated PDFs).
 //
 // localStorage holds the bid document; blobs are far too big for it, so they
@@ -12,7 +14,7 @@
 
 const Photos = (function () {
   const DB_NAME = 'ce-bids-files';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2; // v2 added the kind_createdAt index
   const STORE = 'files';
 
   // Cached open request. Once IndexedDB has failed we keep returning null
@@ -30,17 +32,30 @@ const Photos = (function () {
         resolve(null); // private-mode Safari and locked-down browsers throw right here
         return;
       }
+      // Written so it works both on a fresh database and on one that already
+      // has the store from an earlier version — every piece is created only if
+      // it is missing.
       req.onupgradeneeded = () => {
         const db = req.result;
-        if (!db.objectStoreNames.contains(STORE)) {
-          const store = db.createObjectStore(STORE, { keyPath: 'id' });
-          // Photos are listed per kind and shown oldest first (the order they
-          // were taken on the walkthrough), so index the kind and sort on
-          // createdAt after reading.
-          store.createIndex('kind', 'kind', { unique: false });
-        }
+        const store = db.objectStoreNames.contains(STORE)
+          ? req.transaction.objectStore(STORE)
+          : db.createObjectStore(STORE, { keyPath: 'id' });
+        // 'kind' answers count(); 'kind_createdAt' answers list() in the order
+        // the photos were taken, straight from the index — no record has to be
+        // deserialized (and no blob read off disk) just to sort ids.
+        if (!store.indexNames.contains('kind')) store.createIndex('kind', 'kind', { unique: false });
+        if (!store.indexNames.contains('kind_createdAt')) store.createIndex('kind_createdAt', ['kind', 'createdAt'], { unique: false });
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // A connection can die under the app: iOS evicts storage, the user
+        // clears site data, another tab upgrades the schema. Drop the cached
+        // promise so the next call opens a fresh connection instead of
+        // failing forever against a closed one.
+        db.onclose = () => { dbPromise = null; };
+        db.onversionchange = () => { try { db.close(); } catch (e) { /* already closing */ } dbPromise = null; };
+        resolve(db);
+      };
       req.onerror = () => resolve(null);
       req.onblocked = () => resolve(null);
     });
@@ -114,12 +129,50 @@ const Photos = (function () {
     return withStore('readwrite', false, (store) => store.delete(id), () => true);
   }
 
+  // delMany(ids) -> Promise<boolean>. One transaction for the whole set, so
+  // deleting an area's photos is atomic: either they all go or none do, and a
+  // half-cleared area can never be left behind. Ids that aren't there are fine.
+  function delMany(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) return Promise.resolve(true);
+    const clean = ids.filter((id) => typeof id === 'string' && id);
+    if (clean.length === 0) return Promise.resolve(true);
+    return openDb().then((db) => {
+      if (!db) return false;
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+        let tx;
+        try {
+          tx = db.transaction(STORE, 'readwrite');
+        } catch (e) {
+          finish(false);
+          return;
+        }
+        tx.onabort = () => finish(false);
+        tx.onerror = () => finish(false);
+        tx.oncomplete = () => finish(true);
+        try {
+          const store = tx.objectStore(STORE);
+          clean.forEach((id) => store.delete(id));
+        } catch (e) {
+          finish(false);
+        }
+      });
+    }).catch(() => false);
+  }
+
   // list(kind) -> Promise<string[]> of ids, oldest first. Omit kind for all.
+  // The per-kind path reads primary keys out of the compound index in index
+  // order, so nothing is sorted in JS and no blobs are loaded. The all-kinds
+  // path (rare, no single index spans it) still reads records and sorts.
   function list(kind) {
     const wanted = kind === undefined ? null : (kind === 'pdf' ? 'pdf' : 'photo');
-    return withStore('readonly', [], (store) => (
-      wanted ? store.index('kind').getAll(wanted) : store.getAll()
-    ), (req) => (req.result || [])
+    if (wanted) {
+      return withStore('readonly', [], (store) => store.index('kind_createdAt').getAllKeys(
+        IDBKeyRange.bound([wanted, -Infinity], [wanted, Infinity])
+      ), (req) => req.result || []);
+    }
+    return withStore('readonly', [], (store) => store.getAll(), (req) => (req.result || [])
       .slice()
       .sort((a, b) => (a.createdAt - b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((r) => r.id));
@@ -133,5 +186,5 @@ const Photos = (function () {
     ), (req) => (typeof req.result === 'number' ? req.result : 0));
   }
 
-  return { put, get, del, list, count };
+  return { put, get, del, delMany, list, count };
 })();

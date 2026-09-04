@@ -4,6 +4,8 @@
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./bidmath.js'));
   else root.DocModel = factory(root.BidMath);
 })(typeof self !== 'undefined' ? self : this, function (B) {
+  'use strict';
+
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
   // Adds n days to a YYYY-MM-DD date string, composing the result from local
@@ -52,10 +54,11 @@
   // deleted or never resolved — reads the same "Customer" placeholder
   // everywhere instead of silently diverging per call site.
   // A blank name is as unusable as a missing record — both read "Customer"
-  // rather than printing "Accepted by ()".
+  // rather than printing "Accepted by ()". Whitespace counts as blank: a name
+  // of "   " prints as nothing at all on the signature line.
   function customerOf(bid, data) {
     const c = data.customers.find((c) => c.id === bid.customerId);
-    return { name: (c && c.name) || 'Customer', contact: (c && c.contact) || '' };
+    return { name: (c && c.name && c.name.trim()) || 'Customer', contact: (c && c.contact) || '' };
   }
   function customerName(bid, data) { return customerOf(bid, data).name; }
 
