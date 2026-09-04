@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>CE Bids</title>
+  <meta name="theme-color" content="#041E42">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- Chrome deprecated the apple-prefixed form; iOS still reads only that one,
+       so both are declared. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="CE Bids">
+  <link rel="icon" href="logo.png">
+  <!-- TODO Task 16: link rel="manifest" + apple-touch-icon once manifest.json
+       and the icon files exist. Linking them now would 404 on every load. -->
+  <style>
+    :root {
+      /* Cowboys navy is the one deliberate departure from the timesheet app's
+         palette; everything else is identical so the two apps feel like one
+         pair in the hand. */
+      --color-accent: #041E42;
+      --color-accent-dark: #02132b;
+      --color-confirm: #15803d;
+      --color-danger: #b91c1c;
+      --color-bg: #f8fafc;
+      --color-surface: #ffffff;
+      --color-text: #0f172a;
+      --color-text-muted: #475569;
+      --color-border: #cbd5e1;
+      --color-warn-bg: #fef3c7;
+      --color-warn-border: #f59e0b;
+      --color-warn-text: #92400e;
+      --color-chart-guide: #94a3b8;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --space-1: 8px;
+      --space-2: 12px;
+      --space-3: 16px;
+      --space-4: 24px;
+      --space-5: 32px;
+      --font-body: 1.1rem;
+      --font-lg: 1.4rem;
+      --font-xl: 2rem;
+      /* Height reserved at the bottom of every screen for the tab bar. */
+      --tabbar-height: 64px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--color-bg);
+      color: var(--color-text);
+      font-family: var(--font);
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: contain;
+    }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    button {
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    /* ---------- Top bar ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      min-height: 56px;
+      padding: var(--space-1) var(--space-2);
+      padding-top: calc(var(--space-1) + env(safe-area-inset-top));
+      background: var(--color-accent);
+      color: #ffffff;
+    }
+    .topbar[hidden] { display: none; }
+
+    .back-btn {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: #ffffff;
+      font-size: 1.1rem;
+      font-weight: 600;
+      min-width: 48px;
+      min-height: 48px;
+      padding: 0 10px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .back-btn:active { background: rgba(255, 255, 255, 0.18); }
+    .back-btn[hidden] { display: none; }
+
+    .topbar-title {
+      flex: 1;
+      font-size: 1.25rem;
+      font-weight: 700;
+      text-align: center;
+      padding-right: 48px; /* balance the back button so the title stays visually centered */
+    }
+
+    /* ---------- Banners ---------- */
+    /* Sits directly under the top bar. Persistent banners (storage corrupt)
+       stay until clearBanner(); transient ones carry a dismiss X and clear
+       themselves after a few seconds. */
+    .banner-area { padding: 0 20px; }
+    .banner-area:empty { display: none; }
+    .banner-area > :first-child { margin-top: var(--space-3); }
+
+    .banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      border-radius: 12px;
+      padding: var(--space-2) var(--space-3);
+      margin-bottom: var(--space-2);
+      font-size: 0.95rem;
+      background: var(--color-warn-bg);
+      border: 1px solid var(--color-warn-border);
+      color: var(--color-warn-text);
+    }
+    .banner-danger {
+      background: rgba(185, 28, 28, 0.1);
+      border-color: var(--color-danger);
+      color: var(--color-danger);
+    }
+    .banner-ok {
+      background: rgba(21, 128, 61, 0.1);
+      border-color: var(--color-confirm);
+      color: var(--color-confirm);
+    }
+    .banner-text { flex: 1; }
+    .banner-dismiss {
+      min-width: 44px;
+      min-height: 44px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      font-size: 1.3rem;
+      font-weight: 700;
+      border-radius: 10px;
+    }
+    .banner-dismiss:active { background: rgba(15, 23, 42, 0.1); }
+
+    /* ---------- Screens ---------- */
+    .screen[hidden] { display: none; }
+
+    /* Scrollable content area for every real screen. Bottom padding clears
+       both the tab bar and the home indicator. */
+    .screen-content {
+      padding: var(--space-4) 20px;
+      padding-bottom: calc(var(--space-4) + var(--tabbar-height) + env(safe-area-inset-bottom));
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .screen-placeholder {
+      font-size: var(--font-body);
+      color: var(--color-text-muted);
+    }
+
+    /* ---------- Bottom tab bar ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 20;
+      display: flex;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar[hidden] { display: none; }
+    .tab {
+      flex: 1;
+      min-height: var(--tabbar-height);
+      border: none;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .tab:active { background: #eef2f7; }
+    .tab-active { color: var(--color-accent); box-shadow: inset 0 3px 0 var(--color-accent); }
+
+    /* ---------- PIN screen ---------- */
+    .pin-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: var(--space-5) var(--space-4);
+      padding-top: calc(var(--space-5) + env(safe-area-inset-top));
+      padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+      gap: 28px;
+      text-align: center;
+    }
+
+    .app-name {
+      font-size: var(--font-xl);
+      font-weight: 800;
+      color: var(--color-accent);
+      letter-spacing: -0.02em;
+    }
+
+    .pin-message {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      min-height: 1.5em;
+    }
+
+    /* Shown only after three wrong tries. There is no recovery path by design
+       (same policy as CE Timesheets) -- this is text, not a button. */
+    .pin-hint {
+      font-size: 0.95rem;
+      color: var(--color-text-muted);
+      max-width: 320px;
+    }
+    .pin-hint[hidden] { display: none; }
+
+    .pin-dots {
+      display: flex;
+      gap: 18px;
+    }
+
+    .dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 3px solid var(--color-accent);
+      background: transparent;
+      transition: background-color 0.15s ease;
+    }
+    .dot.filled { background: var(--color-accent); }
+
+    @keyframes shake {
+      10%, 90% { transform: translateX(-4px); }
+      20%, 80% { transform: translateX(8px); }
+      30%, 50%, 70% { transform: translateX(-14px); }
+      40%, 60% { transform: translateX(14px); }
+    }
+    .pin-dots.shake { animation: shake 0.5s; }
+    .pin-dots.shake .dot { border-color: var(--color-danger); }
+
+    /* ---------- Keypad (shared by the PIN screen and the number panel) ---------- */
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      width: 100%;
+      max-width: 340px;
+    }
+
+    .key {
+      min-height: 68px;
+      font-size: 1.6rem;
+      font-weight: 600;
+      border-radius: 14px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    .key:active { background: #e2e8f0; }
+
+    .key-blank {
+      visibility: hidden;
+      pointer-events: none;
+      border: none;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    .key-back {
+      color: var(--color-danger);
+      font-size: 1.4rem;
+    }
+
+    /* ---------- Shared building blocks ---------- */
+    .btn {
+      min-height: 48px;
+      font-size: 1.05rem;
+      font-weight: 600;
+      border-radius: 12px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      padding: var(--space-2) 18px;
+    }
+    .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+    .btn-confirm { background: var(--color-confirm); border-color: var(--color-confirm); color: #fff; }
+    .btn-danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
+    .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+    .btn-block { display: block; width: 100%; text-align: center; }
+
+    input[type="text"] {
+      min-height: 48px;
+      font-size: var(--font-body);
+      font-family: inherit;
+      border-radius: 10px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      padding: 0 var(--space-2);
+      width: 100%;
+    }
+    input[type="text"]:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+    input.field-invalid { border-color: var(--color-danger); outline-color: var(--color-danger); }
+
+    .section-heading {
+      font-size: var(--font-lg);
+      font-weight: 700;
+      margin: var(--space-4) 0 var(--space-2);
+    }
+    .section-heading:first-child { margin-top: 0; }
+
+    .empty-state {
+      font-size: var(--font-body);
+      color: var(--color-text-muted);
+      padding: var(--space-4) 0;
+      text-align: center;
+    }
+
+    /* ---------- Utilities ---------- */
+    .mt-3 { margin-top: var(--space-3); }
+
+    /* ---------- Overlay panels (keypad / text / confirm) ---------- */
+    /* Full-screen sheets rather than dialogs: one thing on screen, thumb-sized
+       targets, and no native picker anywhere. */
+    .panel-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: var(--color-bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: var(--space-4) 20px;
+      padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+      padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .panel-overlay[hidden] { display: none; }
+    /* Confirm reads as a question, so it sits centered rather than
+       keypad-style top-aligned. */
+    .panel-center { justify-content: center; }
+
+    .panel-title {
+      font-size: var(--font-lg);
+      font-weight: 700;
+      text-align: center;
+    }
+    .panel-was {
+      color: var(--color-text-muted);
+      text-align: center;
+      margin-top: 4px;
+      font-size: 0.95rem;
+    }
+    /* The typed digits are the dominant element -- what the thumb just did is
+       what the eye should land on. */
+    .panel-digits {
+      text-align: center;
+      color: var(--color-text);
+      font-size: 2.6rem;
+      font-weight: 800;
+      min-height: 1.3em;
+      margin: var(--space-4) 0 var(--space-3);
+      letter-spacing: 0.06em;
+    }
+    .panel-digits.shake { animation: shake 0.5s; color: var(--color-danger); }
+    .panel-keypad { margin: 0 auto var(--space-3); }
+
+    .panel-message {
+      font-size: var(--font-lg);
+      font-weight: 600;
+      text-align: center;
+      max-width: 340px;
+      margin-bottom: var(--space-4);
+    }
+
+    .panel-input {
+      max-width: 340px;
+      margin: var(--space-4) 0 var(--space-3);
+      font-size: var(--font-lg);
+      min-height: 56px;
+    }
+
+    .panel-actions {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      max-width: 340px;
+      width: 100%;
+      margin: auto auto 0;
+    }
+    .panel-center .panel-actions { margin: 0 auto; }
+    .panel-actions .btn { width: 100%; }
+  </style>
+</head>
+<body>
+  <header id="topbar" class="topbar" hidden>
+    <button type="button" id="backBtn" class="back-btn" hidden aria-label="Back">&#8249; Back</button>
+    <h1 id="topbarTitle" class="topbar-title"></h1>
+  </header>
+
+  <div id="banner" class="banner-area" aria-live="polite"></div>
+
+  <main>
+    <!-- ---------- PIN ---------- -->
+    <section id="screen-pin" class="screen">
+      <div class="pin-screen">
+        <h1 class="app-name">CE Bids</h1>
+        <p id="pinMessage" class="pin-message" aria-live="polite">Enter PIN</p>
+        <div id="pinDots" class="pin-dots" aria-hidden="true">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <div id="pinKeypad" class="keypad">
+          <button type="button" class="key" data-digit="1">1</button>
+          <button type="button" class="key" data-digit="2">2</button>
+          <button type="button" class="key" data-digit="3">3</button>
+          <button type="button" class="key" data-digit="4">4</button>
+          <button type="button" class="key" data-digit="5">5</button>
+          <button type="button" class="key" data-digit="6">6</button>
+          <button type="button" class="key" data-digit="7">7</button>
+          <button type="button" class="key" data-digit="8">8</button>
+          <button type="button" class="key" data-digit="9">9</button>
+          <button type="button" class="key key-blank" tabindex="-1" aria-hidden="true" disabled></button>
+          <button type="button" class="key" data-digit="0">0</button>
+          <button type="button" class="key key-back" id="backspaceBtn" aria-label="Backspace">&#9003;</button>
+        </div>
+        <p id="pinHint" class="pin-hint" hidden></p>
+      </div>
+    </section>
+
+    <!-- ---------- Bids (home) -- Task 6 ---------- -->
+    <section id="screen-bids" class="screen" hidden>
+      <div id="bidsContent" class="screen-content">
+        <h2 class="section-heading">Bids</h2>
+        <p class="screen-placeholder">Your bids will show up here.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Bid header form -- Task 7 ---------- -->
+    <section id="screen-bid" class="screen" hidden>
+      <div id="bidContent" class="screen-content">
+        <h2 class="section-heading">Bid</h2>
+        <p class="screen-placeholder">Bid details.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Walkthrough (areas, items, photos) -- Task 8 ---------- -->
+    <section id="screen-walk" class="screen" hidden>
+      <div id="walkContent" class="screen-content">
+        <h2 class="section-heading">Walkthrough</h2>
+        <p class="screen-placeholder">Areas and materials.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Labor -- Task 9 ---------- -->
+    <section id="screen-labor" class="screen" hidden>
+      <div id="laborContent" class="screen-content">
+        <h2 class="section-heading">Labor</h2>
+        <p class="screen-placeholder">Crew, days, and equipment.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Price -- Task 10 ---------- -->
+    <section id="screen-price" class="screen" hidden>
+      <div id="priceContent" class="screen-content">
+        <h2 class="section-heading">Price</h2>
+        <p class="screen-placeholder">Cost stack and the three handles.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Proposal -- Task 11 ---------- -->
+    <section id="screen-proposal" class="screen" hidden>
+      <div id="proposalContent" class="screen-content">
+        <h2 class="section-heading">Proposal</h2>
+        <p class="screen-placeholder">Scope, terms, and the PDF.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Job (won bid) -- Task 12 ---------- -->
+    <section id="screen-job" class="screen" hidden>
+      <div id="jobContent" class="screen-content">
+        <h2 class="section-heading">Job</h2>
+        <p class="screen-placeholder">Change orders and job tracking.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Settings -- Task 13 ---------- -->
+    <section id="screen-settings" class="screen" hidden>
+      <div id="settingsContent" class="screen-content">
+        <h2 class="section-heading">Settings</h2>
+        <p class="screen-placeholder">Company, crew, rates, and backups.</p>
+      </div>
+    </section>
+
+    <!-- ---------- Reports -- Task 14 ---------- -->
+    <section id="screen-reports" class="screen" hidden>
+      <div id="reportsContent" class="screen-content">
+        <h2 class="section-heading">Reports</h2>
+        <p class="screen-placeholder">Win rate and job history.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav id="tabbar" class="tabbar" hidden>
+    <button type="button" class="tab" data-tab="bids">Bids</button>
+    <button type="button" class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <!-- ---------- Number keypad panel ---------- -->
+  <div id="panel-keypad" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="keypadLabel" hidden>
+    <h2 id="keypadLabel" class="panel-title"></h2>
+    <p id="keypadWas" class="panel-was"></p>
+    <div id="keypadDigits" class="panel-digits" aria-live="polite"></div>
+    <div id="keypadGrid" class="keypad panel-keypad">
+      <button type="button" class="key" data-digit="1">1</button>
+      <button type="button" class="key" data-digit="2">2</button>
+      <button type="button" class="key" data-digit="3">3</button>
+      <button type="button" class="key" data-digit="4">4</button>
+      <button type="button" class="key" data-digit="5">5</button>
+      <button type="button" class="key" data-digit="6">6</button>
+      <button type="button" class="key" data-digit="7">7</button>
+      <button type="button" class="key" data-digit="8">8</button>
+      <button type="button" class="key" data-digit="9">9</button>
+      <!-- Shown only when the caller allows a decimal; blanked out otherwise so
+           the 0 and backspace keys never move under the thumb. -->
+      <button type="button" class="key key-blank" id="keypadDot" data-dot="1" tabindex="-1" aria-hidden="true" disabled>.</button>
+      <button type="button" class="key" data-digit="0">0</button>
+      <button type="button" class="key key-back" id="keypadBack" aria-label="Backspace">&#9003;</button>
+    </div>
+    <div class="panel-actions">
+      <button type="button" id="keypadDone" class="btn btn-confirm">Done</button>
+      <button type="button" id="keypadClear" class="btn">Clear</button>
+      <button type="button" id="keypadCancel" class="btn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ---------- Text panel ---------- -->
+  <div id="panel-text" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="textLabel" hidden>
+    <h2 id="textLabel" class="panel-title"></h2>
+    <input type="text" id="textInput" class="panel-input" autocomplete="off" autocorrect="off" spellcheck="false">
+    <div class="panel-actions">
+      <button type="button" id="textDone" class="btn btn-confirm">Done</button>
+      <button type="button" id="textCancel" class="btn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ---------- Confirm panel ---------- -->
+  <div id="panel-confirm" class="panel-overlay panel-center" role="dialog" aria-modal="true" aria-labelledby="confirmMessage" hidden>
+    <p id="confirmMessage" class="panel-message"></p>
+    <div class="panel-actions">
+      <button type="button" id="confirmOk" class="btn btn-primary">OK</button>
+      <button type="button" id="confirmCancel" class="btn">Cancel</button>
+    </div>
+  </div>
+
+  <script src="bidmath.js"></script>
+  <script src="storage.js"></script>
+  <script src="docmodel.js"></script>
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="vendor/jspdf.plugin.autotable.min.js"></script>
+  <script src="photos.js"></script>
+  <script src="docgen.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
