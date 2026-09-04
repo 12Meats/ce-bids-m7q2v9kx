@@ -17,10 +17,10 @@
     return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
   }
 
-  // Formats an item's quantity for a document row: "1 ea" prints as "1";
-  // whole-number quantities print without a decimal (String(180) is "180",
-  // never "180.0"); fractional quantities print as typed (e.g. "2.5 days").
-  function qtyNum(qty) { return String(qty); }
+  // Formats a quantity for a document row: "1 ea" prints as "1"; whole
+  // numbers print without a decimal; fractional quantities round to 3
+  // decimal places so float noise (0.1 + 0.2 style) never leaks into print.
+  function qtyNum(q) { return String(Math.round(q * 1000) / 1000); }
   function unitText(it) {
     if (it.qty === 1 && it.unit === 'ea') return '1';
     return `${qtyNum(it.qty)} ${it.unit}`;
@@ -40,53 +40,65 @@
   function draftScope(bid) {
     return (bid.areas || []).filter((a) => a.items && a.items.length).map((a) => {
       const parts = a.items.map((it) => {
-        const nm = scopeCase(it.name);
+        const nm = scopeCase(it.name.trim());
         return it.unit === 'ea' ? `${qtyNum(it.qty)} ${nm}` : `${qtyNum(it.qty)} ${it.unit} ${nm}`;
       });
-      return `${a.name}: ${parts.join('; ')}`;
+      return `${a.name.trim()}: ${parts.join('; ')}`;
     });
   }
 
+  // Shared lookup used everywhere a bid's customer name is printed (document
+  // meta, signature line, file name) so an orphaned customerId — a customer
+  // deleted or never resolved — reads the same "Customer" placeholder
+  // everywhere instead of silently diverging per call site.
+  function customerName(bid, data) {
+    const c = data.customers.find((c) => c.id === bid.customerId);
+    return c ? c.name : 'Customer';
+  }
+
   function fileName(bid, data) {
-    const cust = (data.customers.find((c) => c.id === bid.customerId) || { name: 'Customer' }).name;
     const clean = (t) => t.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
-    return `CE Bid ${bid.number} - ${clean(cust)} - ${clean(bid.title)}.pdf`;
+    const cust = clean(customerName(bid, data));
+    const title = clean(bid.title || '').slice(0, 80).replace(/[.\s]+$/, '');
+    const segments = [`CE Bid ${bid.number}`, cust, title].filter((s) => s !== '');
+    return `${segments.join(' - ')}.pdf`;
   }
 
   function build(bid, data, level) {
     const s = data.settings;
-    const cust = data.customers.find((c) => c.id === bid.customerId) || { name: '', contact: '' };
+    const cust = customerName(bid, data);
+    const custContact = (data.customers.find((c) => c.id === bid.customerId) || { contact: '' }).contact;
     const stack = B.costStack(bid, s);
     const rate = bid.pricing.rateCents;
     const laborCents = stack.bidHours * rate;
-    const markup = bid.pricing.markupPct != null ? bid.pricing.markupPct : s.markupPct;
+    const markup = B.resolveMarkup(bid, s);
 
     // Materials: one row per item (qty × unit price, override respected —
-    // same rounding as bidmath.materialPrice, per line), plus a misc row
-    // when there's a misc cost.
-    const materialRows = bid.areas.flatMap((a) => (a.items || []).map((it) => {
-      const unit = it.priceCents != null ? it.priceCents : B.unitPrice(it.costCents, markup);
-      return { desc: it.name, qtyText: unitText(it), unitCents: unit, cents: Math.round(it.qty * unit) };
+    // computed with bidmath.itemPrice, the same primitive costStack's
+    // materialPrice uses), plus a misc row when there's a misc cost.
+    const materialRows = (bid.areas || []).flatMap((a) => (a.items || []).map((it) => {
+      const { unit, cents } = B.itemPrice(it, markup);
+      return { desc: it.name.trim(), qtyText: unitText(it), unitCents: unit, cents };
     }));
     if (bid.misc && bid.misc.cents > 0) {
       materialRows.push({ desc: bid.misc.label, qtyText: '', unitCents: null, cents: bid.misc.cents });
     }
 
-    // Equipment & rentals: rentals (marked up per-bid-markup when flagged,
-    // same rule as bidmath.costStack's rentalsPrice) then equipment
-    // (rounded per line, same as bidmath's equipmentCost).
+    // Equipment & rentals: rentals (bidmath.rentalPrice — marked up per-bid
+    // markup when flagged) then equipment (bidmath.equipmentLine — rounded
+    // per line), same primitives costStack's rentalsPrice/equipmentCost use.
     const equipRows = [
       ...(bid.rentals || []).map((x) => ({
         desc: x.name,
         qtyText: x.days ? `${qtyNum(x.days)} day${x.days === 1 ? '' : 's'}` : '',
         unitCents: null,
-        cents: x.markup ? B.unitPrice(x.cents, markup) : x.cents,
+        cents: B.rentalPrice(x, markup),
       })),
       ...(bid.equipment || []).map((x) => ({
         desc: x.name,
         qtyText: `${qtyNum(x.days)} day${x.days === 1 ? '' : 's'}`,
         unitCents: x.dayCents,
-        cents: Math.round(x.days * x.dayCents),
+        cents: B.equipmentLine(x),
       })),
     ];
 
@@ -96,23 +108,29 @@
 
     const changeOrders = (bid.job && bid.job.changeOrders) || [];
     const coSections = changeOrders.map((co, i) => ({
-      title: `Change order ${i + 1} — ${co.name}`,
+      title: `Change order ${i + 1}: ${co.name}`,
       rows: [{ desc: co.name, qtyText: '', unitCents: null, cents: co.priceCents }],
     }));
 
+    // Change orders are part of the document total but not of solve()'s base
+    // price; the price screen shows solve(), the home list and documents
+    // show this total.
     const totalCents = sum(materialRows) + sum(equipRows) + laborCents + sum(coSections.flatMap((x) => x.rows));
 
     const header = { ...s.company, logo: 'logo.png' };
     const meta = {
       number: bid.number, dateISO: bid.dateISO, validThrough: addDays(bid.dateISO, bid.validityDays),
-      customer: cust.name, contact: cust.contact, title: bid.title, detail: level,
+      customer: cust, contact: custContact, title: bid.title, detail: level,
     };
 
     const scope = bid.scope && bid.scope.length ? bid.scope : draftScope(bid);
 
     const terms = [
       `Pricing held ${bid.validityDays} days from the date above.`,
-      ...bid.notes,
+      s.taxMode === 'included'
+        ? 'Estimated material taxes are included in the prices above.'
+        : 'Sales tax on materials will be added to the invoice.',
+      ...(bid.notes || []),
       ...(level === 'scope' ? ['Changes to scope priced by written change order before work proceeds.'] : []),
     ];
 
@@ -123,9 +141,9 @@
       .filter((c) => c && !c.hidden);
 
     const baseDoc = {
-      level, header, meta, notes: bid.notes, terms, clauses, totalCents, fileName: fileName(bid, data),
+      level, header, meta, terms, clauses, totalCents, fileName: fileName(bid, data),
       taxLine: level === 'full' ? 0 : null,
-      signatures: { left: `Accepted by (${cust.name || 'Customer'})`, right: s.company.name, signName: s.company.signName },
+      signatures: { left: `Accepted by (${cust})`, right: s.company.name, signName: s.company.signName },
     };
 
     if (level === 'full') {
@@ -142,7 +160,9 @@
     if (level === 'summary') {
       const summary = [
         { label: 'Materials', cents: sum(materialRows) },
-        { label: 'Equipment & rentals', cents: sum(equipRows) },
+        // Mirror the Full-level omission: no $0.00 Equipment & rentals row
+        // when the bid has neither rentals nor equipment.
+        ...(equipRows.length ? [{ label: 'Equipment & rentals', cents: sum(equipRows) }] : []),
         { label: `Labor (${stack.bidHours} hrs)`, cents: laborCents },
         ...coSections.map((c) => ({ label: c.title, cents: sum(c.rows) })),
       ];

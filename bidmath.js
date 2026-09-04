@@ -16,11 +16,21 @@
 
   function materialCost(bid) { return items(bid).reduce((s, it) => s + r(it.qty * it.costCents), 0); }
 
+  // Per-line primitives shared with docmodel.js so a document's printed rows
+  // and this module's cost stack are computed by the exact same code, not
+  // two hand-synced copies of the same rounding rule.
+  function resolveMarkup(bid, settings) {
+    return bid.pricing && bid.pricing.markupPct != null ? bid.pricing.markupPct : settings.markupPct;
+  }
+  function itemPrice(it, markupPct) {
+    const unit = it.priceCents != null ? it.priceCents : unitPrice(it.costCents, markupPct);
+    return { unit, cents: r(it.qty * unit) };
+  }
+  function rentalPrice(x, markupPct) { return x.markup ? unitPrice(x.cents, markupPct) : x.cents; }
+  function equipmentLine(x) { return r(x.days * x.dayCents); }
+
   function materialPrice(bid, markupPct) {
-    return items(bid).reduce((s, it) => {
-      const unit = it.priceCents != null ? it.priceCents : unitPrice(it.costCents, markupPct);
-      return s + r(it.qty * unit);
-    }, 0);
+    return items(bid).reduce((s, it) => s + itemPrice(it, markupPct).cents, 0);
   }
 
   const EMPTY_LABOR = { crewIds: [], days: 0, tasks: null };
@@ -58,14 +68,14 @@
 
   function costStack(bid, settings) {
     const p = bid.pricing;
-    const mk = p.markupPct != null ? p.markupPct : settings.markupPct;
+    const mk = resolveMarkup(bid, settings);
     const mc = materialCost(bid);
     const mp = materialPrice(bid, mk);
     const rentalsCost = (bid.rentals || []).reduce((s, x) => s + x.cents, 0);
-    const rentalsPrice = (bid.rentals || []).reduce((s, x) => s + (x.markup ? unitPrice(x.cents, mk) : x.cents), 0);
+    const rentalsPrice = (bid.rentals || []).reduce((s, x) => s + rentalPrice(x, mk), 0);
     // Round each equipment/truck line individually — fractional days (0.5, 1.5, …) must never
     // leak fractional cents into the customer-facing price.
-    const equipmentCost = (bid.equipment || []).reduce((s, x) => s + r(x.days * x.dayCents), 0);
+    const equipmentCost = (bid.equipment || []).reduce((s, x) => s + equipmentLine(x), 0);
     const equipmentPrice = equipmentCost;
     const misc = (bid.misc && bid.misc.cents) || 0;
     const lab = laborReal(bid, settings);
@@ -128,5 +138,6 @@
   return {
     unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, bidHours, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
+    resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };
 });

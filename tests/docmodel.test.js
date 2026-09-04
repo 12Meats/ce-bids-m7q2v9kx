@@ -62,7 +62,9 @@ test('change orders append a section and add to the total', () => {
   b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [
     { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 145000 } ], completedAt: null };
   const doc = D.build(b, d, 'full');
-  assert.strictEqual(doc.sections.at(-1).title, 'Change order 1 — Disconnect at pump 4');
+  // Deliberate change (code review item 9): colon separator, no em-dash.
+  assert.strictEqual(doc.sections.at(-1).title, 'Change order 1: Disconnect at pump 4');
+  assert.strictEqual(doc.sections.at(-1).rows[0].desc, 'Disconnect at pump 4');
   const base = D.build({ ...b, job: null }, d, 'full').totalCents;
   assert.strictEqual(doc.totalCents, base + 145000);
 });
@@ -130,4 +132,103 @@ test('full level omits Equipment & rentals section when there are no rentals or 
   b.rentals = []; b.equipment = [];
   const doc = D.build(b, d, 'full');
   assert.deepStrictEqual(doc.sections.map((s) => s.title), ['Materials', 'Labor']);
+});
+
+// -------------------------------------------------------------------------
+// Code review fixes
+// -------------------------------------------------------------------------
+
+// 1. Tax-mode terms line
+test('terms include the tax-mode line right after the validity line: included vs added', () => {
+  const { d, b } = fixture();
+  const docIncluded = D.build(b, d, 'full');
+  const validityIdx = docIncluded.terms.indexOf('Pricing held 30 days from the date above.');
+  assert.strictEqual(docIncluded.terms[validityIdx + 1], 'Estimated material taxes are included in the prices above.');
+  d.settings.taxMode = 'added';
+  const docAdded = D.build(b, d, 'full');
+  assert.strictEqual(docAdded.terms[validityIdx + 1], 'Sales tax on materials will be added to the invoice.');
+});
+
+// 2. Summary omits $0.00 Equipment & rentals row, mirroring Full
+test('summary level omits the Equipment & rentals row when there is no equipment or rentals', () => {
+  const { d, b } = fixture();
+  b.rentals = []; b.equipment = [];
+  const doc = D.build(b, d, 'summary');
+  assert.deepStrictEqual(doc.summary.map((r) => r.label), ['Materials', 'Labor (36 hrs)']);
+});
+
+// 3. Change orders make totalCents diverge from solve() by design
+test('totalCents with change orders equals solve() base price plus the change-order total', () => {
+  const { d, b } = fixture();
+  b.job = { weeks: [], surprises: [], changeOrders: [
+    { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 145000 },
+    { id: 'co2', name: 'Add receptacle', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 32000 } ], completedAt: null };
+  const doc = D.build(b, d, 'full');
+  const stack = B.costStack(b, d.settings);
+  const solved = B.solve(stack, 'rate', b.pricing.rateCents);
+  assert.strictEqual(doc.totalCents, solved.priceCents + 145000 + 32000);
+});
+
+// 5. fileName: dropped empty segment, truncation, trailing punctuation stripped
+test('fileName: untitled bid drops the empty title segment (no dangling separator)', () => {
+  const { d, b } = fixture();
+  b.title = '';
+  assert.strictEqual(D.fileName(b, d), 'CE Bid 3052 - UDA.pdf');
+});
+test('fileName: title truncated to 80 chars, trailing dots/spaces stripped, overall length capped', () => {
+  const { d, b } = fixture();
+  // First 80 characters land exactly on "...Rewire"; everything after (dots and
+  // more text) must be cut before the extension is appended.
+  b.title = 'A'.repeat(74) + 'Rewire' + '.......... plus far more text well past the eighty character cutoff point here';
+  const fn = D.fileName(b, d);
+  assert.ok(fn.endsWith('Rewire.pdf'), fn);
+  const longTitleBid = { ...b, title: 'B'.repeat(300) };
+  assert.ok(D.fileName(longTitleBid, d).length <= 120);
+});
+
+// 7. Unknown customer falls back to "Customer" everywhere
+test('meta.customer, signatures.left, and fileName all fall back to "Customer" for a ghost customerId', () => {
+  const { d, b } = fixture();
+  b.customerId = 'ghost-id';
+  const doc = D.build(b, d, 'full');
+  assert.strictEqual(doc.meta.customer, 'Customer');
+  assert.strictEqual(doc.signatures.left, 'Accepted by (Customer)');
+  assert.strictEqual(D.fileName(b, d), 'CE Bid 3052 - Customer - Warehouse emergency lights.pdf');
+});
+
+// 8. Dead doc.notes field removed (terms already carries the notes)
+test('doc.notes is not a field on the built document', () => {
+  const { d, b } = fixture();
+  const doc = D.build(b, d, 'full');
+  assert.strictEqual(doc.notes, undefined);
+});
+
+// 9. Change orders at summary level
+test('change orders append a summary row and add to the summary total', () => {
+  const { d, b } = fixture();
+  b.job = { weeks: [], surprises: [], changeOrders: [
+    { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 145000 } ], completedAt: null };
+  const doc = D.build(b, d, 'summary');
+  assert.strictEqual(doc.summary.at(-1).label, 'Change order 1: Disconnect at pump 4');
+  assert.strictEqual(doc.summary.at(-1).cents, 145000);
+  assert.strictEqual(doc.summary.reduce((s, r) => s + r.cents, 0), doc.totalCents);
+});
+
+// 10. taxLine per level, signatures contents, addDays across month/year end
+test('taxLine: 0 on full, null on summary and scope', () => {
+  const { d, b } = fixture();
+  assert.strictEqual(D.build(b, d, 'full').taxLine, 0);
+  assert.strictEqual(D.build(b, d, 'summary').taxLine, null);
+  assert.strictEqual(D.build(b, d, 'scope').taxLine, null);
+});
+test('signatures: left names the customer, right and signName come from settings.company', () => {
+  const { d, b } = fixture();
+  const doc = D.build(b, d, 'full');
+  assert.strictEqual(doc.signatures.left, 'Accepted by (UDA)');
+  assert.strictEqual(doc.signatures.right, 'Cantu Electric LLC');
+  assert.strictEqual(doc.signatures.signName, 'Andy Cantu');
+});
+test('addDays crosses a month end and a year end correctly', () => {
+  assert.strictEqual(D.addDays('2026-01-31', 30), '2026-03-02');
+  assert.strictEqual(D.addDays('2026-12-15', 30), '2027-01-14');
 });

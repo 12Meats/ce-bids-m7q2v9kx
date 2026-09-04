@@ -155,6 +155,23 @@ test('solve clamps a -0 rate (typed price 1 cent under fixedPrice) to +0', () =>
   assert.ok(Object.is(res.rateCents, 0));
 });
 
+test('resolveMarkup: bid-level markupPct wins over settings, null falls back to settings', () => {
+  assert.strictEqual(B.resolveMarkup({ pricing: { markupPct: 30 } }, settings), 30);
+  assert.strictEqual(B.resolveMarkup({ pricing: { markupPct: null } }, settings), settings.markupPct);
+});
+test('itemPrice: unit price override respected, otherwise unitPrice(costCents, markupPct); qty × unit rounded', () => {
+  assert.deepStrictEqual(B.itemPrice({ qty: 180, costCents: 241, priceCents: null }, 18), { unit: 284, cents: 180 * 284 });
+  assert.deepStrictEqual(B.itemPrice({ qty: 1, costCents: 674, priceCents: 700 }, 18), { unit: 700, cents: 700 });
+});
+test('rentalPrice: marked-up rental applies unitPrice, unmarked passes cents through', () => {
+  assert.strictEqual(B.rentalPrice({ cents: 10000, markup: true }, 30), B.unitPrice(10000, 30));
+  assert.strictEqual(B.rentalPrice({ cents: 44500, markup: false }, 18), 44500);
+});
+test('equipmentLine: days × dayCents, rounded to whole cents', () => {
+  assert.strictEqual(B.equipmentLine({ days: 0.5, dayCents: 7500 }), 3750);
+  assert.strictEqual(B.equipmentLine({ days: 1, dayCents: 5000 }), 5000);
+});
+
 test('costStack and laborReal tolerate a missing labor block', () => {
   const b5 = { ...bid, labor: undefined };
   const l = B.laborReal(b5, settings);
