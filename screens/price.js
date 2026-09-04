@@ -886,13 +886,13 @@ function renderPrice() {
   }
 
   const head = document.createElement('div');
-  head.className = 'price-head';
+  head.className = 'screen-head';
   const title = document.createElement('div');
-  title.className = 'price-head-title';
+  title.className = 'screen-head-title';
   title.textContent = bid.title || 'No title yet';
   head.appendChild(title);
   const cust = document.createElement('div');
-  cust.className = 'price-head-cust';
+  cust.className = 'screen-head-cust';
   cust.textContent = bidCustomerName(bid, state.data);
   head.appendChild(cust);
   host.appendChild(head);

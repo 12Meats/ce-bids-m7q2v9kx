@@ -496,22 +496,37 @@
   function drawTerms(ctx, doc) {
     const terms = (doc.terms || []).filter((t) => str(t).trim() !== '');
     if (!terms.length) return;
-    heading(ctx, doc, doc.level === 'scope' ? 'Terms' : 'Notes & exclusions', 10.5, 13);
+    heading(ctx, doc, termsHeading(doc), 10.5, 13);
     drawBullets(ctx, terms, 9.5);
   }
 
   // Straight off his own bids, in his own words — and punctuated the way he
   // writes: a question mark, not a dash.
-  function courtesyLines(pdf, doc) {
-    if (doc.level === 'scope') return [];
+  //
+  // Exported as text, unwrapped, because the proposal screen's preview prints
+  // the same sentence: a preview that promises a courtesy line the paper
+  // doesn't carry (or the other way round) is the one thing that screen is
+  // built not to do. '' means the level has no courtesy line at all.
+  function courtesyText(doc) {
+    if (!doc || doc.level === 'scope') return '';
     const h = doc.header || {};
     // First name only — "call Andy at", the way he says it on the phone.
     const who = str(h.person).trim().split(/\s+/)[0] || '';
     const phone = str(h.phone).trim();
     let text = 'We appreciate the opportunity to earn your business and look forward to working with you.';
     if (phone) text += ' Questions? Call ' + (who || 'us') + ' at ' + phone + '.';
-    return wrap(pdf, text, CONTENT_W, 9.5, 'normal');
+    return text;
   }
+
+  function courtesyLines(pdf, doc) {
+    const text = courtesyText(doc);
+    return text ? wrap(pdf, text, CONTENT_W, 9.5, 'normal') : [];
+  }
+
+  // The heading over doc.terms. Scope & price calls them Terms because that is
+  // all the paper has; the other two levels have a Terms and conditions
+  // addendum behind them, so these are Notes & exclusions and nothing else.
+  function termsHeading(doc) { return doc && doc.level === 'scope' ? 'Terms' : 'Notes & exclusions'; }
 
   // The addendum, on its own page — the way his signed proposals are put
   // together: page one is what he is quoting and where it gets signed, the
@@ -827,5 +842,5 @@
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   }
 
-  return { render, blob, share, loadLogo, hourCostPage, hourCostRows };
+  return { render, blob, share, loadLogo, hourCostPage, hourCostRows, courtesyText, termsHeading };
 });

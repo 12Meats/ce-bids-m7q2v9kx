@@ -30,6 +30,8 @@
 //                       on and doesn't have to.
 //   Valid for         — how long the price is good.
 //   Scope of work     — drafted from the walk, edited or dictated by him.
+//                       Optional on Full, which prints one only if he wrote
+//                       it, so Full offers the editor rather than a draft.
 //   Share             — build the PDF, hand it to the share sheet, and then
 //                       ask the two questions only he can answer.
 //   Previous PDFs     — every document this bid has ever produced.
@@ -71,7 +73,6 @@ const PROPOSAL_MIN_VALIDITY = 1;
 const PROPOSAL_MAX_VALIDITY = 365;   // a year on one line: a limit on the typo
 const PROPOSAL_PDF_KEEP = 10;        // previous PDFs listed for one bid
 
-let proposalScopeOpen = false;    // Full level starts with the scope collapsed
 let proposalClausesOpen = false;  // the clause library, expanded
 let proposalTermsOn = false;      // a service bid that wants terms anyway
 let proposalBusy = false;         // a PDF is being built / the sheet is open
@@ -99,7 +100,6 @@ function proposalCustomer(bid) {
 // asking the moment he leaves, so they all reset.
 function enterProposal(bidId) {
   if (typeof bidId === 'string' && bidId) state.bidId = bidId;
-  proposalScopeOpen = false;
   proposalClausesOpen = false;
   proposalBusy = false;
   proposalPdfs = null;
@@ -199,6 +199,14 @@ function proposalPreviewHead(doc) {
   sub.textContent = contact.join(' · ');
   wrap.appendChild(sub);
 
+  // The tagline keeps its own line, the way the letterhead prints it.
+  if (doc.header.tagline && String(doc.header.tagline).trim() !== '') {
+    const tag = document.createElement('div');
+    tag.className = 'prop-co-sub';
+    tag.textContent = doc.header.tagline;
+    wrap.appendChild(tag);
+  }
+
   const meta = document.createElement('div');
   meta.className = 'prop-meta';
   const put = (label, value) => {
@@ -280,10 +288,13 @@ function buildPreview(bid, doc) {
   total.appendChild(tv);
   paper.appendChild(total);
 
+  // The heading over these is docgen's, not a second opinion about what to
+  // call them: Scope & price says Terms, the other two say Notes & exclusions
+  // because they have a Terms and conditions addendum behind them.
   if (doc.terms.length) {
     const h = document.createElement('div');
     h.className = 'prop-sec-title';
-    h.textContent = 'Terms';
+    h.textContent = DocGen.termsHeading(doc);
     paper.appendChild(h);
     paper.appendChild(proposalPreviewBullets(doc.terms));
   }
@@ -296,6 +307,17 @@ function buildPreview(bid, doc) {
     // Titles only. The full text is pages of it, and this is a preview he
     // thumbs through on a phone, not the document itself.
     paper.appendChild(proposalPreviewBullets(doc.clauses.map((c, i) => (i + 1) + '. ' + c.title)));
+  }
+
+  // The sentence that introduces the signature block on paper, off the same
+  // function docgen wraps — a preview that leaves it out is a preview of a
+  // document nobody is holding. Empty on Scope & price, which has neither.
+  const courtesy = DocGen.courtesyText(doc);
+  if (courtesy) {
+    const c = document.createElement('div');
+    c.className = 'prop-courtesy';
+    c.textContent = courtesy;
+    paper.appendChild(c);
   }
 
   const sign = document.createElement('div');
@@ -390,7 +412,10 @@ function proposalAddNote(bid) {
 
 function buildNotes(bid) {
   const box = card('Notes & exclusions');
-  box.appendChild(caption('Tap one to put it on this bid. These print under Terms.'));
+  // Not "under Terms": that block is called Notes & exclusions on Full and
+  // Summary and Terms only on Scope & price, and the caption should not name
+  // a heading the customer's copy might not have.
+  box.appendChild(caption('Tap one to put it on this bid. These print above the signature line.'));
   const chips = document.createElement('div');
   chips.className = 'prop-chips';
   proposalNoteChips(bid).forEach((phrase) => {
@@ -405,12 +430,25 @@ function buildNotes(bid) {
 // CLAUSES
 // ---------------------------------------------------------------------------
 
-// A hidden clause is soft-deleted in Settings: gone from the library, still
-// valid on the bids that already carry it. So it is never OFFERED, but a bid
-// that has it ticked still shows it — otherwise the list on screen would be
-// missing a clause the document is about to print.
+// A hidden clause is soft-deleted in Settings, and DocModel.build drops it
+// from the document even when the bid still names its id. So it is not on the
+// paper, and it is not on this screen either: a ticked line he can read and a
+// count he can add up have to be the clauses the customer will get, or the one
+// place he checks his terms is the one place that lies about them.
+//
+// The id stays on the bid. Un-hiding the clause in Settings brings it back,
+// still ticked, rather than quietly dropping a term he chose.
 function proposalClauseList(bid) {
-  return state.data.settings.clauses.filter((c) => !c.hidden || proposalClauseIds(bid).indexOf(c.id) !== -1);
+  return state.data.settings.clauses.filter((c) => !c.hidden);
+}
+
+// The clauses this bid PRINTS, in the order the document numbers them — the
+// same map-then-drop-hidden docmodel.js does, so "On this bid: 4 clauses" and
+// the four numbered titles in the preview are one answer counted once.
+function proposalPrintingClauses(bid) {
+  return proposalClauseIds(bid)
+    .map((id) => state.data.settings.clauses.find((c) => c.id === id))
+    .filter((c) => c && !c.hidden);
 }
 
 // Every write goes through here, so the null-to-array step happens once: the
@@ -457,11 +495,18 @@ function proposalClauseGroup(bid, title, list) {
 
   const head = document.createElement('div');
   head.className = 'prop-group-head';
+  // Title, count, control — three spans on one line, so a long group name
+  // wraps on its own without taking the count and the button with it. The
+  // list is the printable clauses, so the count is what the paper will carry.
   const h = document.createElement('span');
   h.className = 'prop-group-title';
-  const on = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
-  h.textContent = title + ' · ' + on + ' of ' + list.length;
+  h.textContent = title;
   head.appendChild(h);
+  const on = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
+  const n = document.createElement('span');
+  n.className = 'prop-group-count';
+  n.textContent = on + ' of ' + list.length;
+  head.appendChild(n);
   const allOn = on === list.length;
   head.appendChild(textButton(allOn ? 'None' : 'All', 'link-btn', () => {
     const current = proposalClauseIds(bid);
@@ -479,7 +524,7 @@ function proposalClauseGroup(bid, title, list) {
 function buildClauses(bid) {
   const box = card('Terms & conditions');
   const list = proposalClauseList(bid);
-  const count = proposalClauseIds(bid).length;
+  const count = proposalPrintingClauses(bid).length;
 
   box.appendChild(row('On this bid', count + ' clause' + (count === 1 ? '' : 's')));
 
@@ -596,26 +641,32 @@ async function proposalRedraft(bid) {
 function buildScope(bid) {
   const box = card('Scope of work');
 
-  // On Full the line items already describe the work, so the card starts shut
-  // rather than putting a paragraph he doesn't need at the top of the screen.
-  if (bid.detail === 'full' && !proposalScopeOpen) {
-    box.appendChild(textButton('Add a scope of work (optional)', 'btn btn-block', () => {
-      proposalScopeOpen = true;
-      render();
-    }));
+  // WHAT IS ON THE GLASS IS WHAT PRINTS applies here too. On Full, DocModel
+  // prints a scope only when he wrote one — the line items already describe
+  // the work — so a Full bid with nothing written shows the collapsed state
+  // and NOT the draft: bullets under "Drafted from your walk" would be a
+  // paragraph he can read on the screen and will never find on the paper.
+  // The draft is still one tap away, in the editor, prefilled.
+  if (bid.detail === 'full' && bid.scope === null) {
+    box.appendChild(textButton('Add a scope of work (optional)', 'btn btn-block', () => proposalEditScope(bid)));
     box.appendChild(caption('Optional on Full. If you add one, it prints above the line items.'));
     return box;
   }
 
   const lines = proposalScopeLines(bid);
+  // Nothing to show is the whole message: the empty note already says why
+  // there is no draft, and a caption under it saying one was drafted is the
+  // screen arguing with itself.
   if (lines.length === 0) {
-    box.appendChild(emptyNote('Nothing yet. The walk had no items to draft from.'));
+    box.appendChild(emptyNote(bid.scope === null
+      ? 'Nothing yet. The walk had no items to draft from.'
+      : 'Nothing yet. Tap Edit to write one.'));
   } else {
     box.appendChild(proposalPreviewBullets(lines));
+    box.appendChild(caption(bid.scope === null
+      ? 'Drafted from your walk. Edit it, or tap the mic to dictate.'
+      : 'Your words. Re-draft to go back to what the walk says.'));
   }
-  box.appendChild(caption(bid.scope === null
-    ? 'Drafted from your walk. Edit it, or tap the mic to dictate.'
-    : 'Your words. Re-draft to go back to what the walk says.'));
 
   const actions = document.createElement('div');
   actions.className = 'prop-actions';
@@ -668,20 +719,6 @@ function proposalLoadPdfs() {
   });
 }
 
-// A timestamp he can match against his sent folder. Local time, because that
-// is the clock he was standing next to when he sent it.
-function proposalWhen(ms) {
-  const d = new Date(ms);
-  if (isNaN(d.getTime())) return '';
-  const iso = d.getFullYear() + '-' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1)
-    + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate();
-  let h = d.getHours();
-  const ampm = h < 12 ? 'am' : 'pm';
-  h = h % 12 || 12;
-  const min = (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
-  return fmtDate(iso) + ', ' + h + ':' + min + ' ' + ampm;
-}
-
 // The two questions the app cannot answer for itself. Asked one at a time,
 // after the sheet has closed, and written in ONE save so a refused write can
 // never leave a bid marked sent but not filed (or the other way round).
@@ -726,34 +763,54 @@ async function proposalShare(bid) {
   proposalBusy = true;
   render();
 
-  let stored = null;
-  let result = null;
+  // Two failures, two pieces of news. Nothing was made is "start again";
+  // the sheet wouldn't open is "the document exists, here is where it is" —
+  // and telling him the PDF failed when it is sitting in the archive is how
+  // he builds the same document four times.
+  let doc = null;
+  let pdfBlob = null;
   try {
-    const doc = DocModel.build(bid, state.data, bid.detail);
-    const pdfBlob = await DocGen.blob(doc);
-    const id = proposalPdfPrefix(bid) + Date.now();
-    stored = Photos.put(id, pdfBlob, 'pdf');
-    proposalLast = { bidId: bid.id, id, blob: pdfBlob, name: doc.fileName };
-    result = await DocGen.share(pdfBlob, doc.fileName);
+    doc = DocModel.build(bid, state.data, bid.detail);
+    pdfBlob = await DocGen.blob(doc);
   } catch (err) {
-    console.error('Could not build or share the proposal', err);
+    console.error('Could not build the proposal', err);
     showBanner("Couldn't make the PDF", 'danger');
     proposalBusy = false;
     render();
     return;
+  }
+
+  const id = proposalPdfPrefix(bid) + Date.now();
+  const stored = Photos.put(id, pdfBlob, 'pdf');
+  proposalLast = { bidId: bid.id, id, blob: pdfBlob, name: doc.fileName };
+
+  let result = null;
+  let shareFailed = false;
+  try {
+    result = await DocGen.share(pdfBlob, doc.fileName);
+  } catch (err) {
+    console.error('Could not share the proposal', err);
+    shareFailed = true;
   }
   proposalBusy = false;
 
   // A PDF the archive refused is still a PDF the customer has. Say so, and
   // carry on with the questions — the flags are about what he did, not about
   // what this phone managed to keep.
-  if (stored) {
-    stored.then((ok) => {
-      if (!ok) showBanner("Couldn't keep a copy on this phone (storage full?)", 'danger');
-      proposalLoadPdfs();
-    });
-  }
+  //
+  // This runs on EVERY way out of here — shared, cancelled, or a share that
+  // threw — because the row in Previous PDFs is the proof the document was
+  // made, and a document he can't see is a document he makes again.
+  stored.then((ok) => {
+    if (!ok) showBanner("Couldn't keep a copy on this phone (storage full?)", 'danger');
+    proposalLoadPdfs();
+  });
 
+  if (shareFailed) {
+    showBanner("Couldn't open the share sheet. The PDF is saved under Previous PDFs.", 'danger');
+    render();
+    return;
+  }
   if (result === 'cancelled') { render(); return; }
   await proposalAfterShare(bid, { askSent: true });
 }
@@ -795,6 +852,15 @@ async function proposalSaveToFiles(bid) {
   await proposalAfterShare(bid, { askSent: false });
 }
 
+// One @, with something on both sides of it. Not a check that the mailbox
+// exists — nothing on this phone can know that — but the field gets filled in
+// with a name ("andy") or half an address often enough, and an address that
+// isn't one is a Copy button that pastes garbage into a To: line.
+function proposalIsEmail(value) {
+  const parts = String(value).split('@');
+  return parts.length === 2 && parts[0].trim() !== '' && parts[1].trim() !== '';
+}
+
 // Mail cannot be pre-addressed from a web app: there is no way to hand iOS a
 // recipient without also handing it a body, and an attachment can only go
 // through the share sheet. So the address is put where his thumb can copy it
@@ -809,8 +875,14 @@ function buildEmail(bid, box) {
         placeholder: 'name@company.com',
         done: (value) => {
           if (!value) return;
+          const email = String(value).trim();
+          if (!proposalIsEmail(email)) {
+            showBanner("That doesn't look like an email address.", 'danger');
+            render();
+            return;
+          }
           const prev = cust.email;
-          cust.email = value;
+          cust.email = email;
           if (!persistOr(() => { cust.email = prev; })) { render(); return; }
           render();
         },
@@ -901,7 +973,8 @@ function buildPrevious(bid) {
     line.className = 'prop-pdf';
     const when = document.createElement('span');
     when.className = 'prop-pdf-when';
-    when.textContent = proposalWhen(entry.at);
+    // Local time: the clock he was standing next to when he sent it.
+    when.textContent = fmtDateTime(entry.at);
     line.appendChild(when);
     // A row whose bytes are gone still stands: it is the record that a
     // document went out that day, which is the reason the list exists.
@@ -929,13 +1002,13 @@ function renderProposal() {
   }
 
   const head = document.createElement('div');
-  head.className = 'price-head';
+  head.className = 'screen-head';
   const title = document.createElement('div');
-  title.className = 'price-head-title';
+  title.className = 'screen-head-title';
   title.textContent = bid.title || 'No title yet';
   head.appendChild(title);
   const cust = document.createElement('div');
-  cust.className = 'price-head-cust';
+  cust.className = 'screen-head-cust';
   cust.textContent = bidCustomerName(bid, state.data) + ' · Bid #' + bid.number;
   head.appendChild(cust);
   host.appendChild(head);

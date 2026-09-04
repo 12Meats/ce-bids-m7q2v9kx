@@ -390,6 +390,13 @@
       color: var(--color-text-muted);
     }
 
+    /* The line at the top of a screen that says which bid he is looking at.
+       Costs & price and Proposal both print it, so it is one rule and not two:
+       the title, then the customer under it in muted type. */
+    .screen-head { margin-bottom: var(--space-3); }
+    .screen-head-title { font-size: var(--font-lg); font-weight: 800; }
+    .screen-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+
     /* ---------- Shared components (built by ui.js) ---------- */
     .card {
       display: block;
@@ -800,9 +807,8 @@
     /* Three cards down one column: the costs that aren't material or labor,
        what the job costs him, and what he sells it for. The cost stack is his
        eyes only and never prints. */
-    .price-head { margin-bottom: var(--space-3); }
-    .price-head-title { font-size: var(--font-lg); font-weight: 800; }
-    .price-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+    /* The screen's title line is .screen-head, up in the shared blocks — the
+       proposal screen prints the same one. */
 
     /* A rental or a piece of equipment: name and money on top, the small
        controls underneath. Same shape as a walk row, with chips instead of a
@@ -943,6 +949,8 @@
       font-weight: 800;
       font-size: var(--font-body);
     }
+    /* The line that introduces the signature block, same as on the paper. */
+    .prop-courtesy { margin-top: var(--space-2); line-height: 1.35; }
     .prop-sign {
       margin-top: var(--space-2);
       padding-top: var(--space-1);
@@ -962,8 +970,29 @@
       gap: var(--space-2);
       margin-bottom: 2px;
     }
-    .prop-group-title { flex: 1 1 auto; font-weight: 700; color: var(--color-text-muted); font-size: 0.95rem; }
-    .prop-group-head .link-btn { flex: 0 0 auto; white-space: nowrap; }
+    /* One line: the group on the left, then how many of it are ticked and the
+       All/None control on the right. .link-btn is a full-width block button
+       everywhere else in the app, and that width belongs to a card, not to a
+       flex row — left alone it pushes the head past the screen (a sideways
+       scroll on a 375px phone) and breaks the title onto three lines. The
+       group's copy of it is sized to its own text instead. */
+    .prop-group-title {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      font-size: 0.95rem;
+    }
+    .prop-group-count { flex: 0 0 auto; color: var(--color-text-muted); font-size: 0.95rem; white-space: nowrap; }
+    .prop-group-head .link-btn {
+      flex: 0 0 auto;
+      width: auto;
+      margin-top: 0;
+      padding: 0 2px;
+      white-space: nowrap;
+      text-align: right;
+    }
     /* A whole clause line is the tick target: the titles are long and a
        checkbox-sized box beside them is not a thumb-sized thing to hit. */
     .prop-clause {

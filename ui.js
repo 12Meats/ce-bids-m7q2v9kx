@@ -260,6 +260,9 @@ function equipmentPickerCard(title, equipment, equipmentPct, onPick) {
 
 function fmtDate(iso) { return Dates.fmtDate(iso); }
 
+// Epoch milliseconds — a saved PDF's stamp — as 'Sep 4, 2026, 1:59 am'.
+function fmtDateTime(ms) { return Dates.fmtDateTime(ms); }
+
 function daysSince(iso) { return Dates.daysSince(iso, Store.todayISO()); }
 
 // ---------------------------------------------------------------------------

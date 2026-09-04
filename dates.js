@@ -39,6 +39,22 @@
     return MONTH_ABBR[m - 1] + ' ' + Number(iso.slice(8, 10)) + ', ' + iso.slice(0, 4);
   }
 
+  // fmtDateTime(ms) -> 'Sep 4, 2026, 1:59 am' — a stamp he can match against
+  // his sent folder. The input is epoch milliseconds, which is what the app
+  // stores on a saved PDF, and it is read in LOCAL time because that is the
+  // clock he was standing next to when the document went out. Midnight reads
+  // '12:00 am' and noon '12:00 pm'; anything that isn't a real number of
+  // milliseconds comes back as '' rather than 'Invalid Date'.
+  function fmtDateTime(ms) {
+    if (typeof ms !== 'number' || !isFinite(ms)) return '';
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return '';
+    const iso = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    const ampm = d.getHours() < 12 ? 'am' : 'pm';
+    const h = d.getHours() % 12 || 12;
+    return fmtDate(iso) + ', ' + h + ':' + pad2(d.getMinutes()) + ' ' + ampm;
+  }
+
   // daysSince(iso, todayISO) -> whole days from that date to today: positive
   // when iso is behind today, negative when it's ahead. null for a missing or
   // invalid date on either side, so a caller can say "never" instead of
@@ -135,5 +151,5 @@
     return b.number - a.number;
   }
 
-  return { DEFAULT_NUDGE_DAYS, fmtDate, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
+  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateTime, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
 });

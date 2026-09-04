@@ -110,6 +110,35 @@ test('fmtDate prints the way the owner reads a date', () => {
 });
 
 // ---------------------------------------------------------------------------
+// fmtDateTime — the stamp on a saved PDF
+// ---------------------------------------------------------------------------
+// Built with the local Date constructor rather than a fixed epoch number, so
+// the expectation is the same clock the function reads and the test passes in
+// Phoenix and in London alike.
+const at = (y, m, d, h, min) => new Date(y, m - 1, d, h, min, 0, 0).getTime();
+
+test('fmtDateTime prints the date and the time of day', () => {
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 1, 59)), 'Sep 4, 2026, 1:59 am');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 13, 5)), 'Sep 4, 2026, 1:05 pm');
+  // Minutes keep their leading zero; the hour never does.
+  assert.equal(D.fmtDateTime(at(2026, 12, 31, 23, 7)), 'Dec 31, 2026, 11:07 pm');
+});
+
+test('fmtDateTime reads midnight and noon the way a clock face does', () => {
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 0, 0)), 'Sep 4, 2026, 12:00 am');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 12, 0)), 'Sep 4, 2026, 12:00 pm');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 12, 1)), 'Sep 4, 2026, 12:01 pm');
+});
+
+test('fmtDateTime says nothing rather than "Invalid Date"', () => {
+  assert.equal(D.fmtDateTime(NaN), '');
+  assert.equal(D.fmtDateTime(Infinity), '');
+  assert.equal(D.fmtDateTime('1757000000000'), '');
+  assert.equal(D.fmtDateTime(null), '');
+  assert.equal(D.fmtDateTime(undefined), '');
+});
+
+// ---------------------------------------------------------------------------
 // daysSince
 // ---------------------------------------------------------------------------
 
