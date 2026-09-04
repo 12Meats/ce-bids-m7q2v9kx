@@ -497,6 +497,14 @@
       text-align: left;
     }
     .bid-main:active { background: #eef2f7; }
+    /* A long press on this row opens the app's own menu. Without these, iOS
+       answers the same gesture with its native callout and a text selection
+       over the customer name, and the owner gets two menus fighting. */
+    .bid-main {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
     .bid-line1 { font-size: var(--font-body); font-weight: 700; }
     .bid-line2 {
       display: flex;

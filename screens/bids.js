@@ -60,12 +60,7 @@ function bidsSentNoAnswer() {
 }
 
 function nudgeBand(text, kind, onTap) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'nudge nudge-' + kind;
-  btn.textContent = text;
-  btn.addEventListener('click', onTap);
-  return btn;
+  return textButton(text, 'nudge nudge-' + kind, onTap);
 }
 
 function buildNudges() {
@@ -90,12 +85,20 @@ function buildNudges() {
   // Two separate ways the work can be lost: a proposal that only exists inside
   // this phone, and a whole app that hasn't been backed up. Both point at the
   // same place, so they share one band and only the parts that apply are said.
-  const unsaved = state.data.bids.filter((b) => b.sentAt && !b.savedToFilesAt).length;
+  // Sent today and not filed yet isn't a lapse, it's the next thing on the
+  // list — a proposal only counts as unfiled once a day has passed.
+  const unsaved = state.data.bids.filter((b) => {
+    if (!b.sentAt || b.savedToFilesAt) return false;
+    const age = daysSince(b.sentAt);
+    return age !== null && age >= 1;
+  }).length;
   const backupAge = daysSince(state.data.settings.lastBackupAt);
   const parts = [];
   if (unsaved) parts.push(`${unsaved} proposal${unsaved === 1 ? '' : 's'} not saved to Files`);
-  if (backupAge === null) parts.push('no backup yet');
-  else if (backupAge > NUDGE_DAYS) parts.push(`last backup ${backupAge} days ago`);
+  // A fresh install has nothing to back up. Opening the app for the first
+  // time to a red warning teaches him to ignore red warnings.
+  else if (backupAge === null && state.data.bids.length > 0) parts.push('no backup yet');
+  if (backupAge !== null && backupAge > NUDGE_DAYS) parts.push(`last backup ${backupAge} days ago`);
   if (parts.length) {
     wrap.appendChild(nudgeBand(parts.join(' · ') + ' — Settings › Backup', 'danger', () => show('settings')));
   }
@@ -126,11 +129,12 @@ function bidsDuplicate(id) {
   const prevNextNumber = state.data.settings.nextNumber;
   const copy = Store.duplicateBid(state.data, id);
   if (!copy) { showBanner("Couldn't copy that bid", 'danger'); render(); return; }
-  if (!persist()) {
+  if (!persistOr(() => {
     const i = state.data.bids.indexOf(copy);
     if (i !== -1) state.data.bids.splice(i, 1);
     state.data.settings.nextNumber = prevNextNumber;
-    render();  // persist() has already said why
+  })) {
+    render();
     return;
   }
   show('bid', copy.id);
@@ -149,29 +153,27 @@ async function bidsDelete(id) {
   );
   if (!ok) { render(); return; }
 
-  // Photos first: if this fails the bid is still there to try again, where
-  // dropping the bid first would strand its photos with nothing pointing at
-  // them. delMany never rejects.
-  await Photos.delMany(bidPhotoIds(bid));
+  // Photos first, and only carry on if they actually went: dropping the bid
+  // while its photos survive strands blobs in IndexedDB that nothing will ever
+  // point at again, and the owner has no way to find or clear them.
+  const photosGone = await Photos.delMany(bidPhotoIds(bid));
+  if (!photosGone) {
+    showBanner("Couldn't remove the photos — bid kept", 'danger');
+    render();
+    return;
+  }
 
   const i = state.data.bids.findIndex((b) => b.id === id);
-  if (i !== -1) state.data.bids.splice(i, 1);
-  persist();
+  if (i !== -1) {
+    const [removed] = state.data.bids.splice(i, 1);
+    persistOr(() => { state.data.bids.splice(i, 0, removed); });
+  }
   render();
 }
 
 // ---------------------------------------------------------------------------
 // The list
 // ---------------------------------------------------------------------------
-
-function bidActionButton(label, cls, onTap) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = cls;
-  btn.textContent = label;
-  btn.addEventListener('click', onTap);
-  return btn;
-}
 
 function bidRow(bid) {
   const wrap = document.createElement('div');
@@ -235,22 +237,15 @@ function bidRow(bid) {
   if (bidsMenuId === bid.id) {
     const actions = document.createElement('div');
     actions.className = 'bid-actions';
-    actions.appendChild(bidActionButton('Duplicate', 'btn', () => bidsDuplicate(bid.id)));
+    actions.appendChild(textButton('Duplicate', 'btn', () => bidsDuplicate(bid.id)));
     if (bid.status === 'draft') {
-      actions.appendChild(bidActionButton('Delete', 'btn btn-danger-outline', () => bidsDelete(bid.id)));
+      actions.appendChild(textButton('Delete', 'btn btn-danger-outline', () => bidsDelete(bid.id)));
     }
-    actions.appendChild(bidActionButton('Cancel', 'btn', () => { bidsMenuId = null; bidsRefreshList(); }));
+    actions.appendChild(textButton('Cancel', 'btn', () => { bidsMenuId = null; bidsRefreshList(); }));
     wrap.appendChild(actions);
   }
 
   return wrap;
-}
-
-function bidsEmptyNote(text) {
-  const p = document.createElement('p');
-  p.className = 'empty-state';
-  p.textContent = text;
-  return p;
 }
 
 function renderBidsList(host) {
@@ -259,7 +254,7 @@ function renderBidsList(host) {
   const all = bidsSorted();
   if (all.length === 0) {
     const box = card();
-    box.appendChild(bidsEmptyNote('No bids yet — tap + New bid to start your first walk.'));
+    box.appendChild(emptyNote('No bids yet — tap + New bid to start your first walk.'));
     host.appendChild(box);
     return;
   }
@@ -275,7 +270,7 @@ function renderBidsList(host) {
     // Carded like the no-bids state: a bare line of grey text under a search
     // field reads as the list failing to load rather than as an answer.
     const box = card();
-    box.appendChild(bidsEmptyNote(needle ? 'Nothing matches that search.' : 'Nothing sent and waiting.'));
+    box.appendChild(emptyNote(needle ? 'Nothing matches that search.' : 'Nothing sent and waiting.'));
     host.appendChild(box);
     return;
   }
@@ -301,6 +296,7 @@ function renderBids() {
     input.type = 'text';
     input.className = 'bids-search';
     input.placeholder = 'Search customer or title';
+    input.setAttribute('aria-label', 'Search bids');
     input.autocomplete = 'off';
     input.value = bidsSearch;
     // Redraws only the list, never the whole screen: re-rendering the input

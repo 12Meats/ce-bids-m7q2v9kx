@@ -128,14 +128,14 @@ function clearBanner(includePersistent) {
 // a panel is up is dropped, which is what a fast double-tap on iOS produces.
 
 const keypadCtx = { open: false, buffer: null, done: null };
-const textCtx = { open: false, done: null };
+const textCtx = { open: false, done: null, suggest: null };
 const confirmCtx = { open: false, resolve: null };
 
 function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open; }
 
 // --- Number keypad ---------------------------------------------------------
 
-// promptNumber(current, { label, allowDecimal, maxDecimals, wasText, done })
+// promptNumber(current, { label, allowDecimal, maxDigits, maxDecimals, wasText, done })
 // current: the existing value (Number) or null — shown as "was 12" but never
 // preloaded into the buffer: retyping beats editing on a phone. wasText
 // overrides that line for callers that format their own (see promptMoney).
@@ -147,7 +147,7 @@ function promptNumber(current, opts) {
 
   const allowDecimal = !!opts.allowDecimal;
   keypadCtx.open = true;
-  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal, maxDecimals: opts.maxDecimals });
+  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal, maxDigits: opts.maxDigits, maxDecimals: opts.maxDecimals });
   keypadCtx.done = typeof opts.done === 'function' ? opts.done : null;
 
   el('keypadLabel').textContent = opts.label || '';
@@ -231,12 +231,16 @@ function promptMoney(cents, opts) {
 
 // --- Text prompt -----------------------------------------------------------
 
-// promptText(current, { label, placeholder, suggestions, done })
+// promptText(current, { label, placeholder, suggestions | suggest, done })
 // A real <input type="text"> — words are not scroll wheels. done(string) fires
 // on Done (or Enter) with the trimmed value; Cancel calls nothing.
-// suggestions: an array of strings shown as chips above the input (existing
-// customer names). Tapping one fills the input — typing the same name a second
-// time is how a customer accidentally gets created twice.
+//
+// Chips above the input, either way of naming them:
+//   suggestions: a fixed array of strings
+//   suggest(query): a function re-run on every keystroke, so the chips narrow
+//                   as he types — with sixty customers a fixed list is a wall,
+//                   and typing the same name a second time, slightly
+//                   differently, is how one customer becomes two.
 const TEXT_SUGGESTION_MAX = 8;
 
 function promptText(current, opts) {
@@ -245,21 +249,15 @@ function promptText(current, opts) {
 
   textCtx.open = true;
   textCtx.done = typeof opts.done === 'function' ? opts.done : null;
+  textCtx.suggest = typeof opts.suggest === 'function'
+    ? opts.suggest
+    : (Array.isArray(opts.suggestions) ? () => opts.suggestions : null);
 
   el('textLabel').textContent = opts.label || '';
   const input = el('textInput');
   input.value = current == null ? '' : String(current);
   input.placeholder = opts.placeholder || '';
-
-  const chips = el('textChips');
-  chips.textContent = '';
-  const list = (Array.isArray(opts.suggestions) ? opts.suggestions : [])
-    .filter((s) => typeof s === 'string' && s.trim() !== '')
-    .slice(0, TEXT_SUGGESTION_MAX);
-  list.forEach((s) => {
-    chips.appendChild(chip(s, false, () => { input.value = s; input.focus(); }));
-  });
-  chips.hidden = list.length === 0;
+  renderTextChips();
 
   el('panel-text').hidden = false;
 
@@ -271,6 +269,32 @@ function promptText(current, opts) {
   setTimeout(() => { if (textCtx.open) { input.focus(); input.select(); } }, 50);
 }
 
+// Redrawn from scratch on every keystroke: eight chips is a cheap rebuild,
+// and diffing them would be more code than it saves.
+function renderTextChips() {
+  const chips = el('textChips');
+  chips.textContent = '';
+  if (!textCtx.suggest) { chips.hidden = true; return; }
+
+  const input = el('textInput');
+  let list = [];
+  try {
+    list = textCtx.suggest(input.value) || [];
+  } catch {
+    list = []; // a broken suggester costs him chips, never the text field
+  }
+  list = list.filter((s) => typeof s === 'string' && s.trim() !== '').slice(0, TEXT_SUGGESTION_MAX);
+
+  list.forEach((s) => {
+    chips.appendChild(chip(s, false, () => {
+      input.value = s;
+      input.focus();
+      renderTextChips(); // the picked name now narrows the list to itself
+    }));
+  });
+  chips.hidden = list.length === 0;
+}
+
 function closeText() {
   el('panel-text').hidden = true;
   el('textInput').blur();
@@ -278,6 +302,7 @@ function closeText() {
   el('textChips').hidden = true;
   textCtx.open = false;
   textCtx.done = null;
+  textCtx.suggest = null;
 }
 
 function textDone() {
@@ -491,6 +516,16 @@ function persist() {
   return true;
 }
 
+// persistOr(revert) — save, or put it back. A refused save leaves state.data
+// holding a change that is not on disk: the screen shows a number the next
+// launch won't have. Every mutation site hands in the undo for its own change,
+// so the document and the disk never disagree. persist() has already put the
+// reason on screen, so a caller only has to re-render and stay put.
+function persistOr(revert) {
+  if (!persist()) { revert(); return false; }
+  return true;
+}
+
 function goBack() {
   const cfg = SCREENS[state.screen];
   if (cfg && cfg.back) show(cfg.back);
@@ -525,6 +560,7 @@ function wirePanels() {
 
   el('textDone').addEventListener('click', textDone);
   el('textCancel').addEventListener('click', closeText);
+  el('textInput').addEventListener('input', () => { if (textCtx.open) renderTextChips(); });
   el('textInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); textDone(); }
     else if (e.key === 'Escape') { e.preventDefault(); closeText(); }

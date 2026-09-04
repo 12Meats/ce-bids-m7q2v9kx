@@ -76,6 +76,28 @@ function row(label, value, onTap) {
   return node;
 }
 
+// textButton(label, cls, onTap) -> a plain <button> with a caller-chosen
+// class. Both screens had grown their own copy of these four lines; the class
+// is the only thing that ever differed.
+function textButton(label, cls, onTap) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = cls;
+  btn.textContent = label;
+  if (onTap) btn.addEventListener('click', onTap);
+  return btn;
+}
+
+// emptyNote(text) -> the muted line that stands in for a list with nothing in
+// it. Callers put it inside a card() so it reads as an answer rather than as
+// the list having failed to load.
+function emptyNote(text) {
+  const p = document.createElement('p');
+  p.className = 'empty-state';
+  p.textContent = text;
+  return p;
+}
+
 // chip(text, selected, onTap) -> a pill-shaped toggle (detail level, job type,
 // crew members). Selected chips fill with the accent color.
 function chip(text, selected, onTap) {

@@ -11,6 +11,10 @@
 //
 // No native pickers anywhere: the date is typed on the number keypad as MMDD
 // or MMDDYY, and job type and detail level are toggle buttons.
+//
+// Every mutation here goes through persistOr(revert): if the save is refused,
+// the change is put back. A bid screen showing a number that isn't on disk is
+// worse than one that refused the edit out loud.
 
 // Screen-local view state.
 let bidHeaderOpen = false;   // the header form is showing for an existing bid
@@ -57,12 +61,29 @@ function enterBid(bidId) {
 // Typed dates
 // ---------------------------------------------------------------------------
 
-// The owner types digits on the same keypad as everything else: 0915 is
-// September 15 of this year, 091526 is September 15, 2026. The keypad drops a
-// leading zero (0915 comes back as the number 915), so the digits are padded
-// back out to 4 or 6 before they are read. Returns null for anything that
-// isn't a real day — including Feb 30, which passes the range check but not
-// the calendar.
+// How far behind today a bare MMDD may land before it is read as next year.
+const DATE_ROLLOVER_DAYS = 180;
+
+// Builds an ISO date, or null if that day doesn't exist. Feb 30 passes a range
+// check and fails here, which is the point.
+function composeDate(yyyy, mm, dd) {
+  const iso = yyyy + '-' + pad2(mm) + '-' + pad2(dd);
+  const dt = new Date(iso + 'T12:00:00');
+  if (isNaN(dt.getTime()) || dt.getMonth() + 1 !== mm || dt.getDate() !== dd) return null;
+  return iso;
+}
+
+// The owner types digits on the same keypad as everything else: 915 is
+// September 15, 91526 is September 15, 2026. The keypad drops a leading zero
+// (0915 comes back as the number 915), so the digits are padded back out to 4
+// or 6 before they are read.
+//
+// A bare MMDD takes the current year, and rolls FORWARD a year when that would
+// land more than half a year behind us: in December, "115" means next January,
+// not the one eleven months gone. It never rolls backward, so a bid date is
+// always today or ahead of it — which is what a bid date almost always is.
+// Six typed digits are never second-guessed: he named the year, and that is
+// the way to write down a date in the past.
 function parseTypedDate(v) {
   if (typeof v !== 'number' || !isFinite(v) || v < 0 || Math.round(v) !== v) return null;
   let digits = String(v);
@@ -72,12 +93,15 @@ function parseTypedDate(v) {
 
   const mm = Number(digits.slice(0, 2));
   const dd = Number(digits.slice(2, 4));
-  const yyyy = digits.length === 6 ? 2000 + Number(digits.slice(4, 6)) : new Date().getFullYear();
   if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
 
-  const iso = yyyy + '-' + pad2(mm) + '-' + pad2(dd);
-  const dt = new Date(iso + 'T12:00:00');
-  if (isNaN(dt.getTime()) || dt.getMonth() + 1 !== mm || dt.getDate() !== dd) return null;
+  if (digits.length === 6) return composeDate(2000 + Number(digits.slice(4, 6)), mm, dd);
+
+  const thisYear = Number(Store.todayISO().slice(0, 4));
+  const iso = composeDate(thisYear, mm, dd);
+  if (!iso) return null;
+  const behind = daysSince(iso);
+  if (behind !== null && behind > DATE_ROLLOVER_DAYS) return composeDate(thisYear + 1, mm, dd);
   return iso;
 }
 
@@ -112,13 +136,28 @@ function inlineWarn(text) {
   return d;
 }
 
-function bigButton(label, cls, onTap) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = cls;
-  btn.textContent = label;
-  btn.addEventListener('click', onTap);
-  return btn;
+// Customers matching what he has typed so far, best guess first: the customer
+// on the most recent bid is the one he is most likely bidding again, and the
+// rest follow alphabetically so a long list stays scannable. With sixty
+// customers an unfiltered list is a wall, which is how the same company ends
+// up in the file twice under two spellings.
+function customerSuggestions(query) {
+  const q = String(query || '').trim().toLowerCase();
+  const matches = state.data.customers.filter((c) => {
+    if (!c.name || c.name.trim() === '') return false;
+    return q === '' || c.name.toLowerCase().indexOf(q) !== -1;
+  });
+
+  const newest = state.data.bids.reduce((best, b) => {
+    if (!best) return b;
+    if (b.dateISO !== best.dateISO) return b.dateISO > best.dateISO ? b : best;
+    return b.number > best.number ? b : best;
+  }, null);
+  const topId = newest ? newest.customerId : null;
+
+  const top = matches.filter((c) => c.id === topId);
+  const rest = matches.filter((c) => c.id !== topId).sort((a, b) => a.name.localeCompare(b.name));
+  return top.concat(rest).map((c) => c.name);
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +168,7 @@ const DETAIL_OPTIONS = [['full', 'Full'], ['summary', 'Summary'], ['scope', 'Sco
 const JOB_TYPE_OPTIONS = [['service', 'Service'], ['project', 'Project']];
 
 // bid === null builds the new-bid form off bidDraft; an existing bid edits
-// itself in place and persists after every change.
+// itself in place, and every edit either saves or is put back.
 function renderBidHeader(bid, host) {
   host = host || el('bidContent');
   const isNew = !bid;
@@ -142,16 +181,20 @@ function renderBidHeader(bid, host) {
     detail: bid.detail,
   };
 
+  // The row shows "Customer" when the id doesn't resolve, but the prompt must
+  // not prefill that word: a tap and a Done would create a customer actually
+  // named "Customer".
+  const custRecord = isNew ? null : state.data.customers.find((c) => c.id === bid.customerId);
+  const customerPrefill = isNew ? bidDraft.customerName : ((custRecord && custRecord.name) || '');
+
   const box = card(isNew ? 'New bid' : 'Bid details');
 
   // --- Customer ---
   const customerRow = row('Customer', cur.customerName, () => {
-    promptText(cur.customerName, {
+    promptText(customerPrefill, {
       label: 'Customer',
       placeholder: 'Company or name',
-      // Chips of who he already bids for: typing "Shamrock Farms" a second
-      // time, slightly differently, is how one customer becomes two.
-      suggestions: state.data.customers.map((c) => c.name),
+      suggest: customerSuggestions,
       done: (name) => {
         if (!name) return;
         if (isNew) {
@@ -161,8 +204,15 @@ function renderBidHeader(bid, host) {
           const hit = state.data.customers.find((c) => c.name.toLowerCase() === name.toLowerCase());
           if (hit && !bidDraft.detailTouched) bidDraft.detail = hit.defaultDetail;
         } else {
+          // findOrCreateCustomer may add a customer, so the undo has to drop
+          // that too, not just point the bid back at the old one.
+          const prevId = bid.customerId;
+          const prevCount = state.data.customers.length;
           bid.customerId = Store.findOrCreateCustomer(state.data, name).id;
-          persist();
+          persistOr(() => {
+            bid.customerId = prevId;
+            state.data.customers.length = prevCount;
+          });
         }
         render();
       },
@@ -177,7 +227,11 @@ function renderBidHeader(bid, host) {
       placeholder: 'What the job is',
       done: (title) => {
         if (isNew) bidDraft.title = title;
-        else { bid.title = title; persist(); }
+        else {
+          const prev = bid.title;
+          bid.title = title;
+          persistOr(() => { bid.title = prev; });
+        }
         render();
       },
     });
@@ -192,12 +246,14 @@ function renderBidHeader(bid, host) {
         const n = Math.max(1, Math.round(v));
         if (isNew) bidDraft.number = n;
         else {
+          const s = state.data.settings;
+          const prevNumber = bid.number;
+          const prevNext = s.nextNumber;
           bid.number = n;
           // Keep the counter ahead of anything he types by hand, so the next
           // new bid doesn't hand out a number that's already on a proposal.
-          const s = state.data.settings;
           if (n >= s.nextNumber) s.nextNumber = n + 1;
-          persist();
+          persistOr(() => { bid.number = prevNumber; s.nextNumber = prevNext; });
         }
         render();
       },
@@ -212,12 +268,16 @@ function renderBidHeader(bid, host) {
   // --- Date ---
   const dateRow = row('Date', fmtDate(cur.dateISO), () => {
     promptNumber(null, {
-      label: 'Date — type MMDD or MMDDYY',
+      label: 'Date — type 915 for Sep 15, or 91526',
+      // Six digits is the whole vocabulary; a seventh is a fat-fingered tap.
+      maxDigits: 6,
       // The panel would otherwise say "was not set" for a date that is always
       // set; show the day it currently reads, in the form he reads it in.
       wasText: 'was ' + fmtDate(cur.dateISO),
       done: (v) => {
-        const iso = v === null ? null : parseTypedDate(v);
+        // Clear means "never mind", the same as Cancel — not a rejected date.
+        if (v === null) return;
+        const iso = parseTypedDate(v);
         if (!iso) {
           bidShakeField = 'date';
           showBanner('That date needs 4 digits (MMDD) or 6 (MMDDYY)');
@@ -225,7 +285,11 @@ function renderBidHeader(bid, host) {
           return;
         }
         if (isNew) bidDraft.dateISO = iso;
-        else { bid.dateISO = iso; persist(); }
+        else {
+          const prev = bid.dateISO;
+          bid.dateISO = iso;
+          persistOr(() => { bid.dateISO = prev; });
+        }
         render();
       },
     });
@@ -238,7 +302,11 @@ function renderBidHeader(bid, host) {
   host.appendChild(fieldLabel('Job type'));
   host.appendChild(toggleRow(JOB_TYPE_OPTIONS, cur.jobType, (value) => {
     if (isNew) bidDraft.jobType = value;
-    else { bid.jobType = value; persist(); }
+    else {
+      const prev = bid.jobType;
+      bid.jobType = value;
+      persistOr(() => { bid.jobType = prev; });
+    }
     render();
   }));
 
@@ -246,7 +314,11 @@ function renderBidHeader(bid, host) {
   host.appendChild(fieldLabel('Detail level'));
   host.appendChild(toggleRow(DETAIL_OPTIONS, cur.detail, (value) => {
     if (isNew) { bidDraft.detail = value; bidDraft.detailTouched = true; }
-    else { bid.detail = value; persist(); }
+    else {
+      const prev = bid.detail;
+      bid.detail = value;
+      persistOr(() => { bid.detail = prev; });
+    }
     render();
   }));
 
@@ -254,9 +326,9 @@ function renderBidHeader(bid, host) {
   const actions = document.createElement('div');
   actions.className = 'bid-nav';
   if (isNew) {
-    actions.appendChild(bigButton('Start the walk →', 'btn btn-primary btn-block', startTheWalk));
+    actions.appendChild(textButton('Start the walk →', 'btn btn-primary btn-block', startTheWalk));
   } else {
-    actions.appendChild(bigButton('Done', 'btn btn-primary btn-block', () => {
+    actions.appendChild(textButton('Done', 'btn btn-primary btn-block', () => {
       bidHeaderOpen = false;
       render();
     }));
@@ -279,22 +351,38 @@ function startTheWalk() {
     return;
   }
 
+  // newBid both hands out settings.nextNumber and may add a customer, so both
+  // are snapshotted before the call, not after.
+  const s = state.data.settings;
+  const prevNextNumber = s.nextNumber;
+  const prevCustomerCount = state.data.customers.length;
+
   const bid = Store.newBid(state.data, {
     customerName: name,
     title: bidDraft.title,
     jobType: bidDraft.jobType,
     dateISO: bidDraft.dateISO,
   });
-  // newBid hands out settings.nextNumber and steps the counter; if he typed a
-  // different number, honor it and keep the counter past it.
-  const s = state.data.settings;
+  // If he typed a different number, honor it and keep the counter past it.
   if (bidDraft.number !== bid.number) {
     bid.number = bidDraft.number;
     s.nextNumber = Math.max(s.nextNumber, bidDraft.number + 1);
   }
   bid.detail = bidDraft.detail;
   state.data.bids.push(bid);
-  persist();
+
+  // Walking a plant with a bid that was never saved is the worst outcome this
+  // screen has: an hour of measurements landing in a record that vanishes at
+  // the next launch. On a refused save nothing moves and the form stays up,
+  // with his typing still in it.
+  if (!persistOr(() => {
+    state.data.bids.pop();
+    s.nextNumber = prevNextNumber;
+    state.data.customers.length = prevCustomerCount;
+  })) {
+    render();
+    return;
+  }
 
   bidDraft = null;
   state.bidId = bid.id;
@@ -342,7 +430,7 @@ function renderBidScreen(bid, host) {
   meta.appendChild(date);
   box.appendChild(meta);
 
-  box.appendChild(bigButton('Edit details', 'link-btn', () => {
+  box.appendChild(textButton('Edit details', 'link-btn', () => {
     bidHeaderOpen = true;
     render();
   }));
@@ -351,13 +439,13 @@ function renderBidScreen(bid, host) {
   // --- Where the work happens ---
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
-  nav.appendChild(bigButton('Walk', 'btn btn-block', () => show('walk')));
-  nav.appendChild(bigButton('Labor', 'btn btn-block', () => show('labor')));
-  nav.appendChild(bigButton('Costs & price', 'btn btn-block', () => show('price')));
-  nav.appendChild(bigButton('Proposal', 'btn btn-block', () => show('proposal')));
+  nav.appendChild(textButton('Walk', 'btn btn-block', () => show('walk')));
+  nav.appendChild(textButton('Labor', 'btn btn-block', () => show('labor')));
+  nav.appendChild(textButton('Costs & price', 'btn btn-block', () => show('price')));
+  nav.appendChild(textButton('Proposal', 'btn btn-block', () => show('proposal')));
   // Job tracking only means something once there's a job to track.
   if (bid.status === 'won' || bid.status === 'complete') {
-    nav.appendChild(bigButton('Job', 'btn btn-block', () => show('job')));
+    nav.appendChild(textButton('Job', 'btn btn-block', () => show('job')));
   }
   host.appendChild(nav);
 
@@ -370,15 +458,23 @@ function renderBidScreen(bid, host) {
       const reasons = document.createElement('div');
       reasons.className = 'bid-nav';
       LOST_REASONS.forEach(([value, label]) => {
-        reasons.appendChild(bigButton(label, 'btn btn-block', () => {
+        reasons.appendChild(textButton(label, 'btn btn-block', () => {
+          const prevStatus = bid.status;
+          const prevReason = bid.lostReason;
           bid.status = 'lost';
           bid.lostReason = value;
           bidLostSheetOpen = false;
-          persist();
+          // On a refused save the sheet comes back up, so the answer he picked
+          // is one tap away rather than four.
+          persistOr(() => {
+            bid.status = prevStatus;
+            bid.lostReason = prevReason;
+            bidLostSheetOpen = true;
+          });
           render();
         }));
       });
-      reasons.appendChild(bigButton('Cancel', 'btn btn-block', () => {
+      reasons.appendChild(textButton('Cancel', 'btn btn-block', () => {
         bidLostSheetOpen = false;
         render();
       }));
@@ -387,13 +483,19 @@ function renderBidScreen(bid, host) {
     } else {
       const pair = document.createElement('div');
       pair.className = 'toggle-row';
-      pair.appendChild(bigButton('Won', 'btn btn-confirm btn-half', () => {
+      pair.appendChild(textButton('Won', 'btn btn-confirm btn-half', () => {
+        const prevStatus = bid.status;
+        const prevJob = bid.job;
         bid.status = 'won';
         bid.job = { weeks: [], surprises: [], changeOrders: [], completedAt: null };
-        persist();
+        // Never open the job screen for a win that wasn't recorded.
+        if (!persistOr(() => { bid.status = prevStatus; bid.job = prevJob; })) {
+          render();
+          return;
+        }
         show('job');
       }));
-      pair.appendChild(bigButton('Lost', 'btn btn-danger-outline btn-half', () => {
+      pair.appendChild(textButton('Lost', 'btn btn-danger-outline btn-half', () => {
         bidLostSheetOpen = true;
         render();
       }));
@@ -419,10 +521,7 @@ function renderBid() {
   if (!bid) {
     // Deleted from the list, or a stale id after an import. Say so rather than
     // showing an empty screen with live buttons on it.
-    const p = document.createElement('p');
-    p.className = 'empty-state';
-    p.textContent = "That bid isn't here anymore. Tap Back to return to your bids.";
-    host.appendChild(p);
+    host.appendChild(emptyNote("That bid isn't here anymore. Tap Back to return to your bids."));
     return;
   }
 
