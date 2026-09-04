@@ -243,3 +243,27 @@ test('addDays crosses a month end and a year end correctly', () => {
   assert.strictEqual(D.addDays('2026-01-31', 30), '2026-03-02');
   assert.strictEqual(D.addDays('2026-12-15', 30), '2027-01-14');
 });
+
+// -------------------------------------------------------------------------
+// Spec review: Materials section omitted when empty, like Equipment & rentals
+// -------------------------------------------------------------------------
+
+test('full level omits the Materials section on a labor-only bid, and the total is unchanged across levels', () => {
+  const { d, b } = fixture();
+  b.areas = []; b.misc.cents = 0; b.rentals = []; b.equipment = [];
+  const doc = D.build(b, d, 'full');
+  assert.deepStrictEqual(doc.sections.map((s) => s.title), ['Labor']);
+  const stack = B.costStack(b, d.settings);
+  assert.strictEqual(doc.totalCents, stack.bidHours * b.pricing.rateCents);
+  assert.strictEqual(doc.totalCents, B.solve(stack, 'rate', b.pricing.rateCents).priceCents);
+  const totals = ['full', 'summary', 'scope'].map((l) => D.build(b, d, l).totalCents);
+  assert.strictEqual(totals[0], totals[1]); assert.strictEqual(totals[1], totals[2]);
+});
+test('summary level keeps the Materials row at $0.00 on a labor-only bid', () => {
+  const { d, b } = fixture();
+  b.areas = []; b.misc.cents = 0; b.rentals = []; b.equipment = [];
+  const doc = D.build(b, d, 'summary');
+  assert.deepStrictEqual(doc.summary.map((r) => r.label), ['Materials', 'Labor (36 hrs)']);
+  assert.strictEqual(doc.summary[0].cents, 0);
+  assert.strictEqual(doc.summary.reduce((s, r) => s + r.cents, 0), doc.totalCents);
+});

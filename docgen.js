@@ -211,16 +211,15 @@
     ctx.y = ruleY + 18;
   }
 
-  // Two columns of label/value. On a Scope & price document the word is
-  // "Proposal", not "Bid" — a fixed-price proposal that calls itself a bid
-  // invites the line-item questions the level exists to avoid.
+  // Two columns of label/value. The grid reads "Bid for:" / "Bid #:" at every
+  // level — the file name docmodel hands out is always "CE Bid <n> - …", and a
+  // document whose header and file name disagree is the one that gets queried.
   function drawMeta(ctx, doc) {
     const pdf = ctx.pdf;
     const meta = doc.meta || {};
-    const word = doc.level === 'scope' ? 'Proposal' : 'Bid';
     const cells = [
-      [word + ' for:', meta.customer],
-      [word + ' #:', meta.number],
+      ['Bid for:', meta.customer],
+      ['Bid #:', meta.number],
       ['Date:', dateText(meta.dateISO)],
       ['Valid through:', dateText(meta.validThrough)],
     ].filter((c) => str(c[1]).trim() !== '');
@@ -404,11 +403,11 @@
   function drawCourtesy(ctx, doc) {
     if (doc.level === 'scope') return;
     const h = doc.header || {};
-    const who = str(h.person).trim();
+    // First name only — "call Andy at", the way he says it on the phone.
+    const who = str(h.person).trim().split(/\s+/)[0] || '';
     const phone = str(h.phone).trim();
     let text = 'We appreciate the opportunity to earn your business and look forward to working with you.';
-    if (who && phone) text += ' Questions — call ' + who + ' at ' + phone + '.';
-    else if (phone) text += ' Questions — call ' + phone + '.';
+    if (phone) text += ' Questions — call ' + (who || 'us') + ' at ' + phone + '.';
     const pdf = ctx.pdf;
     const lines = wrap(pdf, text, CONTENT_W);
     need(ctx, lines.length * 13);

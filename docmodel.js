@@ -153,8 +153,9 @@
 
     if (level === 'full') {
       const sections = [
-        { title: 'Materials', rows: materialRows },
-        // A plant bid with no lift or equipment shouldn't print an empty section.
+        // A labor-only bid, and a plant bid with no lift or equipment, shouldn't
+        // print an empty section — neither line-item section is pushed with no rows.
+        ...(materialRows.length ? [{ title: 'Materials', rows: materialRows }] : []),
         ...(equipRows.length ? [{ title: 'Equipment & rentals', rows: equipRows }] : []),
         { title: 'Labor', rows: laborRows },
         ...coSections,
@@ -164,6 +165,8 @@
 
     if (level === 'summary') {
       const summary = [
+        // Materials keeps its row at $0.00 even with no material rows: the
+        // three-category summary is the level's shape, not a list of sections.
         { label: 'Materials', cents: sum(materialRows) },
         // Mirror the Full-level omission: no $0.00 Equipment & rentals row
         // when the bid has neither rentals nor equipment.
