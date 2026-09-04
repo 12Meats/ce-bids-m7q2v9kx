@@ -122,6 +122,20 @@ const Photos = (function () {
     });
   }
 
+  // getInfo(id) -> Promise<{blob, createdAt}|null>. The same record get()
+  // reads, with the stamp put() already writes on it, so a caller that wants
+  // to say WHEN a file was made does not need a second field stored anywhere
+  // else. Nothing about the schema changes; this only stops throwing the
+  // timestamp away.
+  function getInfo(id) {
+    if (typeof id !== 'string' || !id) return Promise.resolve(null);
+    return withStore('readonly', null, (store) => store.get(id), (req) => {
+      const rec = req.result;
+      if (!rec || !rec.blob) return null;
+      return { blob: rec.blob, createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : null };
+    });
+  }
+
   // del(id) -> Promise<boolean>. True once the delete has committed; deleting
   // an id that isn't there is a success, not an error.
   function del(id) {
@@ -188,5 +202,5 @@ const Photos = (function () {
     ), (req) => (typeof req.result === 'number' ? req.result : 0));
   }
 
-  return { put, get, del, delMany, list, count };
+  return { put, get, getInfo, del, delMany, list, count };
 })();

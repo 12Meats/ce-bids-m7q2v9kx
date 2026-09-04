@@ -47,6 +47,7 @@ const REPORTS_HOURCOST_ID = 'hourcost-latest';   // one key, overwritten
 
 let reportsBusy = false;      // building or sharing the hour-cost page
 let reportsLastPdf = null;    // the last page's bytes, in hand before the tap
+let reportsLastPdfAt = null;  // when that page was made, epoch ms, or null
 let reportsToken = 0;         // a preload that lands after he has walked away
 
 // The bytes are fetched HERE, not in the Share handler. navigator.share only
@@ -56,9 +57,10 @@ let reportsToken = 0;         // a preload that lands after he has walked away
 // proposal screen's previous-PDF list.
 function reportsLoadLastPage() {
   const token = ++reportsToken;
-  Photos.get(REPORTS_HOURCOST_ID).then((blob) => {
+  Photos.getInfo(REPORTS_HOURCOST_ID).then((info) => {
     if (token !== reportsToken) return;
-    reportsLastPdf = blob || null;
+    reportsLastPdf = (info && info.blob) || null;
+    reportsLastPdfAt = (info && typeof info.createdAt === 'number') ? info.createdAt : null;
     if (state.screen === 'reports') render();
   }, (err) => { console.error('Could not read the last hour-cost page', err); });
 }
@@ -66,6 +68,7 @@ function reportsLoadLastPage() {
 function enterReports() {
   reportsBusy = false;
   reportsLastPdf = null;
+  reportsLastPdfAt = null;
   reportsLoadLastPage();
 }
 
@@ -123,6 +126,13 @@ function reportsSurprisesSays(sur) {
       ? 'Nothing was set aside on these jobs, and surprises came to ' + moneyText(sur.surpriseCents) + '.'
       : 'Nothing set aside, nothing unexpected.';
   }
+  // Nothing came up. Said BEFORE the coveredBy branches, because with no
+  // surprises at all every one of them is a lie: 'cushion' claims unused hours
+  // covered something on a job where nothing needed covering, and it printed
+  // that even when there were no unused hours either.
+  if (sur.surpriseCents === 0) {
+    return 'Set aside ' + moneyText(sur.setAsideCents) + ', and nothing unexpected came up.';
+  }
   const head = 'Set aside ' + moneyText(sur.setAsideCents) + ', spent ' + moneyText(sur.surpriseCents);
   if (sur.coveredBy === 'cushion') return head + '. The unused hours covered them.';
   if (sur.coveredBy === 'hours') return head + ', but the hours ran over, so that money was already gone.';
@@ -176,6 +186,16 @@ function reportsGateSays(stats) {
 function reportsTypeSays(t) {
   return t.count + ' job' + (t.count === 1 ? '' : 's') + '  ·  figured ' + numText(t.realHours)
     + ', bid ' + numText(t.bidHours) + ', worked ' + numText(t.actualHours);
+}
+
+// 'Made Sep 4, 2026, 7:12 am' — the page kept on the phone, stamped with the
+// clock he was standing next to, the same way the proposal screen stamps its
+// previous PDFs. The stamp is the store's own createdAt and nothing is written
+// anywhere to produce it, so a record saved before this row existed has no
+// time to show and the row says what it is instead of guessing.
+function reportsLastPageSays(at) {
+  const when = (typeof at === 'number') ? fmtDateTime(at) : '';
+  return when ? 'Made ' + when : 'Last page, no date kept';
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +262,7 @@ function buildEstimatingCard(stats) {
   });
 
   // --- Surprises ---
-  reportsStat(box, 'Surprises', 'Used',
+  reportsStat(box, 'Surprises', 'Of the set-aside',
     stats.surprises.pct === null ? '—' : pctText(stats.surprises.pct),
     stats.surprises.pct, reportsSurprisesSays(stats.surprises));
 
@@ -334,6 +354,7 @@ function reportsMakeHourCost() {
       // waited on: the share sheet needs this tap.
       const stored = Photos.put(REPORTS_HOURCOST_ID, pdfBlob, 'pdf');
       reportsLastPdf = pdfBlob;
+      reportsLastPdfAt = Date.now();
       DocGen.share(pdfBlob, 'What an hour costs.pdf').then((result) => {
         reportsBusy = false;
         if (result === 'downloaded') showBanner('Page downloaded', 'ok');
@@ -359,7 +380,11 @@ async function reportsReshareHourCost() {
   reportsBusy = true;
   render();
   try {
-    await DocGen.share(reportsLastPdf, 'What an hour costs.pdf');
+    // Same three outcomes as making the page, said the same way. A cancelled
+    // share sheet says nothing: he closed it on purpose.
+    const result = await DocGen.share(reportsLastPdf, 'What an hour costs.pdf');
+    if (result === 'downloaded') showBanner('Page downloaded', 'ok');
+    else if (result === 'shared') showBanner('Page sent', 'ok');
   } catch (err) {
     console.error('Could not re-share the hour-cost page', err);
     showBanner("Couldn't open the share sheet", 'danger');
@@ -413,7 +438,7 @@ function buildHourCostCard() {
     last.className = 'prop-pdf';
     const when = document.createElement('span');
     when.className = 'prop-pdf-when';
-    when.textContent = 'Last page';
+    when.textContent = reportsLastPageSays(reportsLastPdfAt);
     last.appendChild(when);
     const share = textButton('Share', 'btn', () => reportsReshareHourCost());
     if (reportsBusy) share.disabled = true;

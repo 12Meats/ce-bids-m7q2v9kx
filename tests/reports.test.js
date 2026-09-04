@@ -19,11 +19,15 @@ const path = require('path');
 const vm = require('vm');
 const S = require('../storage.js');
 const B = require('../bidmath.js');
+const D = require('../dates.js');
 
 const sandbox = {
   console,
   document: undefined,
   BidMath: B,
+  // ui.js's fmtDateTime is a one-line wrapper around this one; the last-page
+  // row is written in it, so the real thing is loaded rather than a stub.
+  Dates: D,
   // reports.js registers itself on load; nothing else in it runs at load time.
   registerScreen: () => {},
 };
@@ -39,7 +43,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'reports.js'), 'utf8'
 const {
   reportsOffText, reportsHoursSays, reportsGutSays, reportsSurprisesSays,
   reportsWinSays, reportsMarginSays, reportsMarginMeanSays, reportsGateSays,
-  reportsTypeSays,
+  reportsTypeSays, reportsLastPageSays,
 } = sandbox;
 
 // ---------------------------------------------------------------------------
@@ -187,6 +191,25 @@ test('neither: something was left, and it was not enough', () => {
     'Set aside $390.00, spent $900.00. The hours left $585.00 unused, not enough to cover them.');
 });
 
+test('nothing came up: no coveredBy branch may speak', () => {
+  // THE SECOND BUG. Money was set aside and not one surprise was logged, and
+  // every coveredBy verdict is false on that shape: with the hours under, this
+  // printed 'the unused hours covered them' over nothing to cover, and with
+  // the hours over it would have blamed a cushion nobody spent.
+  const under = threeAlike(15, 0);   // 3 unused hrs a job -> 85.00 left over
+  assert.strictEqual(under.surprises.surpriseCents, 0);
+  assert.strictEqual(under.surprises.coveredBy, 'cushion');
+  assert.ok(under.surprises.unspentCents > 0);
+  assert.strictEqual(reportsSurprisesSays(under.surprises),
+    'Set aside $390.00, and nothing unexpected came up.');
+
+  const over = threeAlike(20, 0);    // 2 hrs past the bid a job -> nothing left
+  assert.strictEqual(over.surprises.surpriseCents, 0);
+  assert.strictEqual(over.surprises.unspentCents, 0);
+  assert.strictEqual(reportsSurprisesSays(over.surprises),
+    'Set aside $390.00, and nothing unexpected came up.');
+});
+
 test('nothing set aside at all is its own two sentences', () => {
   assert.strictEqual(reportsSurprisesSays({ setAsideCents: 0, surpriseCents: 12000, unspentCents: 0, coveredBy: 'hours' }),
     'Nothing was set aside on these jobs, and surprises came to $120.00.');
@@ -272,4 +295,21 @@ test('the gate counts down instead of just refusing', () => {
     'Finish 3 jobs to see estimating stats. 2 done, 1 to go.');
   assert.strictEqual(reportsGateSays({ needed: 3, completedCount: 0 }),
     'Finish 3 jobs to see estimating stats. 0 done, 3 to go.');
+});
+
+// ---------------------------------------------------------------------------
+// The last page's stamp
+// ---------------------------------------------------------------------------
+
+test('the last page says when it was made, and says so when it cannot', () => {
+  // Built in local time and read in local time, so the string is the same in
+  // Phoenix and in London.
+  const at = new Date(2026, 8, 4, 7, 12).getTime();
+  assert.strictEqual(reportsLastPageSays(at), 'Made Sep 4, 2026, 7:12 am');
+  assert.strictEqual(reportsLastPageSays(new Date(2026, 8, 4, 13, 5).getTime()),
+    'Made Sep 4, 2026, 1:05 pm');
+  // A page stored before the store's stamp was read back has no time to show.
+  assert.strictEqual(reportsLastPageSays(null), 'Last page, no date kept');
+  assert.strictEqual(reportsLastPageSays(undefined), 'Last page, no date kept');
+  assert.strictEqual(reportsLastPageSays(NaN), 'Last page, no date kept');
 });
