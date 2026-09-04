@@ -154,6 +154,21 @@ test('lineHours: days x hours-per-day x how many men, and zero when nobody is on
   // the readout is built from this, so a task caption using it cannot disagree
   assert.strictEqual(B.laborReal(bid, settings).hours, B.lineHours(bid.labor, 8));
 });
+// The truck bills per day, and "a day" changes shape when the job is split:
+// summed across the tasks, not the union day count. The Price screen prints
+// this figure beside the truck charge, so it is the same function the stack
+// bills off rather than a second reading of the same bid.
+test('truckDays: the single line before a split, the sum of the tasks after', () => {
+  assert.strictEqual(B.truckDays(bid), 2);
+  const split = { ...bid, labor: { crewIds: ['c1'], days: 2, tasks: [
+    { crewIds: ['c1', 'c2'], days: 1 }, { crewIds: ['c1'], days: 1.5 } ] } };
+  assert.strictEqual(B.truckDays(split), 2.5);
+  assert.strictEqual(B.costStack(split, settings).truck, Math.round(2.5 * 9500));
+  // No labor block at all is 0 days, not a throw.
+  assert.strictEqual(B.truckDays({}), 0);
+  // tasks: [] is "not split" — the same reading laborReal takes.
+  assert.strictEqual(B.truckDays({ labor: { crewIds: [], days: 3, tasks: [] } }), 3);
+});
 test('costStack: true cost carries burden, truck, consumables, overhead', () => {
   const s = B.costStack(bid, settings);
   assert.strictEqual(s.materialCost, 171254);

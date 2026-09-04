@@ -121,6 +121,17 @@
     return { ok: true, crewIds, days: crewIds.length ? crewDayUnits / crewIds.length : 0 };
   }
 
+  // The day count the truck and gas bill off: the sum of the tasks' days once
+  // the job has been split, the single line's days before that. costStack uses
+  // it, and it is exported because the Price screen has to show the figure the
+  // stack ACTUALLY used — reading labor.days over there would print "2 days"
+  // beside a truck charge for three, and a number that doesn't match its own
+  // label is worse than no number.
+  function truckDays(bid) {
+    const labor = getLabor(bid);
+    return labor.tasks && labor.tasks.length ? labor.tasks.reduce((s, t) => s + t.days, 0) : labor.days;
+  }
+
   function bidHours(realHours, cushionPct) {
     // + 0 normalizes the -0 that Math.ceil produces for realHours === 0 (ceil(-1e-9) is -0).
     return Math.ceil(realHours * (1 + cushionPct / 100) - 1e-9) + 0;
@@ -140,9 +151,7 @@
     const misc = (bid.misc && bid.misc.cents) || 0;
     const lab = laborReal(bid, settings);
     const laborCost = r(lab.wageCents * (1 + settings.burdenPct / 100));
-    const labor = getLabor(bid);
-    const days = labor.tasks && labor.tasks.length ? labor.tasks.reduce((s, t) => s + t.days, 0) : labor.days;
-    const truck = r(days * settings.truckDayCents);
+    const truck = r(truckDays(bid) * settings.truckDayCents);
     const consumables = r(mc * settings.consumablesPct / 100);
     const base = mc + rentalsCost + equipmentCost + misc + laborCost + truck + consumables;
     const trueCost = r(base * (1 + settings.overheadPct / 100));
@@ -196,7 +205,7 @@
   }
 
   return {
-    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, bidHours, mergeTasks, costStack, solve,
+    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };

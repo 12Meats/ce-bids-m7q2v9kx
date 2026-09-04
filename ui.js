@@ -20,6 +20,16 @@ function numText(n) {
   return String(Math.round(n * 1000) / 1000);
 }
 
+// A percentage on screen. One decimal is the finest anyone quotes a margin
+// at, and it is the cap the keypad enforces for typed ones — but a margin
+// READ BACK out of solve() is a float off a division (24.99871…), and printing
+// that raw would put six digits of false precision next to a price. Display
+// rounding only: nothing priced is ever computed from this string.
+function pctText(n) {
+  if (typeof n !== 'number' || !isFinite(n)) return '—';
+  return numText(Math.round(n * 10) / 10) + '%';
+}
+
 // The one place cents become dollars on screen. BidMath.fmt already refuses to
 // print NaN/Infinity, so a broken number shows as an em dash rather than
 // garbage in front of a customer.
@@ -141,6 +151,75 @@ function statusPill(status) {
   span.className = 'pill' + (known ? ' pill-' + status : '');
   span.textContent = known ? STATUS_LABELS[status] : String(status || '');
   return span;
+}
+
+// ---------------------------------------------------------------------------
+// Rentals and owned equipment
+// ---------------------------------------------------------------------------
+// Two screens reach for a lift. The walk only remembers it exists — standing
+// under the high bays is when he knows he needs one — and the Costs & price
+// screen is where the number goes on it. What they SHARE is how a rental gets
+// named and how a tool gets picked, so those two steps live here and neither
+// screen owns a private copy: a rental named on the walk and a rental named on
+// the price screen offer the same chips, in the same order, and land on a line
+// of the same shape.
+//
+// Everything comes in as an argument (the catalog, the equipment list, the
+// percentage) — nothing here reads app state.
+
+// The rentals the catalog already knows about. They are deliberately kept out
+// of the material lists — a boom lift priced as a material line would take
+// material markup and be counted in the material total — so the name prompt is
+// the one place they are reachable, and reaching them here is on purpose.
+// Alphabetical in practice: nothing ever records a use against a rental, so
+// the use-count key Catalog.matches sorts on first is zero for all of them.
+function rentalNames(catalog) {
+  return Catalog.matches(catalog, { category: 'rentals', includeRentals: true }).map((p) => p.name);
+}
+
+// promptRentalName(catalog, prefill, done) — the naming step, chips and all.
+// done(name) fires with a non-empty name; Cancel, or a name typed back to
+// nothing, calls nothing at all. What happens next is the caller's business:
+// the walk writes a $0 placeholder, the price screen goes on to ask days and
+// dollars.
+function promptRentalName(catalog, prefill, done) {
+  promptText(prefill || '', {
+    label: 'Rental',
+    placeholder: 'What you are renting',
+    suggestions: rentalNames(catalog),
+    done: (name) => { if (name) done(name); },
+  });
+}
+
+// What one piece of his own equipment bills at per day: the override he typed
+// in Settings, or equipmentPct of what it cost new, rounded to the nearest $5
+// (BidMath.equipmentDayRate). null when the tool has no cost on it yet — the
+// caller asks him for one rather than quietly billing $0.
+function equipmentDayCents(equip, equipmentPct) {
+  if (equip.overrideDayCents != null) return equip.overrideDayCents;
+  return BidMath.equipmentDayRate(equip.costCents, equipmentPct);
+}
+
+// The tool picker, with each tool's day rate on its chip so the pick is made
+// on the number rather than on the name. Hidden tools are gone from Settings
+// and are not offered. Only what happens AFTER a pick differs between the two
+// screens, so that is the caller's callback; the caller appends its own Cancel
+// (and, on the price screen, + New tool) underneath.
+function equipmentPickerCard(title, equipment, equipmentPct, onPick) {
+  const box = card(title);
+  const list = equipment.filter((e) => e.hidden === false);
+  if (list.length === 0) {
+    box.appendChild(emptyNote('No equipment in Settings yet.'));
+    return box;
+  }
+  const chips = document.createElement('div');
+  chips.className = 'equip-chips';
+  list.forEach((e) => {
+    const rate = equipmentDayCents(e, equipmentPct);
+    chips.appendChild(chip(rate == null ? e.name : e.name + ' · ' + moneyText(rate) + '/day', false, () => onPick(e)));
+  });
+  box.appendChild(chips);
+  return box;
 }
 
 // ---------------------------------------------------------------------------

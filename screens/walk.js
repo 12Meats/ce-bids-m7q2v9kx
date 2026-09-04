@@ -127,17 +127,6 @@ function walkCatLabel(key) {
 
 function walkPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
-// The rentals the catalog already knows about, offered as chips on the rental
-// name prompt. They are deliberately kept out of the material lists, so this is
-// the one place they are reachable — and reaching them here is on purpose.
-// Alphabetical: nothing ever records a use against a rental (the walk only
-// writes a placeholder line, and the price goes on it two screens later), so
-// the use-count key Catalog.matches sorts on first is zero for all of them.
-function walkRentalNames() {
-  return Catalog.matches(state.data.catalog, { category: 'rentals', includeRentals: true })
-    .map((p) => p.name);
-}
-
 function walkCatalogPart(it) {
   return it.catalogId ? (state.data.catalog.find((p) => p.id === it.catalogId) || null) : null;
 }
@@ -915,10 +904,12 @@ function walkReleasePhotoUrls() {
 // ---------------------------------------------------------------------------
 // PLACEHOLDERS (rentals and owned equipment)
 // ---------------------------------------------------------------------------
-// Task 9 owns what a rental or a piece of his own equipment costs per day.
-// What the walk owns is remembering it exists: standing under the high bays is
-// when he knows he needs a lift, and the Costs & price screen is where the
-// number goes on it.
+// The Costs & price screen owns what a rental or a piece of his own equipment
+// costs per day. What the walk owns is remembering it exists: standing under
+// the high bays is when he knows he needs a lift, and the number goes on it two
+// screens later. The naming step and the tool picker are shared with that
+// screen (promptRentalName / equipmentPickerCard in ui.js) so there is one way
+// to name a rental in this app, not one per screen.
 
 function buildWalkSheet(bid) {
   const wrap = document.createElement('div');
@@ -929,20 +920,12 @@ function buildWalkSheet(bid) {
   const forgetRow = walkForgetRow;
 
   if (walkSheet.kind === 'equip') {
-    const box = card('Which piece of equipment?');
-    const own = state.data.settings.equipment.filter((e) => e.hidden === false);
-    if (own.length === 0) {
-      box.appendChild(emptyNote('No equipment in Settings yet.'));
-    } else {
-      const chips = document.createElement('div');
-      chips.className = 'walk-thumbs'; // the same wrap-and-gap the thumbnails use
-      own.forEach((e) => {
-        const c = chip(e.name, false, () => walkAddEquipment(bid, e, from, forgetRow));
-        c.style.width = 'auto';
-        chips.appendChild(c);
-      });
-      box.appendChild(chips);
-    }
+    // The same picker the price screen puts up, from ui.js: one list, one
+    // order, one place a tool's day rate is worked out. What the walk does
+    // with the pick — a $0 placeholder line — is the part that is its own.
+    const settings = state.data.settings;
+    const box = equipmentPickerCard('Which piece of equipment?', settings.equipment, settings.equipmentPct,
+      (e) => walkAddEquipment(bid, e, from, forgetRow));
     const nav = document.createElement('div');
     nav.className = 'bid-nav';
     nav.appendChild(textButton('Cancel', 'btn btn-block', walkCloseSheet));
@@ -976,20 +959,14 @@ function walkCloseSheet() {
 // no way to be cleared on the way out, and would still be sitting there the
 // next time something read it.
 function walkAddRental(bid, prefill, from, forgetRow) {
-  promptText(prefill || '', {
-    label: 'Rental',
-    placeholder: 'What you are renting',
-    suggestions: walkRentalNames(),
-    done: (name) => {
-      if (!name) return;
-      const line = { name, days: 1, cents: 0, markup: false };
-      bid.rentals.push(line);
-      if (!persistOr(() => {
-        const i = bid.rentals.indexOf(line);
-        if (i !== -1) bid.rentals.splice(i, 1);
-      })) { render(); return; }
-      walkAfterPlaceholder(from, forgetRow);
-    },
+  promptRentalName(state.data.catalog, prefill, (name) => {
+    const line = { name, days: 1, cents: 0, markup: false };
+    bid.rentals.push(line);
+    if (!persistOr(() => {
+      const i = bid.rentals.indexOf(line);
+      if (i !== -1) bid.rentals.splice(i, 1);
+    })) { render(); return; }
+    walkAfterPlaceholder(from, forgetRow);
   });
 }
 

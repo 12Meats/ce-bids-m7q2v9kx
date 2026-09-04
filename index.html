@@ -785,6 +785,77 @@
        a part, for the same reason: "did that go in?" answered without reading. */
     .labor-task-new { animation: walk-flash 1s ease-out; }
 
+    /* ---------- Costs & price ---------- */
+    /* Three cards down one column: the costs that aren't material or labor,
+       what the job costs him, and what he sells it for. The cost stack is his
+       eyes only and never prints. */
+    .price-head { margin-bottom: var(--space-3); }
+    .price-head-title { font-size: var(--font-lg); font-weight: 800; }
+    .price-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+
+    /* A rental or a piece of equipment: name and money on top, the small
+       controls underneath. Same shape as a walk row, with chips instead of a
+       second line of text — days, marked up, and the ⋯ are all separate
+       answers and each one needs its own target. */
+    .price-line { padding: var(--space-1) 0; border-bottom: 1px solid var(--color-border); }
+    .price-line:last-child { border-bottom: none; }
+    .price-line-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      width: 100%;
+      min-height: 48px;
+      padding: 0;
+      text-align: left;
+      font-family: inherit;
+      font-size: var(--font-body);
+      color: var(--color-text);
+      background: transparent;
+      border: none;
+    }
+    .price-line-tap:active { background: #eef2f7; }
+    .price-line-name { font-weight: 700; min-width: 0; }
+    .price-line-value { font-weight: 700; white-space: nowrap; }
+    .price-line-sub { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 4px; }
+    .price-line-actions { display: flex; margin-top: var(--space-1); }
+    .price-line-actions .btn { flex: 1; min-height: 48px; }
+
+    /* The tool picker's chips, shared with the walk's rental/equipment sheet. */
+    .equip-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+
+    /* A yellow chip is a line that is not priced yet: it is the same warning
+       color as .inline-warn, because it is the same kind of news. */
+    .chip-warn {
+      border-color: var(--color-warn-border);
+      background: var(--color-warn-bg);
+      color: var(--color-warn-text);
+    }
+    /* A fact about the line, shaped like a chip so it sits in the same row —
+       disabled, because there is nothing to press. */
+    .chip-flat { border-style: dashed; color: var(--color-text-muted); }
+    .chip-more { min-width: 56px; padding: 0 14px; font-size: 1.1rem; }
+    .chip:disabled { opacity: .55; }
+    /* ...but a chip that is only a label should not look broken. */
+    .chip-flat:disabled { opacity: 1; }
+
+    /* A row that reaches past this bid. Same treatment as the labor screen's
+       hours-per-day: accent colored, because it opens a question first. */
+    .price-settings-row .row-value { color: var(--color-accent); }
+    .price-truecost { font-size: 1.2rem; }
+    .price-truecost .row-label, .price-truecost .row-value { font-weight: 800; color: var(--color-text); }
+
+    /* The three handles, at the size of the answer they give. */
+    .price-handles .row-value { font-size: var(--font-xl); font-weight: 800; }
+    .price-row-off .row-label, .price-row-off .row-value { opacity: .45; }
+    .price-pills { display: flex; gap: var(--space-1); margin: var(--space-1) 0 var(--space-2); }
+    .price-pills .chip { flex: 1 1 0; min-width: 0; padding: 0 8px; }
+
+    /* Sentences, not controls: whether the number above is one to say out loud. */
+    .price-note { margin: 0 0 var(--space-1); font-size: var(--font-body); line-height: 1.35; }
+    .price-note-bad { font-weight: 700; color: var(--color-danger); }
+    .price-readout .row { min-height: 44px; }
+
     /* ---------- Utilities ---------- */
     .mt-3 { margin-top: var(--space-3); }
 
@@ -970,12 +1041,9 @@
       <div id="laborContent" class="screen-content"></div>
     </section>
 
-    <!-- ---------- Price -- Task 10 ---------- -->
+    <!-- ---------- Costs & price -- Task 9 ---------- -->
     <section id="screen-price" class="screen" hidden>
-      <div id="priceContent" class="screen-content">
-        <h2 class="section-heading">Price</h2>
-        <p class="screen-placeholder">Cost stack and the three handles.</p>
-      </div>
+      <div id="priceContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- Proposal -- Task 11 ---------- -->
