@@ -97,3 +97,35 @@ function statusPill(status) {
   span.textContent = known ? STATUS_LABELS[status] : String(status || '');
   return span;
 }
+
+// ---------------------------------------------------------------------------
+// Dates
+// ---------------------------------------------------------------------------
+// Dates are stored as ISO 'YYYY-MM-DD' everywhere and never shown that way:
+// the owner reads "Sep 10, 2026". Parsing is done on the string rather than
+// through Date so a stored value can't drift a day across a timezone.
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// fmtDate('2026-09-10') -> 'Sep 10, 2026'. Anything that isn't a YYYY-MM-DD
+// date comes back as '' rather than "Invalid Date".
+function fmtDate(iso) {
+  if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const m = Number(iso.slice(5, 7));
+  if (m < 1 || m > 12) return '';
+  return MONTH_ABBR[m - 1] + ' ' + Number(iso.slice(8, 10)) + ', ' + iso.slice(0, 4);
+}
+
+// daysSince('2026-08-10') -> whole days from that date to today, or null for a
+// missing/invalid one so a caller can say "never" instead of printing a number.
+// The one function in this file that reads anything outside its arguments:
+// "today" has to come from Store.todayISO() so it agrees with stored dates
+// (local, not UTC) rather than being a second opinion about what day it is.
+// Both ends are read at noon, so a DST shift can't round the gap off by one.
+function daysSince(iso) {
+  if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const then = new Date(iso + 'T12:00:00');
+  const now = new Date(Store.todayISO() + 'T12:00:00');
+  if (isNaN(then.getTime()) || isNaN(now.getTime())) return null;
+  return Math.round((now.getTime() - then.getTime()) / 86400000);
+}

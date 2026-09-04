@@ -221,9 +221,14 @@ function promptMoney(cents, opts) {
 
 // --- Text prompt -----------------------------------------------------------
 
-// promptText(current, { label, placeholder, done })
+// promptText(current, { label, placeholder, suggestions, done })
 // A real <input type="text"> — words are not scroll wheels. done(string) fires
 // on Done (or Enter) with the trimmed value; Cancel calls nothing.
+// suggestions: an array of strings shown as chips above the input (existing
+// customer names). Tapping one fills the input — typing the same name a second
+// time is how a customer accidentally gets created twice.
+const TEXT_SUGGESTION_MAX = 8;
+
 function promptText(current, opts) {
   opts = opts || {};
   if (anyPanelOpen()) return;
@@ -235,6 +240,17 @@ function promptText(current, opts) {
   const input = el('textInput');
   input.value = current == null ? '' : String(current);
   input.placeholder = opts.placeholder || '';
+
+  const chips = el('textChips');
+  chips.textContent = '';
+  const list = (Array.isArray(opts.suggestions) ? opts.suggestions : [])
+    .filter((s) => typeof s === 'string' && s.trim() !== '')
+    .slice(0, TEXT_SUGGESTION_MAX);
+  list.forEach((s) => {
+    chips.appendChild(chip(s, false, () => { input.value = s; input.focus(); }));
+  });
+  chips.hidden = list.length === 0;
+
   el('panel-text').hidden = false;
 
   // Focus twice: immediately (keeps the iOS keyboard inside the tap gesture)
@@ -248,6 +264,8 @@ function promptText(current, opts) {
 function closeText() {
   el('panel-text').hidden = true;
   el('textInput').blur();
+  el('textChips').textContent = '';
+  el('textChips').hidden = true;
   textCtx.open = false;
   textCtx.done = null;
 }

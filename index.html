@@ -282,6 +282,10 @@
       30%, 50%, 70% { transform: translateX(-14px); }
       40%, 60% { transform: translateX(14px); }
     }
+    /* ui.js shake() puts this class on whatever element got it wrong: a form
+       row, the PIN dots, the typed digits. The animation is generic and the
+       two rules below only add color on top of it. */
+    .shake { animation: shake 0.5s; }
     .pin-dots.shake { animation: shake 0.5s; }
     .pin-dots.shake .dot { border-color: var(--color-danger); }
 
@@ -433,6 +437,175 @@
     .pill-lost { background: rgba(185, 28, 28, 0.1); color: var(--color-danger); }
     .pill-complete { background: var(--color-accent); color: #fff; }
 
+    /* ---------- Bids home ---------- */
+    /* The nudge bands: the two things that cost real money when they are
+       missed (a proposal nobody answered, work that only exists inside this
+       phone), said in a sentence and tappable straight through to the fix. */
+    .nudges {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+    .nudge {
+      width: 100%;
+      min-height: 56px;
+      padding: var(--space-2) var(--space-3);
+      border-radius: 12px;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.35;
+      text-align: left;
+      background: var(--color-warn-bg);
+      border: 1px solid var(--color-warn-border);
+      color: var(--color-warn-text);
+    }
+    .nudge-danger {
+      background: rgba(185, 28, 28, 0.1);
+      border-color: var(--color-danger);
+      color: var(--color-danger);
+    }
+    .nudge:active { filter: brightness(0.96); }
+    /* The band is a toggle, so it has to look pressed while its filter is on. */
+    .nudge-on { box-shadow: inset 0 0 0 2px currentColor; }
+
+    .bids-search { margin-bottom: var(--space-3); }
+
+    .bid-card {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      margin-bottom: var(--space-2);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    /* The card holds a second button, so it is a container and the tap target
+       is the button filling it. A button inside a button is not a thing. */
+    .bid-main {
+      flex: 1;
+      min-width: 0;
+      min-height: 72px;
+      padding: var(--space-2) var(--space-3);
+      border: none;
+      border-radius: 12px 0 0 12px;
+      background: transparent;
+      font-family: inherit;
+      color: var(--color-text);
+      text-align: left;
+    }
+    .bid-main:active { background: #eef2f7; }
+    .bid-line1 { font-size: var(--font-body); font-weight: 700; }
+    .bid-line2 {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-top: 6px;
+      font-size: 0.95rem;
+      color: var(--color-text-muted);
+    }
+    .bid-price { font-weight: 700; color: var(--color-text); }
+    .bid-number { margin-left: auto; }
+    .bid-more {
+      width: 52px;
+      min-height: 72px;
+      border: none;
+      border-radius: 0 12px 12px 0;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 1.5rem;
+    }
+    .bid-more:active { background: #eef2f7; }
+    .bid-actions {
+      flex: 1 0 100%;
+      display: flex;
+      gap: var(--space-2);
+      padding: 0 var(--space-3) var(--space-2);
+    }
+    .bid-actions .btn { flex: 1; }
+
+    /* Pinned above the tab bar: with thirty bids in the list, the one button
+       the owner reaches for must never be a scroll away. */
+    .bids-newbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+      z-index: 15;
+      padding: var(--space-2) 20px;
+      background: var(--color-bg);
+      border-top: 1px solid var(--color-border);
+    }
+    .bids-newbar .btn { min-height: 56px; font-size: 1.15rem; }
+    /* Clears the tab bar AND the pinned button sitting above it. */
+    #bidsContent { padding-bottom: calc(var(--space-4) + var(--tabbar-height) + 84px + env(safe-area-inset-bottom)); }
+
+    /* ---------- Bid screen and header form ---------- */
+    .field-label {
+      margin: var(--space-3) 0 var(--space-1);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--color-text-muted);
+    }
+    /* Two or three big buttons side by side: this app's answer to a dropdown. */
+    .toggle-row { display: flex; gap: var(--space-1); }
+    /* min-width:0 so flex-basis:0 actually wins: a flex item's automatic
+       minimum is its content width, which would make "Scope & price"
+       claim more room than "Full" and leave the row visibly lopsided. */
+    .chip-lg { flex: 1 1 0; min-width: 0; min-height: 56px; padding: 0 8px; font-size: 1.05rem; line-height: 1.2; }
+    .btn-half { flex: 1; min-height: 56px; }
+
+    .inline-warn {
+      margin-top: 4px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      background: var(--color-warn-bg);
+      border: 1px solid var(--color-warn-border);
+      color: var(--color-warn-text);
+    }
+
+    .bid-head-name { font-size: var(--font-lg); font-weight: 800; }
+    .bid-head-title { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+    .bid-head-price { margin-top: var(--space-2); font-size: var(--font-xl); font-weight: 800; }
+    .bid-head-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      margin-top: var(--space-2);
+      color: var(--color-text-muted);
+    }
+
+    /* "Edit details" is a secondary route, not a fifth big button competing
+       with the ones that matter, but it still gets a 44px target. */
+    .link-btn {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+      margin-top: var(--space-2);
+      padding: 0;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-accent);
+      text-align: left;
+    }
+
+    .bid-nav {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      margin-top: var(--space-3);
+    }
+    .bid-nav .btn { min-height: 60px; font-size: 1.15rem; }
+
     /* ---------- Utilities ---------- */
     .mt-3 { margin-top: var(--space-3); }
 
@@ -490,6 +663,17 @@
       max-width: 340px;
       margin-bottom: var(--space-4);
     }
+
+    .panel-chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: var(--space-1);
+      width: 100%;
+      max-width: 340px;
+      margin-top: var(--space-3);
+    }
+    .panel-chips[hidden] { display: none; }
 
     input.panel-input {
       max-width: 340px;
@@ -567,18 +751,12 @@
 
     <!-- ---------- Bids (home) -- Task 6 ---------- -->
     <section id="screen-bids" class="screen" hidden>
-      <div id="bidsContent" class="screen-content">
-        <h2 class="section-heading">Bids</h2>
-        <p class="screen-placeholder">Your bids will show up here.</p>
-      </div>
+      <div id="bidsContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- Bid header form -- Task 7 ---------- -->
     <section id="screen-bid" class="screen" hidden>
-      <div id="bidContent" class="screen-content">
-        <h2 class="section-heading">Bid</h2>
-        <p class="screen-placeholder">Bid details.</p>
-      </div>
+      <div id="bidContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- Walkthrough (areas, items, photos) -- Task 8 ---------- -->
@@ -674,6 +852,10 @@
   <!-- ---------- Text panel ---------- -->
   <div id="panel-text" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="textLabel" hidden>
     <h2 id="textLabel" class="panel-title"></h2>
+    <!-- Names the owner has already used, when the caller passes any. Tapping
+         one fills the input: typing the same customer twice, slightly
+         differently, is how one customer becomes two. -->
+    <div id="textChips" class="panel-chips" hidden></div>
     <input type="text" id="textInput" class="panel-input" autocomplete="off" autocorrect="off" spellcheck="false">
     <div class="panel-actions">
       <button type="button" id="textDone" class="btn btn-confirm">Done</button>
