@@ -129,6 +129,22 @@ function caption(text) {
   return p;
 }
 
+// The yellow line a task with days on it and nobody on it gets. Two screens
+// say it: the Labor screen on the card itself (where the fix is one tap away)
+// and the Costs & price screen on the labor line (where the missing hours are
+// about to be priced). Same sentence in both, because it is one condition, not
+// two — and it names what it costs, because "nobody on this task" alone reads
+// like a note rather than a number that is wrong.
+const CREWLESS_TASK_WARN = 'Nobody on this task. Its days bill truck and gas but no hours.';
+
+// The same thing said about a list of them, for the screen that is looking at
+// the bid rather than at one card.
+function crewlessTaskWarnText(tasks) {
+  const names = tasks.map((t) => (t && t.name) || 'Task');
+  if (names.length === 1) return 'Nobody on ' + names[0] + '. Its days bill truck and gas but no hours.';
+  return 'Nobody on these tasks: ' + names.join(', ') + '. Their days bill truck and gas but no hours.';
+}
+
 // chip(text, selected, onTap) -> a pill-shaped toggle (detail level, job type,
 // crew members). Selected chips fill with the accent color.
 function chip(text, selected, onTap) {

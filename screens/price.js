@@ -442,10 +442,12 @@ function buildEquipmentLine(bid, x) {
   return line;
 }
 
-// A line the walk left behind carries dayCents 0 — it recorded that the
-// threader is going on this job, not what a day of it is worth. Two ways that
-// gets fixed, both one tap, and both yellow so an unpriced line can't be
-// mistaken for a priced one:
+// A line carrying dayCents 0 — an older bid, or a tool whose cost never got
+// answered — recorded that the threader is going on this job without saying
+// what a day of it is worth. (The walk no longer makes one: it asks for the
+// cost and writes the rate onto the line, the same as the picker here.) Two
+// ways that gets fixed, both one tap, and both yellow so an unpriced line
+// can't be mistaken for a priced one:
 //
 //   the tool has a rate      — apply it
 //   the tool has no cost yet — ask what it cost new, then apply what that makes
@@ -613,6 +615,14 @@ function buildCostStack(bid, stack, markup) {
   box.appendChild(caption('What the materials sell for. This bid only.'));
 
   box.appendChild(row('Labor ' + pricePlural(stack.realHours, 'hr', 'hrs') + ' at wages', moneyText(stack.wageCents)));
+
+  // A task with days on it and nobody on it is worth no hours and yet its days
+  // are inside the truck line three rows down, so the stack he is reading has
+  // a cost in it with no labor behind it. The Labor screen flags the card; this
+  // flags the number, in the same words, because this is the screen where the
+  // missing hours turn into a price.
+  const crewless = BidMath.crewlessTasks(bid.labor);
+  if (crewless.length) box.appendChild(inlineWarn(crewlessTaskWarnText(crewless)));
 
   // The one subtraction in this file. Burden is not a costStack field — what
   // the stack exposes is wages before it and labor cost after it — so the
