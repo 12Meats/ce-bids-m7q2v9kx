@@ -329,13 +329,6 @@ function startTheWalk() {
 // The bid screen
 // ---------------------------------------------------------------------------
 
-const LOST_REASONS = [
-  ['price', 'Price'],
-  ['timing', 'Timing'],
-  ['other', 'Went another way'],
-  ['silence', 'Never heard back'],
-];
-
 function renderBidScreen(bid, host) {
   // --- Summary ---
   const box = card();

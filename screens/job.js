@@ -52,10 +52,6 @@
 const JOB_MAX_WEEK_HOURS = 500;
 // Characters, not digits — "168.25" is six of them.
 const JOB_HOURS_KEYS = 6;
-// How far under the starting margin still counts as on track. Rounding and a
-// couple of small surprises should not turn a card red on a job that is fine.
-const JOB_MARGIN_SLACK_PCT = 2;
-
 let jobWeekISO = null;   // the Monday being looked at; null = the current week
 let jobCoMenu = null;    // the change order showing its action row
 let jobSurpriseMenu = null;  // the surprise showing its Delete row
@@ -191,18 +187,6 @@ function jobWeekNav(bid, weekISO) {
   return wrap;
 }
 
-// How much of the bid hours are gone. Past 100% it turns red and stops
-// growing: the bar is full, and the number underneath says by how much.
-function jobBurnBar(actuals) {
-  const track = document.createElement('div');
-  track.className = 'job-bar';
-  const fill = document.createElement('div');
-  fill.className = 'job-bar-fill' + (actuals.hoursPct > 100 ? ' job-bar-over' : '');
-  fill.style.width = Math.min(100, Math.max(0, actuals.hoursPct)) + '%';
-  track.appendChild(fill);
-  return track;
-}
-
 function buildHoursCard(bid, actuals, done) {
   const weekISO = jobSelectedMonday();
   const entry = jobWeekEntry(bid.job, weekISO);
@@ -215,7 +199,7 @@ function buildHoursCard(bid, actuals, done) {
   line.classList.add('job-hours');
   box.appendChild(line);
 
-  box.appendChild(jobBurnBar(actuals));
+  box.appendChild(barMeter(actuals.hoursPct));
   box.appendChild(caption('Logged ' + numText(actuals.actualHours) + ' of '
     + numText(actuals.bidHours) + ' bid hrs'));
 
@@ -427,7 +411,7 @@ function buildActualCard(actuals) {
     box.appendChild(caption('includes ' + moneyText(actuals.changeOrderCents) + ' of change orders'));
   }
 
-  const ok = actuals.marginNowPct >= actuals.marginStartPct - JOB_MARGIN_SLACK_PCT;
+  const ok = marginOnTrack(actuals.marginStartPct, actuals.marginNowPct);
   const margin = row('Margin', pctText(actuals.marginStartPct) + ' → ' + pctText(actuals.marginNowPct));
   margin.classList.add(ok ? 'job-good' : 'job-bad');
   box.appendChild(margin);

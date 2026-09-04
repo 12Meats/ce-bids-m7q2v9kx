@@ -314,6 +314,106 @@
     };
   }
 
+
+  // -------------------------------------------------------------------------
+  // TEN JOBS — what the estimating has been doing
+  // -------------------------------------------------------------------------
+
+  // One job says nothing. Ten say whether he underbids, and by how much, and
+  // on which kind of work. This is that reading, and like jobActuals it is the
+  // ONLY place the arithmetic behind it is written: the Reports screen prints
+  // these fields and assembles sentences around them, and does no math of its
+  // own.
+  //
+  // What counts as finished is status 'complete' — the one-way door on the job
+  // screen — because a job is only worth measuring once nobody is going to log
+  // another hour against it.
+  //
+  // Ratios are null, never Infinity or 0, when there is nothing to divide by:
+  // a bid with no hours on it has no overrun, a job nothing was set aside on
+  // has no surprise percentage, and a shop that has never lost a bid has no
+  // win rate. The screen says "not yet" to a null; a 0 would be a lie with a
+  // number on it.
+  const STATS_MIN_COMPLETED = 3;
+
+  // Lost bids are counted under the reasons storage.js stores; a lost bid with
+  // no reason on it lands in 'none' rather than being quietly dropped, so the
+  // counts always add up to the number of lost bids.
+  const STATS_LOST_REASONS = ['price', 'timing', 'other', 'silence'];
+
+  function ratioPct(part, whole) { return whole > 0 ? part / whole * 100 : null; }
+
+  function mean(total, count) { return count > 0 ? total / count : null; }
+
+  function emptyHours() { return { count: 0, bidHours: 0, actualHours: 0, pct: null }; }
+
+  // The newest finished job first. completedAt is the day the door closed;
+  // dateISO stands in for a job whose status was set some other way (an
+  // imported document, an older build), so nothing sorts as undefined.
+  function statsDoneAt(bid) { return (bid.job && bid.job.completedAt) || bid.dateISO || ''; }
+
+  function estimatingStats(bids, settings) {
+    const all = bids || [];
+    const done = all.filter((b) => b && b.status === 'complete');
+
+    const jobs = done
+      .map((bid) => ({ bid, actuals: jobActuals(bid, settings) }))
+      .sort((a, b) => {
+        const x = statsDoneAt(a.bid), y = statsDoneAt(b.bid);
+        return x < y ? 1 : x > y ? -1 : 0;
+      });
+
+    const hours = emptyHours();
+    const byType = { service: emptyHours(), project: emptyHours() };
+    let setAsideCents = 0, surpriseCents = 0, startTotal = 0, nowTotal = 0;
+
+    for (const j of jobs) {
+      const a = j.actuals;
+      hours.count += 1;
+      hours.bidHours += a.bidHours;
+      hours.actualHours += a.actualHours;
+      const t = byType[j.bid.jobType];
+      if (t) { t.count += 1; t.bidHours += a.bidHours; t.actualHours += a.actualHours; }
+      setAsideCents += a.setAsideCents;
+      surpriseCents += a.surpriseCents;
+      startTotal += a.marginStartPct;
+      nowTotal += a.marginNowPct;
+    }
+    hours.pct = ratioPct(hours.actualHours, hours.bidHours);
+    for (const key of Object.keys(byType)) byType[key].pct = ratioPct(byType[key].actualHours, byType[key].bidHours);
+
+    // Won counts the jobs he is still working as well as the ones he finished:
+    // a won bid is a bid he won, and waiting for it to be complete would read
+    // as a worse win rate than he actually has.
+    const won = all.filter((b) => b && (b.status === 'won' || b.status === 'complete')).length;
+    const lostBids = all.filter((b) => b && b.status === 'lost');
+    const reasons = { none: 0 };
+    STATS_LOST_REASONS.forEach((k) => { reasons[k] = 0; });
+    lostBids.forEach((b) => {
+      const k = STATS_LOST_REASONS.indexOf(b.lostReason) !== -1 ? b.lostReason : 'none';
+      reasons[k] += 1;
+    });
+    // The reason he loses most, ties broken by the order above rather than by
+    // whichever bid happened to be entered first.
+    let topReason = null;
+    STATS_LOST_REASONS.forEach((k) => {
+      if (reasons[k] > 0 && (topReason === null || reasons[k] > reasons[topReason])) topReason = k;
+    });
+    const heard = won + lostBids.length;
+
+    return {
+      ready: jobs.length >= STATS_MIN_COMPLETED,
+      completedCount: jobs.length,
+      needed: STATS_MIN_COMPLETED,
+      jobs,
+      hours,
+      byType,
+      surprises: { setAsideCents, surpriseCents, pct: ratioPct(surpriseCents, setAsideCents) },
+      win: { won, lost: lostBids.length, heard, pct: ratioPct(won, heard), reasons, topReason },
+      margin: { startPct: mean(startTotal, jobs.length), nowPct: mean(nowTotal, jobs.length) },
+    };
+  }
+
   function fmt(cents) {
     if (!Number.isFinite(cents)) return '—'; // last line of defense: never render NaN/Infinity to a user
     const neg = cents < 0 ? '-' : '';
@@ -326,6 +426,7 @@
     unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
+    estimatingStats,
     resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };
 });

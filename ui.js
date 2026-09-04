@@ -181,6 +181,43 @@ function statusPill(status) {
   return span;
 }
 
+// Why a bid went away. The bid screen asks the question and the Reports
+// screen counts the answers, so the four words live here rather than in
+// either of them. The keys are Store's LOST_REASON enum.
+const LOST_REASONS = [
+  ['price', 'Price'],
+  ['timing', 'Timing'],
+  ['other', 'Went another way'],
+  ['silence', 'Never heard back'],
+];
+
+function lostReasonLabel(key) {
+  const hit = LOST_REASONS.find(([k]) => k === key);
+  return hit ? hit[1] : 'No reason given';
+}
+
+// How far under the starting margin still counts as on track. Rounding and a
+// couple of small surprises should not turn a card red on a job that is fine.
+// The job screen colors one job by this and Reports colors a list of them, and
+// two answers to "is this job still the job he sold" would be one too many.
+const MARGIN_SLACK_PCT = 2;
+
+function marginOnTrack(startPct, nowPct) { return nowPct >= startPct - MARGIN_SLACK_PCT; }
+
+// barMeter(pct) -> the thin fill bar. Past 100% it turns red and STOPS: the
+// bar is full, and the line underneath it says by how much. The only chart
+// this app has, and it is four lines of CSS rather than a library.
+function barMeter(pct) {
+  const track = document.createElement('div');
+  track.className = 'bar';
+  const fill = document.createElement('div');
+  const v = (typeof pct === 'number' && isFinite(pct)) ? pct : 0;
+  fill.className = 'bar-fill' + (v > 100 ? ' bar-over' : '');
+  fill.style.width = Math.min(100, Math.max(0, v)) + '%';
+  track.appendChild(fill);
+  return track;
+}
+
 // ---------------------------------------------------------------------------
 // The catalog's and the library's own vocabulary
 // ---------------------------------------------------------------------------

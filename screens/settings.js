@@ -1405,11 +1405,13 @@ async function settingsSendBackup() {
 // The queue, one tap per file. No await in front of the share, so each tap
 // keeps its own activation.
 //
-// The watermark moves here, once per file that really left. It is safe to move
-// it to just this one's stamp because the queue is oldest-first and only ever
-// advances on a send that went through: by the time this file lands, every
-// older pending PDF has already landed too. Cancel one and the queue stops
-// where it is, so the watermark stops with it and the rest stay pending.
+// The watermark moves here, once per file that really left. Every file but the
+// last moves it to its own stamp, which is safe because the queue is
+// oldest-first and only ever advances on a send that went through: by the time
+// this file lands, every older pending PDF has already landed too. Cancel one
+// and the queue stops where it is, so the watermark stops with it and the rest
+// stay pending. The LAST file out is the exception — it carries the whole
+// selection's stamp, for the reason spelled out where it happens below.
 function settingsSendQueuedPdf() {
   if (!settingsBackupQueue || !settingsBackupQueue.length) return;
   const item = settingsBackupQueue[0];
