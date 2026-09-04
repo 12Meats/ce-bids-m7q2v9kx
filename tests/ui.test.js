@@ -169,6 +169,31 @@ test('over the cap it takes the OLDEST and the watermark stops at the last one s
   assert.equal(next.nextSentThroughMs, at('2026-09-10', 8));
 });
 
+test('the watermark steps over a capful whose blobs are gone', () => {
+  // iOS evicts the blob and leaves the id listed. The screen filters those out
+  // before it draws a button, and taking the watermark off what SURVIVED that
+  // filter froze it: a capful of unreadable PDFs left it null, the same dead
+  // capful was picked again next time, and the readable PDFs behind them could
+  // never leave. The selection's own stamp is the one that has to be written —
+  // the newest one SELECTED, readable or not, because an evicted PDF is gone
+  // for good and has to be stepped over.
+  const entries = [];
+  for (let i = 1; i <= 10; i += 1) {
+    // `unreadable` is the screen's business, not backupSelection's. It is here
+    // to say out loud that the answer must not depend on it.
+    entries.push({ id: 'p' + i, bidId: 'b1', at: at('2026-09-' + String(i).padStart(2, '0'), 8), unreadable: true });
+  }
+  const sel = backupSelection(entries, null, 4);
+  assert.deepEqual(sel.send.map((e) => e.id), ['p1', 'p2', 'p3', 'p4']);
+  assert.equal(sel.send.filter((e) => !e.unreadable).length, 0);
+  assert.equal(sel.nextSentThroughMs, at('2026-09-04', 8));
+
+  // Which is the point: the next backup is past the dead ones and offers the
+  // rest, instead of picking the same four corpses forever.
+  const next = backupSelection(entries, sel.nextSentThroughMs, 4);
+  assert.deepEqual(next.send.map((e) => e.id), ['p5', 'p6', 'p7', 'p8']);
+});
+
 test('a cap of zero sends nothing and moves nothing', () => {
   const entries = [{ id: 'a', at: at('2026-09-01') }];
   const sel = backupSelection(entries, null, 0);
