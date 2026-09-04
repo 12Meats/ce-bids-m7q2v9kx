@@ -375,13 +375,16 @@ function renderBidScreen(bid, host) {
   // --- Where the work happens ---
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
-  nav.appendChild(textButton('Walk', 'btn btn-block', () => show('walk')));
-  nav.appendChild(textButton('Labor', 'btn btn-block', () => show('labor')));
-  nav.appendChild(textButton('Costs & price', 'btn btn-block', () => show('price')));
-  nav.appendChild(textButton('Proposal', 'btn btn-block', () => show('proposal')));
+  // Every one of these carries the bid id. Walk and Labor also edit change
+  // orders now, and a plain show('walk') means "keep what you had" — which,
+  // one Back tap after a change order, would be the change order.
+  nav.appendChild(textButton('Walk', 'btn btn-block', () => show('walk', bid.id)));
+  nav.appendChild(textButton('Labor', 'btn btn-block', () => show('labor', bid.id)));
+  nav.appendChild(textButton('Costs & price', 'btn btn-block', () => show('price', bid.id)));
+  nav.appendChild(textButton('Proposal', 'btn btn-block', () => show('proposal', bid.id)));
   // Job tracking only means something once there's a job to track.
   if (bid.status === 'won' || bid.status === 'complete') {
-    nav.appendChild(textButton('Job', 'btn btn-block', () => show('job')));
+    nav.appendChild(textButton('Job', 'btn btn-block', () => show('job', bid.id)));
   }
   host.appendChild(nav);
 
@@ -423,13 +426,15 @@ function renderBidScreen(bid, host) {
         const prevStatus = bid.status;
         const prevJob = bid.job;
         bid.status = 'won';
-        bid.job = { weeks: [], surprises: [], changeOrders: [], completedAt: null };
+        // The empty-job shape lives in storage.js so the screens that write it
+        // and the validator that checks it are one definition.
+        bid.job = Store.newJob();
         // Never open the job screen for a win that wasn't recorded.
         if (!persistOr(() => { bid.status = prevStatus; bid.job = prevJob; })) {
           render();
           return;
         }
-        show('job');
+        show('job', bid.id);
       }));
       pair.appendChild(textButton('Lost', 'btn btn-danger-outline btn-half', () => {
         bidLostSheetOpen = true;

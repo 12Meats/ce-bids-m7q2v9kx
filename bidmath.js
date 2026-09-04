@@ -196,6 +196,81 @@
     return { atRateCents: stack.bidHours * settingsRateCents, bidLaborCents: stack.bidHours * bidRateCents };
   }
 
+  // -------------------------------------------------------------------------
+  // THE JOB — what it actually cost once it was built
+  // -------------------------------------------------------------------------
+
+  // A change order is a small bid living inside the job: its own areas, its
+  // own labor, and nothing else. It is priced off the PARENT bid's numbers —
+  // the same labor rate, the same material markup, the same hours cushion —
+  // so a day added in September bills the way the job was sold in August.
+  // None of the parent's own money comes with it: misc, rentals and owned
+  // equipment are already charged on the bid and must not be charged twice.
+  function changeOrderScratch(co, bid) {
+    return {
+      areas: co.areas || [],
+      labor: co.labor || EMPTY_LABOR,
+      misc: { cents: 0 }, rentals: [], equipment: [],
+      pricing: bid.pricing,
+    };
+  }
+
+  // What one change order sells for. The job screen writes this onto
+  // co.priceCents so the document and the bids list read one number rather
+  // than each working out their own.
+  function changeOrderPrice(co, bid, settings) {
+    return solve(costStack(changeOrderScratch(co, bid), settings), 'rate', bid.pricing.rateCents).priceCents;
+  }
+
+  const EMPTY_JOB = { weeks: [], surprises: [], changeOrders: [], completedAt: null };
+
+  // Bid versus actual, in one reading of one bid. Over ten jobs this is the
+  // card that cures underbidding, so every number the job screen shows comes
+  // from here — the screen does no arithmetic of its own.
+  //
+  //   marginStartPct is the LIVE margin off the stored rate, not the
+  //   pricing.marginPct snapshot: that field stopped being true the moment a
+  //   rental or an overhead change landed after the last handle move.
+  //
+  //   setAside is the cushion in money — the hours quoted above the hours
+  //   planned, at the rate they were sold at. That is what a surprise is
+  //   meant to come out of before it comes out of the margin.
+  //
+  //   The hours overrun is costed at the crew's loaded hourly cost (wages
+  //   plus burden), taken off costStack rather than re-derived from wages, so
+  //   there is one definition of what an hour of crew costs.
+  function jobActuals(bid, settings) {
+    const job = bid.job || EMPTY_JOB;
+    const stack = costStack(bid, settings);
+    const rate = bid.pricing.rateCents;
+
+    const sold = solve(stack, 'rate', rate);
+    const changeOrderCents = (job.changeOrders || []).reduce((s, co) => s + (co.priceCents || 0), 0);
+    // Equal to DocModel.build(bid, data, level).totalCents by construction —
+    // a test pins that equality, so the card and the paper cannot drift.
+    const priceCents = sold.priceCents + changeOrderCents;
+
+    const actualHours = (job.weeks || []).reduce((s, w) => s + w.hours, 0);
+    const surpriseCents = (job.surprises || []).reduce((s, x) => s + x.cents, 0);
+
+    const setAsideCents = r((stack.bidHours - stack.realHours) * rate);
+
+    const loadedWageCents = stack.realHours > 0 ? r(stack.laborCost / stack.realHours) : 0;
+    const overrunCents = r(Math.max(0, actualHours - stack.realHours) * loadedWageCents);
+    const actualCostCents = stack.trueCost + surpriseCents + overrunCents;
+
+    return {
+      bidHours: stack.bidHours, realHours: stack.realHours, actualHours,
+      // A bid with no hours on it has nothing to burn: 0%, not Infinity.
+      hoursPct: stack.bidHours > 0 ? actualHours / stack.bidHours * 100 : 0,
+      setAsideCents, surpriseCents, changeOrderCents, priceCents,
+      trueCostCents: stack.trueCost, overrunCents, actualCostCents,
+      marginStartPct: sold.marginPct,
+      marginNowPct: marginPctOf(priceCents, actualCostCents),
+      loadedWageCents,
+    };
+  }
+
   function fmt(cents) {
     if (!Number.isFinite(cents)) return '—'; // last line of defense: never render NaN/Infinity to a user
     const neg = cents < 0 ? '-' : '';
@@ -207,6 +282,7 @@
   return {
     unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
+    changeOrderScratch, changeOrderPrice, jobActuals,
     resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };
 });

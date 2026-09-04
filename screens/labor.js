@@ -47,19 +47,29 @@ const LABOR_MAX_DAYS = 365;
 const LABOR_FIRST_TASK = 'Main work';
 
 let laborNewTask = null;    // the task just added, flashed for a second
+// Which change order's labor the screen is editing, or null for the bid's own.
+// A change order is priced off the same crew and days as the bid it hangs on,
+// so it is this screen pointed at a different labor line rather than a second
+// crew picker written somewhere else.
+let laborCoId = null;
 
 function laborClearTransient() {
   laborNewTask = null;
 }
 
-// The screen's enter hook. show('labor', id) opens that bid; show('labor') —
-// what the bid screen and the Back button do — keeps the bid we already had.
-// The walk compares the incoming bid id against the one its view state belongs
-// to; this screen has no such view state to keep, so there is nothing to
-// compare — the flash is dropped on every entry, whichever bid we land on. One
-// left over from another bid's task list would point at nothing.
-function enterLabor(bidId) {
-  if (typeof bidId === 'string' && bidId) state.bidId = bidId;
+// The screen's enter hook. show('labor', id) opens that bid's own labor;
+// show('labor', { bidId, changeOrderId }) opens one change order's;
+// show('labor') — the Back button — keeps whichever we already had. The walk
+// compares the incoming target against the one its view state belongs to; this
+// screen has no such view state to keep, so there is nothing to compare — the
+// flash is dropped on every entry, whichever line we land on. One left over
+// from another task list would point at nothing.
+function enterLabor(arg) {
+  if (arg !== undefined) {
+    const t = navTarget(arg);
+    if (t.bidId) state.bidId = t.bidId;
+    laborCoId = t.changeOrderId;
+  }
   laborClearTransient();
 }
 
@@ -68,6 +78,12 @@ function enterLabor(bidId) {
 // ---------------------------------------------------------------------------
 
 function laborBid() { return state.data.bids.find((b) => b.id === state.bidId) || null; }
+
+// The change order being edited, or null when this is the bid's own labor.
+function laborChangeOrder(bid) {
+  if (!laborCoId || !bid) return null;
+  return ((bid.job && bid.job.changeOrders) || []).find((c) => c.id === laborCoId) || null;
+}
 
 function laborSettings() { return state.data.settings; }
 
@@ -83,8 +99,8 @@ function laborPlural(n, one, many) { return numText(n) + ' ' + (n === 1 ? one : 
 
 // Every crew id this bid points at, wherever it points at it. Two things read
 // this: which hidden crew still get a chip, and what "Remove" has to reach.
-function laborReferencedCrewIds(bid) {
-  const labor = bid.labor;
+function laborReferencedCrewIds(edit) {
+  const labor = edit.labor;
   const ids = new Set(labor.crewIds || []);
   (labor.tasks || []).forEach((t) => (t.crewIds || []).forEach((id) => ids.add(id)));
   return ids;
@@ -94,18 +110,18 @@ function laborReferencedCrewIds(bid) {
 // bids, not off the ones he is already on: an old bid he worked has to stay
 // editable, and a chip that vanishes takes the only way to un-select it with
 // it. So: everyone still visible, plus anyone this bid already names.
-function laborOfferedCrew(bid) {
-  const referenced = laborReferencedCrewIds(bid);
+function laborOfferedCrew(edit) {
+  const referenced = laborReferencedCrewIds(edit);
   return laborSettings().crew.filter((c) => c.hidden === false || referenced.has(c.id));
 }
 
 // One row of chips writing to holder.crewIds — the bid's own labor line, or a
 // single task. Both obey the same rules, so both come through here.
-function laborCrewChips(bid, holder) {
+function laborCrewChips(edit, holder) {
   const wrap = document.createElement('div');
   wrap.className = 'labor-chips';
 
-  laborOfferedCrew(bid).forEach((c) => {
+  laborOfferedCrew(edit).forEach((c) => {
     const on = (holder.crewIds || []).indexOf(c.id) !== -1;
     wrap.appendChild(chip(c.name || 'Crew', on, () => {
       const prev = (holder.crewIds || []).slice();
@@ -122,7 +138,7 @@ function laborCrewChips(bid, holder) {
 // throw on a stale bid), which is a silently under-priced job — so it is said
 // out loud, with the one-tap way to fix it. The ids are shown as themselves:
 // there is no name left to show, and the id is what he'd hunt for in a backup.
-function laborUnknownWarn(bid, unknownIds) {
+function laborUnknownWarn(edit, unknownIds) {
   const box = document.createElement('div');
   // Not just a display problem: Store.save validates crew ids against Settings
   // and refuses the whole document, so every other edit on this screen is
@@ -134,7 +150,7 @@ function laborUnknownWarn(bid, unknownIds) {
   actions.className = 'labor-warn-actions';
   actions.appendChild(textButton('Remove', 'btn', () => {
     const gone = new Set(unknownIds);
-    const labor = bid.labor;
+    const labor = edit.labor;
     const prevCrew = (labor.crewIds || []).slice();
     const prevTasks = labor.tasks ? labor.tasks.map((t) => (t.crewIds || []).slice()) : null;
 
@@ -152,10 +168,10 @@ function laborUnknownWarn(bid, unknownIds) {
   return box;
 }
 
-function buildCrewCard(bid) {
+function buildCrewCard(edit) {
   const box = card('Crew');
-  box.appendChild(laborCrewChips(bid, bid.labor));
-  if ((bid.labor.crewIds || []).length === 0) {
+  box.appendChild(laborCrewChips(edit, edit.labor));
+  if ((edit.labor.crewIds || []).length === 0) {
     box.appendChild(caption("Pick who's on this job."));
   }
   return box;
@@ -276,7 +292,7 @@ function laborTaskHoursText(task) {
     + laborPlural(crew, 'guy', 'guys') + ' × ' + laborPlural(task.days, 'day', 'days') + ')';
 }
 
-function buildTaskCard(bid, task, only) {
+function buildTaskCard(edit, task, only) {
   const box = card();
   if (laborNewTask === task) box.classList.add('labor-task-new');
 
@@ -294,13 +310,13 @@ function buildTaskCard(bid, task, only) {
     });
   }));
 
-  box.appendChild(laborCrewChips(bid, task));
+  box.appendChild(laborCrewChips(edit, task));
   box.appendChild(laborDaysRow('Days', task));
   box.appendChild(caption(laborTaskHoursText(task)));
 
   const actions = document.createElement('div');
   actions.className = 'labor-task-actions';
-  const del = textButton('Delete', 'btn btn-danger-outline', only ? null : () => laborDeleteTask(bid, task));
+  const del = textButton('Delete', 'btn btn-danger-outline', only ? null : () => laborDeleteTask(edit, task));
   // Deleting the last task would leave labor.tasks as [], which BidMath reads
   // as "no tasks at all" — the readout would silently fall back to the bid's
   // own line and start quoting a day count nothing on screen shows. There is
@@ -313,11 +329,11 @@ function buildTaskCard(bid, task, only) {
   return box;
 }
 
-async function laborDeleteTask(bid, task) {
+async function laborDeleteTask(edit, task) {
   const ok = await confirmPanel('Delete ' + (task.name || 'this task') + '?', { ok: 'Delete', danger: true });
   if (!ok) { render(); return; }
 
-  const labor = bid.labor;
+  const labor = edit.labor;
   const i = labor.tasks.indexOf(task);
   if (i === -1) { render(); return; }
 
@@ -333,8 +349,8 @@ async function laborDeleteTask(bid, task) {
   render();
 }
 
-function laborSplitIntoTasks(bid) {
-  const labor = bid.labor;
+function laborSplitIntoTasks(edit) {
+  const labor = edit.labor;
   const prev = labor.tasks;
   // The split has to be a no-op on the numbers: one task carrying exactly the
   // crew and days that were already there, so the readout doesn't move.
@@ -343,13 +359,13 @@ function laborSplitIntoTasks(bid) {
   render();
 }
 
-function laborAddTask(bid) {
+function laborAddTask(edit) {
   promptText('', {
     label: 'Task name',
     placeholder: 'What this part of the job is',
     done: (name) => {
       if (!name) return;
-      const labor = bid.labor;
+      const labor = edit.labor;
       // Seeded with the bid's own crew — the usual crew — and no days, because
       // the days are the thing he is about to think about.
       const task = { name, crewIds: (labor.crewIds || []).slice(), days: 0 };
@@ -370,9 +386,9 @@ function laborAddTask(bid) {
 // So the question shows the shape he is about to get, says the hours are safe,
 // and puts the two true-cost numbers side by side. Both come from costStack —
 // the after figure off a clone, so asking is never a change.
-async function laborMergeBack(bid) {
+async function laborMergeBack(bid, edit) {
   const settings = laborSettings();
-  const merged = BidMath.mergeTasks(bid.labor);
+  const merged = BidMath.mergeTasks(edit.labor);
   // A task with days on it and nobody on it has no honest merged reading, so
   // BidMath refuses rather than guessing. Nothing was written and nothing on
   // screen has changed, so there is no render to do — just the answer, naming
@@ -385,8 +401,12 @@ async function laborMergeBack(bid) {
 
   const mergedLabor = { crewIds: merged.crewIds, days: merged.days, tasks: null };
 
-  const before = BidMath.costStack(bid, settings);
-  const after = BidMath.costStack(Object.assign({}, bid, { labor: mergedLabor }), settings);
+  // What the merge does to the money is asked of the thing being merged: the
+  // bid, or the change order priced the way BidMath prices one. Handing
+  // costStack a raw change order would price it against the bid's materials.
+  const priceable = edit === bid ? bid : BidMath.changeOrderScratch(edit, bid);
+  const before = BidMath.costStack(priceable, settings);
+  const after = BidMath.costStack(Object.assign({}, priceable, { labor: mergedLabor }), settings);
 
   const crewCount = merged.crewIds.length;
   // An empty union now means every task was crewless with 0 days, so the
@@ -411,7 +431,7 @@ async function laborMergeBack(bid) {
   );
   if (!ok) { render(); return; }
 
-  const labor = bid.labor;
+  const labor = edit.labor;
   const prevCrew = labor.crewIds;
   const prevDays = labor.days;
   const prevTasks = labor.tasks;
@@ -424,11 +444,11 @@ async function laborMergeBack(bid) {
   render();
 }
 
-function buildTasksSection(bid, host) {
-  const labor = bid.labor;
+function buildTasksSection(bid, edit, host) {
+  const labor = edit.labor;
 
   if (labor.tasks === null) {
-    host.appendChild(textButton('Split into tasks', 'btn btn-block', () => laborSplitIntoTasks(bid)));
+    host.appendChild(textButton('Split into tasks', 'btn btn-block', () => laborSplitIntoTasks(edit)));
     return;
   }
 
@@ -438,12 +458,12 @@ function buildTasksSection(bid, host) {
   host.appendChild(heading);
 
   const only = labor.tasks.length === 1;
-  labor.tasks.forEach((task) => host.appendChild(buildTaskCard(bid, task, only)));
+  labor.tasks.forEach((task) => host.appendChild(buildTaskCard(edit, task, only)));
 
   const actions = document.createElement('div');
   actions.className = 'bid-nav';
-  actions.appendChild(textButton('+ Add task', 'btn btn-primary btn-block', () => laborAddTask(bid)));
-  actions.appendChild(textButton('Merge back into one line', 'btn btn-block', () => laborMergeBack(bid)));
+  actions.appendChild(textButton('+ Add task', 'btn btn-primary btn-block', () => laborAddTask(edit)));
+  actions.appendChild(textButton('Merge back into one line', 'btn btn-block', () => laborMergeBack(bid, edit)));
   host.appendChild(actions);
 }
 
@@ -461,50 +481,72 @@ function renderLabor() {
     return;
   }
 
+  // A change order deleted on the job screen leaves this screen pointing at
+  // nothing. Say so rather than putting live crew chips on the glass.
+  const co = laborChangeOrder(bid);
+  if (laborCoId && !co) {
+    host.appendChild(emptyNote("That change order isn't here anymore. Tap Back to return to the job."));
+    return;
+  }
+  const edit = co || bid;
+
   const head = document.createElement('div');
   head.className = 'labor-head';
   const title = document.createElement('div');
   title.className = 'labor-head-title';
-  title.textContent = bid.title || 'No title yet';
+  title.textContent = co ? ('Change order: ' + (co.name || 'Change order')) : (bid.title || 'No title yet');
   head.appendChild(title);
   const cust = document.createElement('div');
   cust.className = 'labor-head-cust';
-  cust.textContent = bidCustomerName(bid, state.data);
+  cust.textContent = co ? (bid.title || bidCustomerName(bid, state.data)) : bidCustomerName(bid, state.data);
   head.appendChild(cust);
   host.appendChild(head);
 
   // Read once and passed down: the readout wants the hours and the wages, the
   // warning wants the unknown ids, and they must be the same reading of the
-  // same bid — not two calls a mutation could land between.
-  const real = BidMath.laborReal(bid, laborSettings());
+  // same labor line — not two calls a mutation could land between.
+  const real = BidMath.laborReal(edit, laborSettings());
 
   // Above everything, in both modes: an unknown crew id can be sitting on a
   // task just as easily as on the bid's own line, and it is under-pricing the
   // job — and blocking every save — either way.
-  if (real.unknownCrewIds.length) host.appendChild(laborUnknownWarn(bid, real.unknownCrewIds));
+  if (real.unknownCrewIds.length) host.appendChild(laborUnknownWarn(edit, real.unknownCrewIds));
 
   // The crew/days pair is the single line. Once it has been split, the tasks
   // own both, and showing a second set here would be two answers to the same
   // question — so the pair steps aside and the readout keeps totalling.
-  if (bid.labor.tasks === null) {
-    host.appendChild(buildCrewCard(bid));
+  if (edit.labor.tasks === null) {
+    host.appendChild(buildCrewCard(edit));
     const daysBox = card();
-    daysBox.appendChild(laborDaysRow('Days on the job', bid.labor));
+    daysBox.appendChild(laborDaysRow('Days on the job', edit.labor));
     host.appendChild(daysBox);
   }
 
+  // The cushion is the bid's, on a change order as much as on the bid: extra
+  // work sold in September is quoted the way the job was sold in August.
   host.appendChild(buildReadout(bid, real));
   host.appendChild(buildHoursPerDayRow());
 
-  buildTasksSection(bid, host);
+  buildTasksSection(bid, edit, host);
 
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
-  nav.appendChild(textButton('Next: Costs & price →', 'btn btn-block', () => show('price', bid.id)));
+  // A change order has no price screen of its own — its price is worked out on
+  // the job screen, which is where this leads.
+  if (co) nav.appendChild(textButton('Done — back to the job', 'btn btn-block', () => show('job', bid.id)));
+  else nav.appendChild(textButton('Next: Costs & price →', 'btn btn-block', () => show('price', bid.id)));
   host.appendChild(nav);
 }
 
+// title and back are functions for the same reason the walk's are: this screen
+// edits either the bid's labor or one change order's, and the shell reads both
+// after enter() has settled which.
 registerScreen('labor', {
-  id: 'screen-labor', title: 'Labor', back: 'bid', tab: 'bids',
+  id: 'screen-labor', tab: 'bids',
+  title: () => {
+    const co = laborChangeOrder(laborBid());
+    return co ? 'Change order: ' + (co.name || 'Change order') : 'Labor';
+  },
+  back: () => (laborCoId ? 'job' : 'bid'),
   enter: enterLabor, render: renderLabor,
 });

@@ -251,6 +251,27 @@ function equipmentPickerCard(title, equipment, equipmentPct, onPick) {
 }
 
 // ---------------------------------------------------------------------------
+// Navigation arguments
+// ---------------------------------------------------------------------------
+
+// The Walk and Labor screens edit two different things with the same controls:
+// the bid itself, or one change order inside its job. Both are reached with
+// show(key, arg), where arg is either a bid id — the plain form every other
+// screen uses — or { bidId, changeOrderId }. This is the one place that shape
+// is read, so the two screens can never disagree about what they were handed.
+// undefined ("coming back, keep what's on the glass") is the caller's to
+// notice before it gets here; everything else comes back normalized.
+function navTarget(arg) {
+  if (arg && typeof arg === 'object') {
+    return {
+      bidId: typeof arg.bidId === 'string' && arg.bidId ? arg.bidId : null,
+      changeOrderId: typeof arg.changeOrderId === 'string' && arg.changeOrderId ? arg.changeOrderId : null,
+    };
+  }
+  return { bidId: typeof arg === 'string' && arg ? arg : null, changeOrderId: null };
+}
+
+// ---------------------------------------------------------------------------
 // Dates
 // ---------------------------------------------------------------------------
 // The rules themselves live in dates.js, where they are pure and tested. These

@@ -424,6 +424,24 @@
       sentAt: null, savedToFilesAt: null, lostReason: null, job: null };
     s.nextNumber += 1; return b;
   }
+  // The empty job a bid gets the moment it is Won. It lives here, not in the
+  // bid screen, so the shape the screens write and the shape validateImport
+  // checks are one definition.
+  function newJob() { return { weeks: [], surprises: [], changeOrders: [], completedAt: null }; }
+
+  // A change order is a small bid inside the job: areas and labor, nothing
+  // else. Its crew is seeded the way a new bid's is — the visible crew, first
+  // two — because the men already on the job are the men who do the extra.
+  // priceCents starts at 0 and is rewritten from BidMath.changeOrderPrice on
+  // every job render, so it is never a number nothing recomputes.
+  function newChangeOrder(d, name) {
+    const s = d.settings;
+    return {
+      id: uid(), name: String(name || ''), areas: [],
+      labor: { crewIds: s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id), days: 0, tasks: null },
+      priceCents: 0,
+    };
+  }
   function duplicateBid(d, bidId, dateISO) {
     const src = d.bids.find((b) => b.id === bidId); if (!src) return null;
     const c = JSON.parse(JSON.stringify(src));
@@ -444,5 +462,5 @@
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, uid, todayISO, mondayOf, emptyData, validateImport, load, save, check, loadProblem,
-    findOrCreateCustomer, newBid, duplicateBid, addCatalogItem, recordCatalogUse, numberInUse };
+    findOrCreateCustomer, newBid, newJob, newChangeOrder, duplicateBid, addCatalogItem, recordCatalogUse, numberInUse };
 });

@@ -525,18 +525,21 @@ function show(screenId, arg) {
   const onPin = key === 'pin';
   el('topbar').hidden = onPin;
   el('tabbar').hidden = onPin;
+
+  // The destination's own file decides what a navigation argument means and
+  // what stale view state to clear — before render(), so the renderer only
+  // ever sees settled state. It runs before the top bar is drawn too: a screen
+  // opened FOR something (the walk on a change order) titles itself off that
+  // argument, and Back leads somewhere different because of it.
+  if (cfg.enter) cfg.enter(arg);
+
   if (!onPin) {
-    el('topbarTitle').textContent = cfg.title || '';
-    el('backBtn').hidden = !cfg.back;
+    el('topbarTitle').textContent = screenTitle(cfg);
+    el('backBtn').hidden = !screenBack(cfg);
     document.querySelectorAll('#tabbar .tab').forEach((btn) => {
       btn.classList.toggle('tab-active', btn.dataset.tab === cfg.tab);
     });
   }
-
-  // The destination's own file decides what a navigation argument means and
-  // what stale view state to clear — before render(), so the renderer only
-  // ever sees settled state.
-  if (cfg.enter) cfg.enter(arg);
 
   render();
 }
@@ -572,9 +575,17 @@ function persistOr(revert) {
   return true;
 }
 
+// title and back may each be a plain value or a function of the screen's
+// current state, read AFTER enter() has settled it. The walk is the reason:
+// on a change order it is titled for that change order and Back goes to the
+// job, not to the bid.
+function screenTitle(cfg) { return (typeof cfg.title === 'function' ? cfg.title() : cfg.title) || ''; }
+function screenBack(cfg) { return typeof cfg.back === 'function' ? cfg.back() : cfg.back; }
+
 function goBack() {
   const cfg = SCREENS[state.screen];
-  if (cfg && cfg.back) show(cfg.back);
+  const back = cfg && screenBack(cfg);
+  if (back) show(back);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,11 +1,514 @@
 'use strict';
 
-// screens/job.js — Task 12: change orders and job tracking on a won bid.
-// Until then this renderer is deliberately empty: the screen's placeholder
-// markup lives in index.html and simply stays on screen.
+// screens/job.js — the job, once he has won it.
+//
+// Everything before this screen is a guess. This is where the guess meets the
+// week: hours actually worked, money he did not see coming, and the extra work
+// the customer asked for after the price was agreed. Over ten jobs the card at
+// the bottom — what he bid against what it really cost — is the thing that
+// cures underbidding, which is the whole reason this app exists.
+//
+// Four cards, in the order the week happens:
+//
+//   Hours this week — one big number, typed on the keypad, filed under the
+//                     Monday of the week it belongs to. A burn bar under it
+//                     says how much of the bid hours are gone.
+//   Surprises       — the ten-inch wall and the new bit. An amount and a note.
+//   Change orders   — extra work, priced the way the job was sold. Each one is
+//                     a small bid: its own areas and its own labor, edited on
+//                     the SAME walk and labor screens the bid uses (they take
+//                     a { bidId, changeOrderId } argument), never on a second
+//                     copy of those screens living in here.
+//   Bid vs. actual  — the navy card. Hours, surprises against the set-aside,
+//                     the price including change orders, and what the margin
+//                     started at against what it is running at now.
+//
+// NOTHING on this screen does money or hours arithmetic. Every number comes
+// out of BidMath.jobActuals or BidMath.changeOrderPrice, both pure and tested,
+// so the card and the paperwork can never be two opinions about one job.
+//
+// Once he marks the job complete the screen stays readable and stops being
+// editable: the record of a finished job is worth more than the ability to
+// tidy it up six months later.
+//
+// Every mutation is snapshot -> mutate -> persistOr(revert), and nothing
+// navigates after a refused save.
+//
+// Sections, in order:
+//   VIEW STATE      — the enter hook and the week being looked at
+//   WEEKLY HOURS    — the big number, the arrows, the burn bar
+//   SURPRISES       — add, list, delete
+//   CHANGE ORDERS   — add, list, the two ways into the shared editors
+//   BID VS ACTUAL   — the navy card
+//   COMPLETE        — the one-way door
+//   REGISTER
 
-function renderJob() {
-  // Task 12 fills #jobContent.
+// ---------------------------------------------------------------------------
+// VIEW STATE
+// ---------------------------------------------------------------------------
+
+// A week is nobody's idea of a decimal: 500 hours is twelve men working the
+// whole week, which is not this business. It is a limit on the typo.
+const JOB_MAX_WEEK_HOURS = 500;
+// Characters, not digits — "168.25" is six of them.
+const JOB_HOURS_KEYS = 6;
+// How far under the starting margin still counts as on track. Rounding and a
+// couple of small surprises should not turn a card red on a job that is fine.
+const JOB_MARGIN_SLACK_PCT = 2;
+
+let jobWeekISO = null;   // the Monday being looked at; null = the current week
+let jobCoMenu = null;    // the change order showing its action row
+let jobSurpriseMenu = null;  // the surprise showing its Delete row
+
+function jobClearTransient() {
+  jobCoMenu = null;
+  jobSurpriseMenu = null;
 }
 
-registerScreen('job', { id: 'screen-job', title: 'Job', back: 'bid', tab: 'bids', render: renderJob });
+// The screen's enter hook. show('job', id) opens that bid's job; show('job') —
+// the Back button out of the walk or labor screens — keeps the one we had.
+// The week always resets to this week: the phone comes out on a Friday
+// afternoon, and the week he is standing in is the week he means.
+function enterJob(bidId) {
+  if (typeof bidId === 'string' && bidId) state.bidId = bidId;
+  jobWeekISO = null;
+  jobClearTransient();
+}
+
+function jobBid() { return state.data.bids.find((b) => b.id === state.bidId) || null; }
+
+function jobSettings() { return state.data.settings; }
+
+// The Monday of the week that contains today. Every week on this screen is
+// named by its Monday, so two entries for the same week are impossible.
+function jobThisMonday() { return Store.mondayOf(Store.todayISO()); }
+
+function jobSelectedMonday() { return jobWeekISO || jobThisMonday(); }
+
+// 'This week', or the Monday spelled out. He does not think in ISO dates.
+function jobWeekLabel(weekISO) {
+  return weekISO === jobThisMonday() ? 'This week' : 'Week of ' + fmtDate(weekISO);
+}
+
+function jobWeekEntry(job, weekISO) {
+  return (job.weeks || []).find((w) => w.weekISO === weekISO) || null;
+}
+
+// Newest week first: the last thing he did is the thing he is checking.
+function jobWeeksNewestFirst(job) {
+  return (job.weeks || []).slice().sort((a, b) => (a.weekISO < b.weekISO ? 1 : a.weekISO > b.weekISO ? -1 : 0));
+}
+
+// ---------------------------------------------------------------------------
+// CHANGE ORDER PRICES
+// ---------------------------------------------------------------------------
+
+// A change order's price is DERIVED — from its own areas and labor, at the
+// parent bid's rate, markup and cushion — but it is also STORED, because the
+// document, the bids list and the reports all read it and none of them should
+// have to know how a change order is priced. So it is recomputed on every
+// render and written back when it has moved: adding an item on the change
+// order's walk changes this number, and the paperwork must not lag behind it.
+//
+// The write is skipped while a panel is up (a refused save posts a banner the
+// panel would cover) and picked up by the next render. Nothing is lost by
+// waiting: the number on screen is computed, not read.
+function jobSyncChangeOrderPrices(bid, settings) {
+  const orders = (bid.job && bid.job.changeOrders) || [];
+  const prev = orders.map((co) => co.priceCents);
+  let moved = false;
+  orders.forEach((co, i) => {
+    const next = BidMath.changeOrderPrice(co, bid, settings);
+    if (next !== prev[i]) { co.priceCents = next; moved = true; }
+  });
+  if (!moved || anyPanelOpen()) return;
+  persistOr(() => { orders.forEach((co, i) => { co.priceCents = prev[i]; }); });
+}
+
+// ---------------------------------------------------------------------------
+// WEEKLY HOURS
+// ---------------------------------------------------------------------------
+
+function jobLogHours(bid, weekISO) {
+  const job = bid.job;
+  const entry = jobWeekEntry(job, weekISO);
+  promptNumber(entry ? entry.hours : null, {
+    label: 'Hours worked, ' + jobWeekLabel(weekISO).toLowerCase(),
+    allowDecimal: true,
+    maxDecimals: 2,
+    maxChars: JOB_HOURS_KEYS,
+    done: (v) => {
+      const prevWeeks = job.weeks.slice();
+      // Clear means "nothing logged for this week" — the week comes off the
+      // list rather than sitting there as a zero he has to read past.
+      if (v === null) {
+        if (!entry) return;
+        job.weeks = prevWeeks.filter((w) => w !== entry);
+        persistOr(() => { job.weeks = prevWeeks; });
+        render();
+        return;
+      }
+      if (v > JOB_MAX_WEEK_HOURS) {
+        showBanner('That is more than ' + JOB_MAX_WEEK_HOURS + ' hours in a week — check the number');
+        render();
+        return;
+      }
+      if (entry) {
+        const prevHours = entry.hours;
+        entry.hours = v;
+        persistOr(() => { entry.hours = prevHours; });
+      } else {
+        const added = { weekISO, hours: v };
+        job.weeks.push(added);
+        persistOr(() => { job.weeks = prevWeeks; });
+      }
+      render();
+    },
+  });
+}
+
+// ◀ ▶ around the week's name. Forward stops at the week he is standing in:
+// there are no hours yet in a week that has not happened.
+function jobWeekNav(weekISO) {
+  const wrap = document.createElement('div');
+  wrap.className = 'job-weeknav';
+
+  const back = textButton('◀', 'btn job-weeknav-btn', () => {
+    jobWeekISO = DocModel.addDays(weekISO, -7);
+    render();
+  });
+  back.setAttribute('aria-label', 'Previous week');
+  wrap.appendChild(back);
+
+  const label = document.createElement('div');
+  label.className = 'job-weeknav-label';
+  label.textContent = jobWeekLabel(weekISO);
+  wrap.appendChild(label);
+
+  const atNow = weekISO === jobThisMonday();
+  const fwd = textButton('▶', 'btn job-weeknav-btn', atNow ? null : () => {
+    jobWeekISO = DocModel.addDays(weekISO, 7);
+    render();
+  });
+  fwd.disabled = atNow;
+  fwd.setAttribute('aria-label', 'Next week');
+  wrap.appendChild(fwd);
+
+  return wrap;
+}
+
+// How much of the bid hours are gone. Past 100% it turns red and stops
+// growing: the bar is full, and the number underneath says by how much.
+function jobBurnBar(actuals) {
+  const track = document.createElement('div');
+  track.className = 'job-bar';
+  const fill = document.createElement('div');
+  fill.className = 'job-bar-fill' + (actuals.hoursPct > 100 ? ' job-bar-over' : '');
+  fill.style.width = Math.min(100, Math.max(0, actuals.hoursPct)) + '%';
+  track.appendChild(fill);
+  return track;
+}
+
+function buildHoursCard(bid, actuals, done) {
+  const weekISO = jobSelectedMonday();
+  const entry = jobWeekEntry(bid.job, weekISO);
+  const box = card('Hours');
+
+  box.appendChild(jobWeekNav(weekISO));
+
+  const line = row('Hours', entry ? numText(entry.hours) : '—',
+    done ? null : () => jobLogHours(bid, weekISO));
+  line.classList.add('job-hours');
+  box.appendChild(line);
+
+  box.appendChild(jobBurnBar(actuals));
+  box.appendChild(caption('Logged ' + numText(actuals.actualHours) + ' of '
+    + numText(actuals.bidHours) + ' bid hrs'));
+
+  const weeks = jobWeeksNewestFirst(bid.job).filter((w) => w.weekISO !== weekISO);
+  if (weeks.length) {
+    box.appendChild(fieldLabel('Other weeks'));
+    weeks.forEach((w) => {
+      box.appendChild(row(jobWeekLabel(w.weekISO), numText(w.hours) + ' hrs', () => {
+        jobWeekISO = w.weekISO;
+        render();
+      }));
+    });
+  }
+
+  return box;
+}
+
+// ---------------------------------------------------------------------------
+// SURPRISES
+// ---------------------------------------------------------------------------
+
+// Amount first, then what it was. The money is the thing he is holding the
+// receipt for; the note is what makes it mean something in November.
+function jobAddSurprise(bid) {
+  promptMoney(null, {
+    label: 'What did it cost?',
+    done: (cents) => {
+      if (cents === null || cents === 0) return;
+      promptText('', {
+        label: 'What happened?',
+        placeholder: 'Ten-inch wall, new bit',
+        done: (note) => {
+          const job = bid.job;
+          const item = { cents, note, at: Store.todayISO() };
+          job.surprises.push(item);
+          persistOr(() => {
+            const i = job.surprises.indexOf(item);
+            if (i !== -1) job.surprises.splice(i, 1);
+          });
+          jobSurpriseMenu = null;
+          render();
+        },
+      });
+    },
+  });
+}
+
+async function jobDeleteSurprise(bid, item) {
+  const ok = await confirmPanel('Delete ' + moneyText(item.cents) + ' — ' + (item.note || 'this surprise') + '?',
+    { ok: 'Delete', danger: true });
+  if (!ok) { render(); return; }
+  const job = bid.job;
+  const i = job.surprises.indexOf(item);
+  if (i !== -1) {
+    job.surprises.splice(i, 1);
+    persistOr(() => { job.surprises.splice(i, 0, item); });
+  }
+  jobSurpriseMenu = null;
+  render();
+}
+
+function buildSurprisesCard(bid, done) {
+  const box = card('Surprises');
+  const list = bid.job.surprises || [];
+
+  if (list.length === 0) {
+    box.appendChild(emptyNote('Nothing unexpected yet.'));
+  } else {
+    list.forEach((item) => {
+      const label = item.note || 'Surprise';
+      const line = row(label, moneyText(item.cents), done ? null : () => {
+        jobSurpriseMenu = jobSurpriseMenu === item ? null : item;
+        render();
+      });
+      box.appendChild(line);
+      box.appendChild(caption(fmtDate(item.at)));
+      if (jobSurpriseMenu === item) {
+        const acts = document.createElement('div');
+        acts.className = 'job-actions';
+        acts.appendChild(textButton('Delete', 'btn btn-danger-outline', () => jobDeleteSurprise(bid, item)));
+        box.appendChild(acts);
+      }
+    });
+  }
+
+  if (!done) {
+    box.appendChild(textButton('+ Surprise', 'btn btn-block', () => jobAddSurprise(bid)));
+  }
+  return box;
+}
+
+// ---------------------------------------------------------------------------
+// CHANGE ORDERS
+// ---------------------------------------------------------------------------
+
+// Named here, then built on the walk. The name is the only thing this screen
+// asks for, because the moment he has one he is already thinking about the
+// work — and the work is areas and items, which the walk already knows how to
+// take down.
+function jobAddChangeOrder(bid) {
+  promptText('', {
+    label: 'Change order',
+    placeholder: 'What the extra work is',
+    done: (name) => {
+      if (!name) return;
+      const job = bid.job;
+      const co = Store.newChangeOrder(state.data, name);
+      job.changeOrders.push(co);
+      if (!persistOr(() => {
+        const i = job.changeOrders.indexOf(co);
+        if (i !== -1) job.changeOrders.splice(i, 1);
+      })) { render(); return; }
+      jobCoMenu = null;
+      show('walk', { bidId: bid.id, changeOrderId: co.id });
+    },
+  });
+}
+
+function jobRenameChangeOrder(bid, co) {
+  promptText(co.name, {
+    label: 'Change order',
+    placeholder: 'What the extra work is',
+    done: (name) => {
+      if (!name) return;
+      const prev = co.name;
+      co.name = name;
+      persistOr(() => { co.name = prev; });
+      render();
+    },
+  });
+}
+
+async function jobDeleteChangeOrder(bid, co) {
+  const ok = await confirmPanel('Delete ' + (co.name || 'this change order') + ' at '
+    + moneyText(co.priceCents) + "? This can't be undone.", { ok: 'Delete', danger: true });
+  if (!ok) { render(); return; }
+  const job = bid.job;
+  const i = job.changeOrders.indexOf(co);
+  if (i !== -1) {
+    job.changeOrders.splice(i, 1);
+    persistOr(() => { job.changeOrders.splice(i, 0, co); });
+  }
+  jobCoMenu = null;
+  render();
+}
+
+function buildChangeOrdersCard(bid, done) {
+  const box = card('Change orders');
+  const list = bid.job.changeOrders || [];
+
+  if (list.length === 0) {
+    box.appendChild(emptyNote('No extra work yet.'));
+  } else {
+    list.forEach((co) => {
+      box.appendChild(row(co.name || 'Change order', moneyText(co.priceCents), done ? null : () => {
+        jobCoMenu = jobCoMenu === co ? null : co;
+        render();
+      }));
+      if (jobCoMenu === co) {
+        const acts = document.createElement('div');
+        acts.className = 'job-actions';
+        // The same two screens the bid itself uses, pointed at this change
+        // order. Nothing about walking a room or picking a crew is written
+        // twice in this app.
+        acts.appendChild(textButton('Scope', 'btn',
+          () => show('walk', { bidId: bid.id, changeOrderId: co.id })));
+        acts.appendChild(textButton('Labor', 'btn',
+          () => show('labor', { bidId: bid.id, changeOrderId: co.id })));
+        acts.appendChild(textButton('Rename', 'btn', () => jobRenameChangeOrder(bid, co)));
+        acts.appendChild(textButton('Delete', 'btn btn-danger-outline', () => jobDeleteChangeOrder(bid, co)));
+        box.appendChild(acts);
+      }
+    });
+  }
+
+  if (!done) {
+    box.appendChild(textButton('+ Change order', 'btn btn-block', () => jobAddChangeOrder(bid)));
+  }
+  return box;
+}
+
+// ---------------------------------------------------------------------------
+// BID VS ACTUAL
+// ---------------------------------------------------------------------------
+
+// The card the app is for. Four lines, no controls, and every figure handed
+// over by BidMath.jobActuals — including the margin it started at, which is
+// computed live off the stored rate rather than read out of the marginPct
+// snapshot on the bid (that field stopped being true the first time a cost
+// moved after the last handle edit).
+function buildActualCard(actuals) {
+  const box = card('Bid vs. actual');
+  box.classList.add('job-actual');
+
+  box.appendChild(row('Hours', numText(actuals.actualHours) + ' / ' + numText(actuals.bidHours)));
+  box.appendChild(row('Surprises', moneyText(actuals.surpriseCents) + ' of ' + moneyText(actuals.setAsideCents)));
+  box.appendChild(caption('set aside in the hours cushion'));
+
+  box.appendChild(row('Price', moneyText(actuals.priceCents)));
+  if (actuals.changeOrderCents !== 0) {
+    box.appendChild(caption('includes ' + moneyText(actuals.changeOrderCents) + ' of change orders'));
+  }
+
+  const ok = actuals.marginNowPct >= actuals.marginStartPct - JOB_MARGIN_SLACK_PCT;
+  const margin = row('Margin', pctText(actuals.marginStartPct) + ' → ' + pctText(actuals.marginNowPct));
+  margin.classList.add(ok ? 'job-good' : 'job-bad');
+  box.appendChild(margin);
+  box.appendChild(caption('costing ' + moneyText(actuals.actualCostCents)
+    + ', bid at ' + moneyText(actuals.trueCostCents)));
+
+  return box;
+}
+
+// ---------------------------------------------------------------------------
+// COMPLETE
+// ---------------------------------------------------------------------------
+
+async function jobMarkComplete(bid) {
+  const ok = await confirmPanel('Mark this job complete? The job record stops taking changes.',
+    { ok: 'Complete' });
+  if (!ok) { render(); return; }
+  const prevStatus = bid.status;
+  const prevDone = bid.job.completedAt;
+  bid.job.completedAt = Store.todayISO();
+  bid.status = 'complete';
+  persistOr(() => { bid.job.completedAt = prevDone; bid.status = prevStatus; });
+  jobClearTransient();
+  render();
+}
+
+// ---------------------------------------------------------------------------
+// REGISTER
+// ---------------------------------------------------------------------------
+
+function renderJob() {
+  const host = el('jobContent');
+  host.textContent = '';
+
+  const bid = jobBid();
+  if (!bid) {
+    host.appendChild(emptyNote("That bid isn't here anymore. Tap Back to return to your bids."));
+    return;
+  }
+  if (!bid.job) {
+    // Reachable only by a stale navigation: the Job button appears on a won
+    // bid, and winning is what creates the job.
+    host.appendChild(emptyNote('This bid is not a job yet. Mark it Won on the bid screen.'));
+    return;
+  }
+
+  const settings = jobSettings();
+  // Before anything is read: a change order edited on the walk has a new price
+  // and everything below — and the proposal — has to see it.
+  jobSyncChangeOrderPrices(bid, settings);
+  const actuals = BidMath.jobActuals(bid, settings);
+  const done = !!bid.job.completedAt;
+
+  const head = document.createElement('div');
+  head.className = 'labor-head';
+  const title = document.createElement('div');
+  title.className = 'labor-head-title';
+  title.textContent = bid.title || 'No title yet';
+  head.appendChild(title);
+  const cust = document.createElement('div');
+  cust.className = 'labor-head-cust';
+  cust.textContent = bidCustomerName(bid, state.data);
+  head.appendChild(cust);
+  host.appendChild(head);
+
+  if (done) {
+    const line = document.createElement('div');
+    line.className = 'job-done';
+    line.textContent = 'Completed ' + fmtDate(bid.job.completedAt);
+    host.appendChild(line);
+  }
+
+  host.appendChild(buildHoursCard(bid, actuals, done));
+  host.appendChild(buildSurprisesCard(bid, done));
+  host.appendChild(buildChangeOrdersCard(bid, done));
+  host.appendChild(buildActualCard(actuals));
+
+  if (!done) {
+    const nav = document.createElement('div');
+    nav.className = 'bid-nav';
+    nav.appendChild(textButton('Mark complete', 'btn btn-confirm btn-block', () => jobMarkComplete(bid)));
+    host.appendChild(nav);
+  }
+}
+
+registerScreen('job', { id: 'screen-job', title: 'Job', back: 'bid', tab: 'bids', enter: enterJob, render: renderJob });

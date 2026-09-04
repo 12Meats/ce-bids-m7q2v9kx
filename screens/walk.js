@@ -55,7 +55,12 @@ const WALK_JPEG_QUALITY = 0.85;
 
 let walkView = 'areas';          // 'areas' | 'area' | 'add'
 let walkAreaId = null;
-let walkForBidId = null;         // which bid the view state above belongs to
+// Which change order the screen is editing, or null for the bid itself. A
+// change order has exactly the two things this screen already edits — areas
+// and items — so it is this screen pointed at a different list, not a second
+// copy of this file living in job.js.
+let walkCoId = null;
+let walkForTargetId = null;      // which bid (and change order) the view state above belongs to
 let walkAddCat = null;           // the category being browsed in the add view
 let walkAddSearch = '';
 let walkAddListEl = null;        // the live list, so typing in search redraws only it
@@ -95,16 +100,22 @@ function walkClearTransient() {
   walkPhotoOpenId = null;
 }
 
-// The screen's enter hook. show('walk', id) opens that bid; show('walk') — what
-// the bid screen and the Back button do — keeps the bid we already had, and
-// with it the area he was standing in. The view state is thrown away whenever
-// the bid underneath it changes, so a second bid can never open onto the first
-// one's area.
-function enterWalk(bidId) {
-  if (typeof bidId === 'string' && bidId) state.bidId = bidId;
-  if (walkForBidId !== state.bidId) walkResetView();
+// The screen's enter hook. show('walk', id) opens that bid's own walk;
+// show('walk', { bidId, changeOrderId }) opens one change order inside that
+// bid's job; show('walk') — the Back button — keeps whichever we already had,
+// and with it the area he was standing in. The view state is thrown away
+// whenever the thing underneath it changes, so a second bid can never open
+// onto the first one's area, and a change order never onto the bid's.
+function enterWalk(arg) {
+  if (arg !== undefined) {
+    const t = navTarget(arg);
+    if (t.bidId) state.bidId = t.bidId;
+    walkCoId = t.changeOrderId;
+  }
+  const target = state.bidId + '|' + (walkCoId || '');
+  if (walkForTargetId !== target) walkResetView();
   else walkClearTransient();
-  walkForBidId = state.bidId;
+  walkForTargetId = target;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +124,16 @@ function enterWalk(bidId) {
 
 function walkBid() { return state.data.bids.find((b) => b.id === state.bidId) || null; }
 
-function walkCurrentArea(bid) { return (bid.areas || []).find((a) => a.id === walkAreaId) || null; }
+// The change order being edited, or null when the walk is on the bid itself.
+function walkChangeOrder(bid) {
+  if (!walkCoId || !bid) return null;
+  return ((bid.job && bid.job.changeOrders) || []).find((c) => c.id === walkCoId) || null;
+}
+
+// Whatever owns the areas this screen is editing: the bid, or a change order.
+// Everything below reads areas off `edit` and everything else — the customer
+// name, the catalog, the rentals — off the bid, so the two are never confused.
+function walkCurrentArea(edit) { return (edit.areas || []).find((a) => a.id === walkAreaId) || null; }
 
 // One area's cost, through the same primitive that computes the whole bid's
 // material cost — so the numbers on this screen always add up to the number on
@@ -174,28 +194,32 @@ function walkBackLink(label, onTap) {
 // AREA LIST
 // ---------------------------------------------------------------------------
 
-function renderWalkAreas(bid, host) {
+function renderWalkAreas(bid, edit, host) {
+  const co = edit === bid ? null : edit;
+
   const head = document.createElement('div');
   head.className = 'walk-head';
   const title = document.createElement('div');
   title.className = 'walk-head-title';
-  title.textContent = bid.title || 'No title yet';
+  title.textContent = co ? ('Change order: ' + (co.name || 'Change order')) : (bid.title || 'No title yet');
   head.appendChild(title);
   const cust = document.createElement('div');
   cust.className = 'walk-head-cust';
-  cust.textContent = bidCustomerName(bid, state.data);
+  cust.textContent = co ? (bid.title || bidCustomerName(bid, state.data)) : bidCustomerName(bid, state.data);
   head.appendChild(cust);
   host.appendChild(head);
 
   const box = card('Areas');
   box.appendChild(caption('At cost — what the material costs you, not the price.'));
-  const areas = bid.areas || [];
+  const areas = edit.areas || [];
   if (areas.length === 0) {
     box.appendChild(emptyNote('No areas yet — add the room you are standing in.'));
   } else {
     areas.forEach((area) => {
+      // A change order's areas carry no photos (the camera is hidden there),
+      // so a "0 photos" count would be a fact about nothing.
       const counts = walkPlural((area.items || []).length, 'item', 'items')
-        + ' · ' + walkPlural((area.photoIds || []).length, 'photo', 'photos');
+        + (co ? '' : ' · ' + walkPlural((area.photoIds || []).length, 'photo', 'photos'));
       box.appendChild(walkRow(area.name || 'Area', counts, BidMath.fmt(walkAreaCost(area)), () => {
         walkView = 'area';
         walkAreaId = area.id;
@@ -206,7 +230,20 @@ function renderWalkAreas(bid, host) {
   }
   host.appendChild(box);
 
-  host.appendChild(textButton('+ Add area', 'btn btn-primary btn-block', () => walkAddArea(bid)));
+  host.appendChild(textButton('+ Add area', 'btn btn-primary btn-block', () => walkAddArea(edit)));
+
+  // A change order is areas and labor and nothing else. The misc line, the
+  // did-you-forget list and the rental placeholders all belong to the bid,
+  // where they are already priced — charging them a second time on the change
+  // order is the one mistake a change order must never make.
+  if (co) {
+    const conav = document.createElement('div');
+    conav.className = 'bid-nav';
+    conav.appendChild(textButton('Next: Labor →', 'btn btn-block',
+      () => show('labor', { bidId: bid.id, changeOrderId: co.id })));
+    host.appendChild(conav);
+    return;
+  }
 
   // --- The misc line ---
   // The handful of dollars nobody itemizes and everybody spends. One tap, one
@@ -236,17 +273,17 @@ function renderWalkAreas(bid, host) {
   host.appendChild(nav);
 }
 
-function walkAddArea(bid) {
+function walkAddArea(edit) {
   promptText('', {
     label: 'Area name',
     placeholder: 'Where you are standing',
     done: (name) => {
       if (!name) return;
       const area = { id: Store.uid(), name, items: [], photoIds: [] };
-      bid.areas.push(area);
+      edit.areas.push(area);
       if (!persistOr(() => {
-        const i = bid.areas.indexOf(area);
-        if (i !== -1) bid.areas.splice(i, 1);
+        const i = edit.areas.indexOf(area);
+        if (i !== -1) edit.areas.splice(i, 1);
       })) { render(); return; }
       // He named the room because he is standing in it and about to count
       // things in it, so the new area opens rather than joining a list.
@@ -262,7 +299,8 @@ function walkAddArea(bid) {
 // AREA VIEW
 // ---------------------------------------------------------------------------
 
-function renderWalkArea(bid, area, host) {
+function renderWalkArea(bid, edit, area, host) {
+  const co = edit === bid ? null : edit;
   host.appendChild(walkBackLink('All areas', () => {
     walkView = 'areas';
     walkItemMenu = null;
@@ -303,7 +341,9 @@ function renderWalkArea(bid, area, host) {
   }
   host.appendChild(box);
 
-  host.appendChild(buildPhotoCard(area));
+  // Photos are a walk thing: he is standing in the room with the phone up. A
+  // change order is written after the fact, so the camera stays off it.
+  if (!co) host.appendChild(buildPhotoCard(area));
 
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
@@ -317,11 +357,11 @@ function renderWalkArea(bid, area, host) {
   // The destructive one goes last, where a thumb reaching for + Add item never
   // lands on it by accident.
   nav.appendChild(textButton('Delete this area', 'btn btn-danger-outline btn-block',
-    () => walkDeleteArea(bid, area)));
+    () => walkDeleteArea(edit, area)));
   host.appendChild(nav);
 }
 
-async function walkDeleteArea(bid, area) {
+async function walkDeleteArea(edit, area) {
   const items = (area.items || []).length;
   const photos = (area.photoIds || []).length;
   const carrying = (items || photos)
@@ -333,7 +373,7 @@ async function walkDeleteArea(bid, area) {
   );
   if (!ok) { render(); return; }
 
-  const i = bid.areas.indexOf(area);
+  const i = edit.areas.indexOf(area);
   if (i !== -1) {
     // The bid document is the truth, so it is written first — the same order,
     // and for the same reason, as deleting a single photo. If the blobs then
@@ -341,8 +381,8 @@ async function walkDeleteArea(bid, area) {
     // where an area put back by a refused save while its photos were already
     // deleted would be a row of grey tiles he could never clear.
     const orphans = (area.photoIds || []).slice();
-    bid.areas.splice(i, 1);
-    if (!persistOr(() => { bid.areas.splice(i, 0, area); })) { render(); return; }
+    edit.areas.splice(i, 1);
+    if (!persistOr(() => { edit.areas.splice(i, 0, area); })) { render(); return; }
     Photos.delMany(orphans);
   }
   walkView = 'areas';
@@ -414,7 +454,8 @@ function buildItemActions(area, it) {
 // so he never types "3/4 EMT" again, and + New part is there so the one thing
 // the catalog has never heard of doesn't stop the walk.
 
-function renderWalkAdd(bid, area, host) {
+function renderWalkAdd(bid, edit, area, host) {
+  const co = edit === bid ? null : edit;
   // Back walks the flow backwards one step at a time: price answer or unit
   // picker -> the list -> the tiles -> the area.
   host.appendChild(walkBackLink('Back', () => {
@@ -434,7 +475,7 @@ function renderWalkAdd(bid, area, host) {
 
   if (walkAddPending) { host.appendChild(buildPriceAnswer(bid, area)); return; }
   if (walkAddNew) { host.appendChild(buildUnitPicker(bid, area)); return; }
-  if (!walkAddCat) { host.appendChild(buildCategoryTiles()); return; }
+  if (!walkAddCat) { host.appendChild(buildCategoryTiles(!!co)); return; }
 
   // --- The catalog list, with the escape hatch on top ---
   const search = document.createElement('input');
@@ -458,10 +499,12 @@ function renderWalkAdd(bid, area, host) {
   host.appendChild(walkAddListEl);
 }
 
-function buildCategoryTiles() {
+// onChangeOrder drops the rentals tile: a rental line lives on the bid's own
+// rentals list, which a change order does not have and must not borrow.
+function buildCategoryTiles(onChangeOrder) {
   const grid = document.createElement('div');
   grid.className = 'walk-tiles';
-  WALK_CATEGORIES.forEach(([key, label]) => {
+  WALK_CATEGORIES.filter(([key]) => !(onChangeOrder && key === 'rentals')).forEach(([key, label]) => {
     grid.appendChild(textButton(label, 'walk-tile', () => {
       // Rentals and owned equipment are not material lines — they are priced
       // per day on the Costs & price screen (Task 9). All this tile does is
@@ -1114,17 +1157,27 @@ function renderWalk() {
     return;
   }
 
+  // A change order can be deleted on the job screen while its walk is one Back
+  // tap away. Say so, rather than showing live buttons that would write onto
+  // an object nothing points at any more.
+  const co = walkChangeOrder(bid);
+  if (walkCoId && !co) {
+    host.appendChild(emptyNote("That change order isn't here anymore. Tap Back to return to the job."));
+    return;
+  }
+  const edit = co || bid;
+
   // An area can go away underneath a view (a stale id after an import), and an
   // empty area view with live buttons on it is worse than the list.
   let area = null;
   if (walkView === 'area' || walkView === 'add') {
-    area = walkCurrentArea(bid);
+    area = walkCurrentArea(edit);
     if (!area) { walkView = 'areas'; walkAreaId = null; }
   }
 
-  if (walkView === 'add') renderWalkAdd(bid, area, host);
-  else if (walkView === 'area') renderWalkArea(bid, area, host);
-  else renderWalkAreas(bid, host);
+  if (walkView === 'add') renderWalkAdd(bid, edit, area, host);
+  else if (walkView === 'area') renderWalkArea(bid, edit, area, host);
+  else renderWalkAreas(bid, edit, host);
 
   if (walkSheet) host.appendChild(buildWalkSheet(bid));
   if (walkPhotoOpenId && area) host.appendChild(buildPhotoView(area, walkPhotoOpenId));
@@ -1140,7 +1193,15 @@ function walkLeave() {
   walkReleasePhotoUrls();
 }
 
+// title and back are functions because this is two screens wearing one file:
+// the bid's own walk, and one change order's. The shell reads both after
+// enter() has settled which of the two it is looking at.
 registerScreen('walk', {
-  id: 'screen-walk', title: 'Walkthrough', back: 'bid', tab: 'bids',
+  id: 'screen-walk', tab: 'bids',
+  title: () => {
+    const co = walkChangeOrder(walkBid());
+    return co ? 'Change order: ' + (co.name || 'Change order') : 'Walkthrough';
+  },
+  back: () => (walkCoId ? 'job' : 'bid'),
   enter: enterWalk, leave: walkLeave, render: renderWalk,
 });
