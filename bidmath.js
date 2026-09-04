@@ -215,11 +215,18 @@
     };
   }
 
-  // What one change order sells for. The job screen writes this onto
-  // co.priceCents so the document and the bids list read one number rather
-  // than each working out their own.
+  // The cost stack of one change order, on the parent bid's terms. Its own
+  // hours, its own materials, its own truck days — everything a small bid has.
+  function changeOrderStack(co, bid, settings) {
+    return costStack(changeOrderScratch(co, bid), settings);
+  }
+
+  // What one change order sells for. DERIVED, never stored: the document, the
+  // bids list and the job card all call this, so a day added on the change
+  // order's labor screen moves the customer's price the instant it is typed
+  // and nothing has to remember to write a cached number back.
   function changeOrderPrice(co, bid, settings) {
-    return solve(costStack(changeOrderScratch(co, bid), settings), 'rate', bid.pricing.rateCents).priceCents;
+    return solve(changeOrderStack(co, bid, settings), 'rate', bid.pricing.rateCents).priceCents;
   }
 
   const EMPTY_JOB = { weeks: [], surprises: [], changeOrders: [], completedAt: null };
@@ -236,36 +243,72 @@
   //   planned, at the rate they were sold at. That is what a surprise is
   //   meant to come out of before it comes out of the margin.
   //
-  //   The hours overrun is costed at the crew's loaded hourly cost (wages
-  //   plus burden), taken off costStack rather than re-derived from wages, so
-  //   there is one definition of what an hour of crew costs.
+  //   The hours overrun is costed at the crew's loaded hourly cost — WAGES
+  //   PLUS BURDEN AND NOTHING ELSE, taken off costStack rather than
+  //   re-derived from wages, so there is one definition of what an hour of
+  //   crew costs. Deliberately NOT the fully loaded hour: truck, consumables
+  //   and overhead are charged off the plan (truck days, material cost, the
+  //   overhead percentage on the whole base) and do not grow just because the
+  //   crew stayed late. The card's caption says so in those words.
+  //
+  //   A CHANGE ORDER IS A SMALL BID, AND IT BRINGS ITS WHOLE SELF. Its price
+  //   goes on the job, and so do its hours and its cost: its real hours join
+  //   the plan (so the extra work is not read as an overrun), its bid hours
+  //   join the quoted hours (so the burn bar has something to burn), and its
+  //   true cost joins the job's. Fold in the money without the hours and a
+  //   change order looks like free margin while its own crew time reads as a
+  //   blown estimate — both halves wrong, in opposite directions.
+  //
+  //   marginStartPct is therefore the live margin of the WHOLE job as bid,
+  //   change orders included: combined price over combined true cost. With no
+  //   change orders it is exactly solve(stack, 'rate', rate).marginPct.
   function jobActuals(bid, settings) {
     const job = bid.job || EMPTY_JOB;
     const stack = costStack(bid, settings);
     const rate = bid.pricing.rateCents;
 
     const sold = solve(stack, 'rate', rate);
-    const changeOrderCents = (job.changeOrders || []).reduce((s, co) => s + (co.priceCents || 0), 0);
+
+    // One pass over the change orders, one cost stack each: price, hours and
+    // cost all come off the same stack rather than three walks that could
+    // disagree. The price line is changeOrderPrice's definition, spelled out
+    // here only because the stack it needs is already in hand.
+    let changeOrderCents = 0, coRealHours = 0, coBidHours = 0, coTrueCost = 0, coLaborCost = 0;
+    for (const co of (job.changeOrders || [])) {
+      const cs = changeOrderStack(co, bid, settings);
+      changeOrderCents += solve(cs, 'rate', rate).priceCents;
+      coRealHours += cs.realHours;
+      coBidHours += cs.bidHours;
+      coTrueCost += cs.trueCost;
+      coLaborCost += cs.laborCost;
+    }
+
     // Equal to DocModel.build(bid, data, level).totalCents by construction —
     // a test pins that equality, so the card and the paper cannot drift.
     const priceCents = sold.priceCents + changeOrderCents;
+    const realHours = stack.realHours + coRealHours;
+    // Each change order's cushion is ceiled on its own hours, the way it was
+    // sold; summing the ceilings is what the customer was quoted. Adding a
+    // change order can only ever raise this number.
+    const bidHours = stack.bidHours + coBidHours;
+    const trueCostCents = stack.trueCost + coTrueCost;
 
     const actualHours = (job.weeks || []).reduce((s, w) => s + w.hours, 0);
     const surpriseCents = (job.surprises || []).reduce((s, x) => s + x.cents, 0);
 
-    const setAsideCents = r((stack.bidHours - stack.realHours) * rate);
+    const setAsideCents = r((bidHours - realHours) * rate);
 
-    const loadedWageCents = stack.realHours > 0 ? r(stack.laborCost / stack.realHours) : 0;
-    const overrunCents = r(Math.max(0, actualHours - stack.realHours) * loadedWageCents);
-    const actualCostCents = stack.trueCost + surpriseCents + overrunCents;
+    const loadedWageCents = realHours > 0 ? r((stack.laborCost + coLaborCost) / realHours) : 0;
+    const overrunCents = r(Math.max(0, actualHours - realHours) * loadedWageCents);
+    const actualCostCents = trueCostCents + surpriseCents + overrunCents;
 
     return {
-      bidHours: stack.bidHours, realHours: stack.realHours, actualHours,
+      bidHours, realHours, actualHours,
       // A bid with no hours on it has nothing to burn: 0%, not Infinity.
-      hoursPct: stack.bidHours > 0 ? actualHours / stack.bidHours * 100 : 0,
+      hoursPct: bidHours > 0 ? actualHours / bidHours * 100 : 0,
       setAsideCents, surpriseCents, changeOrderCents, priceCents,
-      trueCostCents: stack.trueCost, overrunCents, actualCostCents,
-      marginStartPct: sold.marginPct,
+      trueCostCents, overrunCents, actualCostCents,
+      marginStartPct: marginPctOf(priceCents, trueCostCents),
       marginNowPct: marginPctOf(priceCents, actualCostCents),
       loadedWageCents,
     };
@@ -282,7 +325,7 @@
   return {
     unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
-    changeOrderScratch, changeOrderPrice, jobActuals,
+    changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     resolveMarkup, itemPrice, rentalPrice, equipmentLine,
   };
 });

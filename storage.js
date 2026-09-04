@@ -329,11 +329,22 @@
             if (!isObj(sp) || !isIntGte0(sp.cents) || !isStr(sp.note) || !isISO(sp.at)) return null;
           }
           if (!isArr(j.changeOrders)) return null;
+          // Ids unique within the bid, the way area ids are: the screens
+          // address a change order by id (Scope, Labor, delete), and two that
+          // answer to the same one is an edit landing on the wrong work.
+          const coIds = new Set();
           for (const co2 of j.changeOrders) {
-            if (!isObj(co2) || !isStr(co2.id) || !isStr(co2.name)) return null;
+            if (!isObj(co2) || !isStr(co2.id) || co2.id === '' || coIds.has(co2.id)) return null;
+            coIds.add(co2.id);
+            if (!isStr(co2.name)) return null;
             if (!validAreas(co2.areas)) return null;
             if (!validLabor(co2.labor)) return null;
-            if (!isIntGte0(co2.priceCents)) return null;
+            // priceCents is no longer written or read — a change order's price
+            // is derived from its own areas and labor by
+            // BidMath.changeOrderPrice. Documents written before that change
+            // still carry the cached number, so it is accepted when present
+            // (and must still be a sane integer) and simply ignored.
+            if (co2.priceCents !== undefined && !isIntGte0(co2.priceCents)) return null;
           }
           if (j.completedAt !== null && !isISO(j.completedAt)) return null;
         }
@@ -432,14 +443,16 @@
   // A change order is a small bid inside the job: areas and labor, nothing
   // else. Its crew is seeded the way a new bid's is — the visible crew, first
   // two — because the men already on the job are the men who do the extra.
-  // priceCents starts at 0 and is rewritten from BidMath.changeOrderPrice on
-  // every job render, so it is never a number nothing recomputes.
+  //
+  // No stored price, for the same reason a bid has none: the sell price is
+  // always BidMath.changeOrderPrice off the areas and labor below, so it
+  // cannot go stale between the screen that edits the work and the paper that
+  // quotes it.
   function newChangeOrder(d, name) {
     const s = d.settings;
     return {
       id: uid(), name: String(name || ''), areas: [],
       labor: { crewIds: s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id), days: 0, tasks: null },
-      priceCents: 0,
     };
   }
   function duplicateBid(d, bidId, dateISO) {

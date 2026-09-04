@@ -55,6 +55,23 @@
     return fmtDate(iso) + ', ' + h + ':' + pad2(d.getMinutes()) + ' ' + ampm;
   }
 
+  // addDays('2026-09-14', -7) -> '2026-09-07'. Composed from local
+  // getFullYear/getMonth/getDate (not toISOString, which is UTC) and read at
+  // noon, so a week step across a DST change lands on the right Monday
+  // instead of the Sunday before it. Anything that isn't a valid YYYY-MM-DD
+  // comes back null, so a caller can refuse to move rather than navigate to
+  // "Invalid Date".
+  //
+  // DocModel keeps its own copy for the document's valid-through date; that
+  // one is part of the document model's own arithmetic and is left alone.
+  function addDays(iso, n) {
+    if (!isISO(iso) || typeof n !== 'number' || !isFinite(n) || Math.round(n) !== n) return null;
+    const dt = noon(iso);
+    if (!dt) return null;
+    dt.setDate(dt.getDate() + n);
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+
   // daysSince(iso, todayISO) -> whole days from that date to today: positive
   // when iso is behind today, negative when it's ahead. null for a missing or
   // invalid date on either side, so a caller can say "never" instead of
@@ -151,5 +168,5 @@
     return b.number - a.number;
   }
 
-  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateTime, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
+  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateTime, addDays, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
 });

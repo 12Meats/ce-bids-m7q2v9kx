@@ -198,3 +198,27 @@ test('bidsSortCompare puts the newest first, breaking ties by number', () => {
   assert.ok(D.bidsSortCompare({ number: 4, dateISO: 'x' }, { number: 9, dateISO: 'x' }) > 0);
   assert.equal(D.bidsSortCompare({ number: 4, dateISO: 'x' }, { number: 4, dateISO: 'x' }), 0);
 });
+
+// ---------------------------------------------------------------------------
+// addDays — the week step the job screen's arrows take
+// ---------------------------------------------------------------------------
+
+test('addDays steps whole days without drifting across a month, a year or a DST change', () => {
+  assert.strictEqual(D.addDays('2026-09-14', -7), '2026-09-07');
+  assert.strictEqual(D.addDays('2026-09-14', 7), '2026-09-21');
+  assert.strictEqual(D.addDays('2026-11-02', -7), '2026-10-26');   // clocks changed Nov 1
+  assert.strictEqual(D.addDays('2026-03-09', -7), '2026-03-02');   // and back on Mar 8
+  assert.strictEqual(D.addDays('2026-12-28', 7), '2027-01-04');
+  assert.strictEqual(D.addDays('2027-01-04', -7), '2026-12-28');
+  assert.strictEqual(D.addDays('2028-02-28', 1), '2028-02-29');    // leap year
+  assert.strictEqual(D.addDays('2026-09-14', 0), '2026-09-14');
+});
+
+test('addDays refuses anything that is not a real date and a whole number of days', () => {
+  assert.strictEqual(D.addDays('nope', 7), null);
+  assert.strictEqual(D.addDays('2026-13-40', 7), null);
+  assert.strictEqual(D.addDays(null, 7), null);
+  assert.strictEqual(D.addDays('2026-09-14', 1.5), null);
+  assert.strictEqual(D.addDays('2026-09-14', NaN), null);
+  assert.strictEqual(D.addDays('2026-09-14', '7'), null);
+});

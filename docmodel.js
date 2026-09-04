@@ -153,10 +153,16 @@
 
     const sum = (rows) => rows.reduce((t, r) => t + r.cents, 0);
 
+    // A change order's price is DERIVED here, not read off the record. It used
+    // to be cached on co.priceCents and rewritten by the job screen's render,
+    // which meant editing a change order's labor and then leaving by any route
+    // that did not pass back through that screen printed the old price on the
+    // customer's proposal. bidmath.changeOrderPrice is the one definition, and
+    // the paper, the bids list and the job card all call it.
     const changeOrders = (bid.job && bid.job.changeOrders) || [];
     const coSections = changeOrders.map((co, i) => ({
       title: `Change order ${i + 1}: ${co.name}`,
-      rows: [{ desc: co.name, qtyText: '', unitCents: null, cents: co.priceCents }],
+      rows: [{ desc: co.name, qtyText: '', unitCents: null, cents: B.changeOrderPrice(co, bid, s) }],
     }));
 
     // Change orders are part of the document total but not of solve()'s base

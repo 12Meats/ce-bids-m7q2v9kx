@@ -60,7 +60,28 @@ test('newChangeOrder seeds the visible crew and no days, and hides crew that lef
   const c = S.newChangeOrder(d, 'Extra');
   assert.deepStrictEqual(c.labor, { crewIds: ['c2'], days: 0, tasks: null });
   assert.deepStrictEqual(c.areas, []);
-  assert.strictEqual(c.priceCents, 0);
+  // No cached price: a change order's price is derived wherever it is read.
+  assert.strictEqual('priceCents' in c, false);
+});
+
+test('a change order with no cached price still validates, and a stale cached one is tolerated', () => {
+  const { d, b } = fixture();
+  b.job.changeOrders.push(co(d, 'Disconnect at pump 4', oneArea(), 1));
+  assert.ok(S.validateImport(JSON.stringify(d)));
+  // Documents written before the price stopped being stored still carry it.
+  b.job.changeOrders[0].priceCents = 999;
+  assert.ok(S.validateImport(JSON.stringify(d)));
+  b.job.changeOrders[0].priceCents = -1;
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null);
+});
+
+test('validateImport rejects two change orders sharing an id', () => {
+  const { d, b } = fixture();
+  const c1 = co(d, 'Pump 4', oneArea(), 1);
+  const c2 = co(d, 'Pump 5', oneArea(), 1);
+  c2.id = c1.id;
+  b.job.changeOrders.push(c1, c2);
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -154,23 +175,69 @@ test('surprises above the set-aside eat the margin, and are still only counted o
   assert.ok(a.marginNowPct < a.marginStartPct);
 });
 
-test('change orders are in the price, and in the price only', () => {
+// A change order brings its price AND its cost AND its hours. The old
+// behaviour folded in only the money, so extra work looked like free margin
+// while the crew hours it took read as a blown estimate.
+test('a change order carries its cost and its hours onto the job, not just its price', () => {
   const { d, b, s } = fixture();
   const a0 = B.jobActuals(b, s);
-  const c = co(d, 'Disconnect at pump 4', oneArea(), 1);
-  c.priceCents = B.changeOrderPrice(c, b, s);
+  const c = co(d, 'Disconnect at pump 4', oneArea(), 1);   // 2 men x 1 day = 16 real, 18 bid hrs
   b.job.changeOrders.push(c);
   const a = B.jobActuals(b, s);
-  assert.strictEqual(a.changeOrderCents, c.priceCents);
-  assert.strictEqual(a.priceCents, a0.priceCents + c.priceCents);
-  assert.strictEqual(a.actualCostCents, a0.actualCostCents);   // the extra work is not a cost overrun
-  assert.ok(a.marginNowPct > a.marginStartPct, 'billed extra work should lift the margin');
+  const cs = B.costStack(B.changeOrderScratch(c, b), s);
+
+  assert.strictEqual(a.changeOrderCents, B.changeOrderPrice(c, b, s));
+  assert.strictEqual(a.priceCents, a0.priceCents + a.changeOrderCents);
+  // Hours: the extra work is part of the plan now, on both sides.
+  assert.strictEqual(a.realHours, a0.realHours + cs.realHours);
+  assert.strictEqual(a.bidHours, a0.bidHours + cs.bidHours);
+  // Cost: everything costStack counts, materials at cost and labor real.
+  assert.strictEqual(a.trueCostCents, a0.trueCostCents + cs.trueCost);
+  assert.strictEqual(a.actualCostCents, a.trueCostCents);      // nothing logged yet
+  assert.strictEqual(a.setAsideCents, Math.round((a.bidHours - a.realHours) * b.pricing.rateCents));
+  // Price and cost describe the same scope, so the margin is the real one.
+  assert.strictEqual(a.marginStartPct, B.marginPctOf(a.priceCents, a.trueCostCents));
+  assert.strictEqual(a.marginNowPct, a.marginStartPct);
+});
+
+test('a job worked exactly to plan with a change order is not in overrun', () => {
+  const { d, b, s } = fixture();
+  b.job.changeOrders.push(co(d, 'Disconnect at pump 4', oneArea(), 1));
+  const plan = B.jobActuals(b, s);
+  // Every hour the plan called for, the bid's and the change order's alike.
+  b.job.weeks.push({ weekISO: '2026-09-14', hours: 32 }, { weekISO: '2026-09-21', hours: 16 });
+  const a = B.jobActuals(b, s);
+  assert.strictEqual(a.actualHours, plan.realHours);
+  assert.strictEqual(a.overrunCents, 0);
+  assert.ok(a.actualHours < a.bidHours, 'the cushion should still be unspent');
+  assert.ok(a.hoursPct < 100, 'the burn bar must not read over');
+  assert.strictEqual(a.actualCostCents, a.trueCostCents);
+  assert.strictEqual(a.marginNowPct, a.marginStartPct);
+});
+
+test('a change order can never lower the bid hours', () => {
+  const { d, b, s } = fixture();
+  const before = B.jobActuals(b, s).bidHours;
+  [['Empty', [], 0], ['Materials only', oneArea(), 0], ['Half a day', oneArea(), 0.5],
+    ['A full day', oneArea(), 1]].forEach(([name, areas, days]) => {
+    b.job.changeOrders = [co(d, name, areas, days)];
+    assert.ok(B.jobActuals(b, s).bidHours >= before, name);
+  });
+});
+
+test('the loaded wage the overrun is costed at is wages plus burden across the whole job', () => {
+  const { d, b, s } = fixture();
+  b.job.changeOrders.push(co(d, 'Disconnect at pump 4', oneArea(), 1));
+  const a = B.jobActuals(b, s);
+  const cs = B.costStack(B.changeOrderScratch(b.job.changeOrders[0], b), s);
+  const stack = B.costStack(b, s);
+  assert.strictEqual(a.loadedWageCents,
+    Math.round((stack.laborCost + cs.laborCost) / (stack.realHours + cs.realHours)));
 });
 
 test('jobActuals.priceCents is the DOCUMENT total, change orders included', () => {
   const { d, b, s } = fixture();
   const c = co(d, 'Disconnect at pump 4', oneArea(), 1);
-  c.priceCents = B.changeOrderPrice(c, b, s);
   b.job.changeOrders.push(c);
   const a = B.jobActuals(b, s);
   ['full', 'summary', 'scope'].forEach((level) => {
@@ -234,4 +301,11 @@ test('addDays steps a week backwards and forwards without drifting a day', () =>
   assert.strictEqual(D.addDays('2026-09-14', -7), '2026-09-07');
   assert.strictEqual(D.addDays('2026-11-02', -7), '2026-10-26');   // across the DST change
   assert.strictEqual(D.addDays('2026-12-28', 7), '2027-01-04');
+});
+
+// The job screen's back arrow stops here: no week older than the one the bid
+// was walked in.
+test('the oldest week the job screen offers is the Monday of the bid date', () => {
+  const { b } = fixture();
+  assert.strictEqual(S.mondayOf(b.dateISO), '2026-09-07');   // Sep 10 2026 is a Thursday
 });

@@ -208,6 +208,8 @@ test('validateImport: table-driven negative mutations across every section rejec
     ['job.changeOrders priceCents negative', (dd) => { dd.bids[0].job.changeOrders[0].priceCents = -1; }],
     ['job.changeOrders area id empty', (dd) => { dd.bids[0].job.changeOrders[0].areas[0].id = ''; }],
     ['job.changeOrders labor unknown crewId', (dd) => { dd.bids[0].job.changeOrders[0].labor.crewIds = ['ghost']; }],
+    ['job.changeOrders duplicate id within a bid', (dd) => { dd.bids[0].job.changeOrders.push(JSON.parse(JSON.stringify(dd.bids[0].job.changeOrders[0]))); }],
+    ['job.changeOrders id empty', (dd) => { dd.bids[0].job.changeOrders[0].id = ''; }],
   ];
   assert.ok(cases.length >= 15, 'expected at least 15 mutation cases');
   for (const [desc, mutate] of cases) {

@@ -59,14 +59,34 @@ test('scope level: no rows, scope auto-drafted from areas when bid.scope is null
 });
 test('change orders append a section and add to the total', () => {
   const { d, b } = fixture();
-  b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [
-    { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 145000 } ], completedAt: null };
+  const co = { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 2, tasks: null } };
+  b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [co], completedAt: null };
   const doc = D.build(b, d, 'full');
   // Deliberate change (code review item 9): colon separator, no em-dash.
   assert.strictEqual(doc.sections.at(-1).title, 'Change order 1: Disconnect at pump 4');
   assert.strictEqual(doc.sections.at(-1).rows[0].desc, 'Disconnect at pump 4');
+  const price = B.changeOrderPrice(co, b, d.settings);
+  assert.ok(price > 0, 'the fixture change order should cost something');
   const base = D.build({ ...b, job: null }, d, 'full').totalCents;
-  assert.strictEqual(doc.totalCents, base + 145000);
+  assert.strictEqual(doc.totalCents, base + price);
+});
+
+// The bug that killed the cached co.priceCents: the price was written only by
+// the job screen's render, so editing a change order's labor and leaving by
+// any other route printed the old number on the customer's proposal.
+test('editing a change order labor moves the document total with no other write', () => {
+  const { d, b } = fixture();
+  const co = { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 1, tasks: null } };
+  b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [co], completedAt: null };
+  const before = D.build(b, d, 'full').totalCents;
+  co.labor.days = 2;                       // the labor screen's whole edit
+  const after = D.build(b, d, 'full').totalCents;
+  assert.ok(after > before, 'a second day must reach the paper');
+  assert.strictEqual(after - before, B.changeOrderPrice(co, b, d.settings)
+    - B.changeOrderPrice({ ...co, labor: { ...co.labor, days: 1 } }, b, d.settings));
+  // Every level agrees, and none of them read a stored price.
+  assert.strictEqual('priceCents' in co, false);
+  ['full', 'summary', 'scope'].forEach((l) => assert.strictEqual(D.build(b, d, l).totalCents, after, l));
 });
 test('fileName', () => {
   const { d, b } = fixture();
@@ -191,13 +211,14 @@ test('summary level omits the Equipment & rentals row when there is no equipment
 // 3. Change orders make totalCents diverge from solve() by design
 test('totalCents with change orders equals solve() base price plus the change-order total', () => {
   const { d, b } = fixture();
-  b.job = { weeks: [], surprises: [], changeOrders: [
-    { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 145000 },
-    { id: 'co2', name: 'Add receptacle', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 32000 } ], completedAt: null };
+  const co1 = { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 2, tasks: null } };
+  const co2 = { id: 'co2', name: 'Add receptacle', areas: [], labor: { crewIds: ['c1'], days: 0.5, tasks: null } };
+  b.job = { weeks: [], surprises: [], changeOrders: [co1, co2], completedAt: null };
   const doc = D.build(b, d, 'full');
   const stack = B.costStack(b, d.settings);
   const solved = B.solve(stack, 'rate', b.pricing.rateCents);
-  assert.strictEqual(doc.totalCents, solved.priceCents + 145000 + 32000);
+  assert.strictEqual(doc.totalCents, solved.priceCents
+    + B.changeOrderPrice(co1, b, d.settings) + B.changeOrderPrice(co2, b, d.settings));
 });
 
 // 5. fileName: dropped empty segment, truncation, trailing punctuation stripped
@@ -248,11 +269,11 @@ test('doc.notes is not a field on the built document', () => {
 // 9. Change orders at summary level
 test('change orders append a summary row and add to the summary total', () => {
   const { d, b } = fixture();
-  b.job = { weeks: [], surprises: [], changeOrders: [
-    { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null }, priceCents: 145000 } ], completedAt: null };
+  const co = { id: 'co1', name: 'Disconnect at pump 4', areas: [], labor: { crewIds: ['c1'], days: 2, tasks: null } };
+  b.job = { weeks: [], surprises: [], changeOrders: [co], completedAt: null };
   const doc = D.build(b, d, 'summary');
   assert.strictEqual(doc.summary.at(-1).label, 'Change order 1: Disconnect at pump 4');
-  assert.strictEqual(doc.summary.at(-1).cents, 145000);
+  assert.strictEqual(doc.summary.at(-1).cents, B.changeOrderPrice(co, b, d.settings));
   assert.strictEqual(doc.summary.reduce((s, r) => s + r.cents, 0), doc.totalCents);
 });
 

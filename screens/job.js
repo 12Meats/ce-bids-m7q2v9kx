@@ -90,6 +90,14 @@ function jobWeekLabel(weekISO) {
   return weekISO === jobThisMonday() ? 'This week' : 'Week of ' + fmtDate(weekISO);
 }
 
+// The same label mid-sentence: 'Hours worked, week of Aug 24, 2026'. Only the
+// leading word is lowered — .toLowerCase() on the whole string flattened the
+// month too and printed "week of aug 24, 2026".
+function jobWeekLabelMidSentence(weekISO) {
+  const t = jobWeekLabel(weekISO);
+  return t.charAt(0).toLowerCase() + t.slice(1);
+}
+
 function jobWeekEntry(job, weekISO) {
   return (job.weeks || []).find((w) => w.weekISO === weekISO) || null;
 }
@@ -100,32 +108,6 @@ function jobWeeksNewestFirst(job) {
 }
 
 // ---------------------------------------------------------------------------
-// CHANGE ORDER PRICES
-// ---------------------------------------------------------------------------
-
-// A change order's price is DERIVED — from its own areas and labor, at the
-// parent bid's rate, markup and cushion — but it is also STORED, because the
-// document, the bids list and the reports all read it and none of them should
-// have to know how a change order is priced. So it is recomputed on every
-// render and written back when it has moved: adding an item on the change
-// order's walk changes this number, and the paperwork must not lag behind it.
-//
-// The write is skipped while a panel is up (a refused save posts a banner the
-// panel would cover) and picked up by the next render. Nothing is lost by
-// waiting: the number on screen is computed, not read.
-function jobSyncChangeOrderPrices(bid, settings) {
-  const orders = (bid.job && bid.job.changeOrders) || [];
-  const prev = orders.map((co) => co.priceCents);
-  let moved = false;
-  orders.forEach((co, i) => {
-    const next = BidMath.changeOrderPrice(co, bid, settings);
-    if (next !== prev[i]) { co.priceCents = next; moved = true; }
-  });
-  if (!moved || anyPanelOpen()) return;
-  persistOr(() => { orders.forEach((co, i) => { co.priceCents = prev[i]; }); });
-}
-
-// ---------------------------------------------------------------------------
 // WEEKLY HOURS
 // ---------------------------------------------------------------------------
 
@@ -133,15 +115,17 @@ function jobLogHours(bid, weekISO) {
   const job = bid.job;
   const entry = jobWeekEntry(job, weekISO);
   promptNumber(entry ? entry.hours : null, {
-    label: 'Hours worked, ' + jobWeekLabel(weekISO).toLowerCase(),
+    label: 'Hours worked, ' + jobWeekLabelMidSentence(weekISO),
     allowDecimal: true,
     maxDecimals: 2,
     maxChars: JOB_HOURS_KEYS,
     done: (v) => {
       const prevWeeks = job.weeks.slice();
       // Clear means "nothing logged for this week" — the week comes off the
-      // list rather than sitting there as a zero he has to read past.
-      if (v === null) {
+      // list rather than sitting there as a zero he has to read past. A typed
+      // 0 means the same thing and is treated the same way: nobody worked that
+      // week, and a "0 hrs" row in Other weeks is a line that says nothing.
+      if (v === null || v === 0) {
         if (!entry) return;
         job.weeks = prevWeeks.filter((w) => w !== entry);
         persistOr(() => { job.weeks = prevWeeks; });
@@ -167,16 +151,26 @@ function jobLogHours(bid, weekISO) {
   });
 }
 
+// The oldest week the arrows will go to: the Monday of the week the bid was
+// walked in. bid.dateISO and not sentAt or the day it was won, because a job
+// cannot have been worked before it was measured, and dateISO is the only one
+// of the three that every bid is guaranteed to have. Without a floor the back
+// arrow ran into 2019 one tap at a time.
+function jobWeekFloor(bid) { return Store.mondayOf(bid.dateISO) || jobThisMonday(); }
+
 // ◀ ▶ around the week's name. Forward stops at the week he is standing in:
-// there are no hours yet in a week that has not happened.
-function jobWeekNav(weekISO) {
+// there are no hours yet in a week that has not happened. Back stops at the
+// bid's own week.
+function jobWeekNav(bid, weekISO) {
   const wrap = document.createElement('div');
   wrap.className = 'job-weeknav';
 
-  const back = textButton('◀', 'btn job-weeknav-btn', () => {
-    jobWeekISO = DocModel.addDays(weekISO, -7);
+  const atStart = weekISO <= jobWeekFloor(bid);
+  const back = textButton('◀', 'btn job-weeknav-btn', atStart ? null : () => {
+    jobWeekISO = Dates.addDays(weekISO, -7);
     render();
   });
+  back.disabled = atStart;
   back.setAttribute('aria-label', 'Previous week');
   wrap.appendChild(back);
 
@@ -187,7 +181,7 @@ function jobWeekNav(weekISO) {
 
   const atNow = weekISO === jobThisMonday();
   const fwd = textButton('▶', 'btn job-weeknav-btn', atNow ? null : () => {
-    jobWeekISO = DocModel.addDays(weekISO, 7);
+    jobWeekISO = Dates.addDays(weekISO, 7);
     render();
   });
   fwd.disabled = atNow;
@@ -214,7 +208,7 @@ function buildHoursCard(bid, actuals, done) {
   const entry = jobWeekEntry(bid.job, weekISO);
   const box = card('Hours');
 
-  box.appendChild(jobWeekNav(weekISO));
+  box.appendChild(jobWeekNav(bid, weekISO));
 
   const line = row('Hours', entry ? numText(entry.hours) : '—',
     done ? null : () => jobLogHours(bid, weekISO));
@@ -249,7 +243,10 @@ function jobAddSurprise(bid) {
   promptMoney(null, {
     label: 'What did it cost?',
     done: (cents) => {
-      if (cents === null || cents === 0) return;
+      if (cents === null) return;
+      // A $0 surprise is nothing to record, but dropping it in silence looks
+      // like the app lost the entry. Say what happened.
+      if (cents === 0) { showBanner('Nothing added'); render(); return; }
       promptText('', {
         label: 'What happened?',
         placeholder: 'Ten-inch wall, new bit',
@@ -354,9 +351,10 @@ function jobRenameChangeOrder(bid, co) {
   });
 }
 
-async function jobDeleteChangeOrder(bid, co) {
+async function jobDeleteChangeOrder(bid, co, settings) {
   const ok = await confirmPanel('Delete ' + (co.name || 'this change order') + ' at '
-    + moneyText(co.priceCents) + "? This can't be undone.", { ok: 'Delete', danger: true });
+    + moneyText(BidMath.changeOrderPrice(co, bid, settings)) + "? This can't be undone.",
+  { ok: 'Delete', danger: true });
   if (!ok) { render(); return; }
   const job = bid.job;
   const i = job.changeOrders.indexOf(co);
@@ -368,7 +366,7 @@ async function jobDeleteChangeOrder(bid, co) {
   render();
 }
 
-function buildChangeOrdersCard(bid, done) {
+function buildChangeOrdersCard(bid, settings, done) {
   const box = card('Change orders');
   const list = bid.job.changeOrders || [];
 
@@ -376,7 +374,11 @@ function buildChangeOrdersCard(bid, done) {
     box.appendChild(emptyNote('No extra work yet.'));
   } else {
     list.forEach((co) => {
-      box.appendChild(row(co.name || 'Change order', moneyText(co.priceCents), done ? null : () => {
+      // Priced on the spot off the change order's own areas and labor. It is
+      // not stored anywhere, so there is nothing to write back and nothing to
+      // go stale, and the proposal quotes the same function.
+      const priceCents = BidMath.changeOrderPrice(co, bid, settings);
+      box.appendChild(row(co.name || 'Change order', moneyText(priceCents), done ? null : () => {
         jobCoMenu = jobCoMenu === co ? null : co;
         render();
       }));
@@ -391,7 +393,7 @@ function buildChangeOrdersCard(bid, done) {
         acts.appendChild(textButton('Labor', 'btn',
           () => show('labor', { bidId: bid.id, changeOrderId: co.id })));
         acts.appendChild(textButton('Rename', 'btn', () => jobRenameChangeOrder(bid, co)));
-        acts.appendChild(textButton('Delete', 'btn btn-danger-outline', () => jobDeleteChangeOrder(bid, co)));
+        acts.appendChild(textButton('Delete', 'btn btn-danger-outline', () => jobDeleteChangeOrder(bid, co, settings)));
         box.appendChild(acts);
       }
     });
@@ -431,6 +433,7 @@ function buildActualCard(actuals) {
   box.appendChild(margin);
   box.appendChild(caption('costing ' + moneyText(actuals.actualCostCents)
     + ', bid at ' + moneyText(actuals.trueCostCents)));
+  box.appendChild(caption('overrun hours costed at wages and burden only'));
 
   return box;
 }
@@ -456,6 +459,9 @@ async function jobMarkComplete(bid) {
 // REGISTER
 // ---------------------------------------------------------------------------
 
+// RENDERING NEVER WRITES: nothing in this function, or anything it calls,
+// mutates the bid or persists. A completed job is a record, and reading it
+// must not be able to change it. Every save on this screen hangs off a tap.
 function renderJob() {
   const host = el('jobContent');
   host.textContent = '';
@@ -473,9 +479,6 @@ function renderJob() {
   }
 
   const settings = jobSettings();
-  // Before anything is read: a change order edited on the walk has a new price
-  // and everything below — and the proposal — has to see it.
-  jobSyncChangeOrderPrices(bid, settings);
   const actuals = BidMath.jobActuals(bid, settings);
   const done = !!bid.job.completedAt;
 
@@ -500,7 +503,7 @@ function renderJob() {
 
   host.appendChild(buildHoursCard(bid, actuals, done));
   host.appendChild(buildSurprisesCard(bid, done));
-  host.appendChild(buildChangeOrdersCard(bid, done));
+  host.appendChild(buildChangeOrdersCard(bid, settings, done));
   host.appendChild(buildActualCard(actuals));
 
   if (!done) {
