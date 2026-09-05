@@ -251,7 +251,14 @@ function renderWalkAreas(bid, edit, host) {
   // A nudge, not a gate: a misc of $0 never reaches the customer's page (the
   // document only prints the row when it has money in it), so it is amber here
   // and is not one of the lines that blocks a PDF.
-  if (!(bid.misc.cents > 0)) miscBox.appendChild(unpricedWarn());
+  //
+  // And not on an empty bid. Before he has counted anything, every number on
+  // the screen is zero and this one is not news — a warning that is on the
+  // glass from the first second is a warning he stops reading by the third
+  // bid. It appears once there is something on the bid to be missing hardware
+  // for.
+  const counted = (bid.areas || []).some((a) => (a.items || []).length > 0);
+  if (counted && !(bid.misc.cents > 0)) miscBox.appendChild(unpricedWarn());
   host.appendChild(miscBox);
 
   const forget = buildForgetCard(bid);
