@@ -23,6 +23,34 @@
     return costCents > 0 ? Math.max(500, derived) : derived;          // $5 minimum
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THIS BID WAS FIGURED AT
+  // -------------------------------------------------------------------------
+  // SETTINGS NEVER CHANGE AN EXISTING BID. Store.newBid stamps the five
+  // numbers that feed a price onto bid.pricing — hours per day, payroll
+  // burden, consumables, the truck day rate, overhead — and the crew's wages
+  // onto bid.labor.wageCents. A bid quoted in August therefore still costs
+  // what it was sold at in October, whatever Settings say by then.
+  //
+  // Every one of those fields is OPTIONAL, and absent means "read Settings".
+  // That fallback is not a nicety: it is what makes every bid written before
+  // this rule existed — the v1 and v2 fixtures included — price to the same
+  // cent it always did, with no version bump and no migration.
+  const SNAPSHOT_KEYS = ['hoursPerDay', 'burdenPct', 'consumablesPct', 'truckDayCents', 'overheadPct'];
+
+  function bidSetting(bid, settings, key) {
+    const p = bid && bid.pricing;
+    const v = p ? p[key] : undefined;
+    return (typeof v === 'number' && Number.isFinite(v)) ? v : settings[key];
+  }
+
+  // The || 8 is the old rule kept: a settings file with no hours per day on it
+  // still has an eight-hour day rather than a day of zero hours.
+  function hoursPerDayOf(bid, settings) {
+    const v = bidSetting(bid, settings, 'hoursPerDay');
+    return v > 0 ? v : 8;
+  }
+
   function items(bid) { return (bid.areas || []).flatMap((a) => a.items || []); }
 
   function materialCost(bid) { return items(bid).reduce((s, it) => s + r(it.qty * it.costCents), 0); }
@@ -49,8 +77,16 @@
 
   // Resolves crew ids to wages; unknown ids bill at $0 (never throw on a stale/edited bid)
   // but are reported back so the UI can flag them instead of silently under-billing.
-  function crewWage(ids, settings, unknown) {
+  //
+  // `wages` is the bid's own snapshot (bid.labor.wageCents), and it is asked
+  // FIRST: a raise given in Settings in October must not re-figure a bid sold
+  // in August. A man the snapshot names is never unknown, even if Settings has
+  // since forgotten him — this bid knows what he was put on it at.
+  function crewWage(ids, settings, unknown, wages) {
+    const snap = (wages && typeof wages === 'object' && !Array.isArray(wages)) ? wages : null;
     return ids.map((id) => {
+      const w = snap ? snap[id] : undefined;
+      if (Number.isInteger(w)) return w;
       const c = settings.crew.find((c) => c.id === id);
       if (!c && unknown) unknown.add(id);
       return c ? c.wageCents : 0;
@@ -67,12 +103,13 @@
 
   function laborReal(bid, settings) {
     const labor = getLabor(bid);
-    const hpd = settings.hoursPerDay || 8;
+    const hpd = hoursPerDayOf(bid, settings);
+    const snapshot = labor.wageCents;
     const lines = labor.tasks && labor.tasks.length ? labor.tasks : [labor];
     let hours = 0, wageCents = 0;
     const unknown = new Set();
     for (const ln of lines) {
-      const wages = crewWage(ln.crewIds || [], settings, unknown);
+      const wages = crewWage(ln.crewIds || [], settings, unknown, snapshot);
       const h = ln.days * hpd;   // hours ONE man works on this line
       hours += lineHours(ln, hpd);
       wageCents += wages.reduce((s, w) => s + r(w * h), 0);
@@ -198,11 +235,12 @@
     const equipmentPrice = equipmentCost;
     const misc = (bid.misc && bid.misc.cents) || 0;
     const lab = laborReal(bid, settings);
-    const laborCost = r(lab.wageCents * (1 + settings.burdenPct / 100));
-    const truck = r(truckDays(bid) * settings.truckDayCents);
-    const consumables = r(mc * settings.consumablesPct / 100);
+    // The bid's own numbers where it has them, the shop's where it does not.
+    const laborCost = r(lab.wageCents * (1 + bidSetting(bid, settings, 'burdenPct') / 100));
+    const truck = r(truckDays(bid) * bidSetting(bid, settings, 'truckDayCents'));
+    const consumables = r(mc * bidSetting(bid, settings, 'consumablesPct') / 100);
     const base = mc + rentalsCost + equipmentCost + misc + laborCost + truck + consumables;
-    const trueCost = r(base * (1 + settings.overheadPct / 100));
+    const trueCost = r(base * (1 + bidSetting(bid, settings, 'overheadPct') / 100));
     const bh = bidHours(lab.hours, p.cushionPct != null ? p.cushionPct : 0);
     return {
       materialCost: mc, materialPrice: mp, rentalsCost, rentalsPrice, equipmentCost, equipmentPrice, misc,
@@ -291,10 +329,17 @@
   // so a day added in September bills the way the job was sold in August.
   // None of the parent's own money comes with it: misc, rentals and owned
   // equipment are already charged on the bid and must not be charged twice.
+  //
+  // "The parent's numbers" includes the parent's snapshot, which rides along
+  // inside bid.pricing — and the crew wages, which do not, so they are handed
+  // down here. A change order written in October to a bid sold in August is
+  // still August's work at August's wages.
   function changeOrderScratch(co, bid) {
+    const labor = co.labor || EMPTY_LABOR;
+    const wages = labor.wageCents || (bid.labor && bid.labor.wageCents);
     return {
       areas: co.areas || [],
-      labor: co.labor || EMPTY_LABOR,
+      labor: wages ? { ...labor, wageCents: wages } : labor,
       misc: { cents: 0 }, rentals: [], equipment: [],
       pricing: bid.pricing,
     };
@@ -587,6 +632,7 @@
   }
 
   return {
+    SNAPSHOT_KEYS, bidSetting, hoursPerDayOf, crewWage,
     unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, cushionForBidHours, mergeTasks, crewlessTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,

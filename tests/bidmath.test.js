@@ -499,3 +499,58 @@ test('costStack and laborReal tolerate a missing labor block', () => {
   assert.strictEqual(s.truck, 0);
   assert.strictEqual(s.laborCost, 0);
 });
+
+// ---------------------------------------------------------------------------
+// SETTINGS NEVER CHANGE AN EXISTING BID
+// ---------------------------------------------------------------------------
+// The five cost-side numbers and the crew's wages are snapshotted onto the bid
+// at newBid. These are the reading half: the bid's own value wins, and a bid
+// with none of them falls back to Settings so every file written before the
+// rule existed prices exactly as it did before.
+
+test('bidSetting: the bid first, Settings when the bid has no answer', () => {
+  assert.strictEqual(B.bidSetting({ pricing: { burdenPct: 40 } }, settings, 'burdenPct'), 40);
+  assert.strictEqual(B.bidSetting({ pricing: {} }, settings, 'burdenPct'), 25);
+  assert.strictEqual(B.bidSetting({}, settings, 'burdenPct'), 25);
+  // Zero is an answer. A bid figured with no overhead on it must not quietly
+  // pick up the shop's 10% because 0 looked falsy.
+  assert.strictEqual(B.bidSetting({ pricing: { overheadPct: 0 } }, settings, 'overheadPct'), 0);
+});
+test('hoursPerDayOf: the bid first, then Settings, then the eight-hour day', () => {
+  assert.strictEqual(B.hoursPerDayOf({ pricing: { hoursPerDay: 10 } }, settings), 10);
+  assert.strictEqual(B.hoursPerDayOf({ pricing: {} }, settings), 8);
+  assert.strictEqual(B.hoursPerDayOf({}, { hoursPerDay: 0, crew: [] }), 8);
+});
+test('two bids, two snapshots: a ten-hour day and an eight-hour day price side by side', () => {
+  const ten = { ...bid, pricing: { ...bid.pricing, hoursPerDay: 10 } };
+  assert.strictEqual(B.costStack(bid, settings).realHours, 32);   // 2 men × 2 days × 8
+  assert.strictEqual(B.costStack(ten, settings).realHours, 40);   // 2 men × 2 days × 10
+});
+test('a Settings change moves neither bid once both carry a snapshot', () => {
+  const snap = { hoursPerDay: 8, burdenPct: 25, consumablesPct: 3, truckDayCents: 9500, overheadPct: 10 };
+  const a = { ...bid, pricing: { ...bid.pricing, ...snap },
+    labor: { ...bid.labor, wageCents: { c1: 3200, c2: 3000 } } };
+  const before = B.costStack(a, settings);
+  const richer = { ...settings, hoursPerDay: 10, burdenPct: 40, consumablesPct: 9, truckDayCents: 20000,
+    overheadPct: 30, crew: [{ id: 'c1', name: 'Shawn', wageCents: 9900 }, { id: 'c2', name: 'George', wageCents: 9900 }] };
+  const after = B.costStack(a, richer);
+  assert.deepStrictEqual(after, before, 'a snapshotted bid reads none of Settings');
+  // And the same bid WITHOUT a snapshot follows Settings, which is what the
+  // old fixtures depend on.
+  assert.notStrictEqual(B.costStack(bid, richer).trueCost, B.costStack(bid, settings).trueCost);
+});
+test('crewWage: the wage snapshot wins, and a man Settings forgot is not unknown', () => {
+  const unknown = new Set();
+  assert.deepStrictEqual(B.crewWage(['c1', 'c9'], settings, unknown, { c1: 2500, c9: 4000 }), [2500, 4000]);
+  assert.deepStrictEqual([...unknown], []);
+  const unknown2 = new Set();
+  assert.deepStrictEqual(B.crewWage(['c1', 'c9'], settings, unknown2), [3200, 0]);
+  assert.deepStrictEqual([...unknown2], ['c9']);
+});
+test('a change order is figured at the parent bid s wages, not at today s', () => {
+  const parent = { ...bid, labor: { ...bid.labor, wageCents: { c1: 3200, c2: 3000 } } };
+  const co = { areas: [], labor: { crewIds: ['c1', 'c2'], days: 1, tasks: null } };
+  const raised = { ...settings, crew: [{ id: 'c1', name: 'Shawn', wageCents: 9900 }, { id: 'c2', name: 'George', wageCents: 9900 }] };
+  assert.strictEqual(B.changeOrderStack(co, parent, raised).wageCents,
+    B.changeOrderStack(co, parent, settings).wageCents);
+});

@@ -593,3 +593,85 @@ test('a bid quoted at fewer hours than it really takes still validates', () => {
   b.pricing.cushionPct = 'nope';
   assert.strictEqual(S.validateImport(JSON.stringify(d)), null);
 });
+
+// ---------------------------------------------------------------------------
+// SETTINGS NEVER CHANGE AN EXISTING BID
+// ---------------------------------------------------------------------------
+
+test('newBid snapshots the five cost-side numbers and the crew wages', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Cooler', jobType: 'project' });
+  assert.strictEqual(b.pricing.hoursPerDay, 8);
+  assert.strictEqual(b.pricing.burdenPct, 25);
+  assert.strictEqual(b.pricing.consumablesPct, 3);
+  assert.strictEqual(b.pricing.truckDayCents, 9500);
+  assert.strictEqual(b.pricing.overheadPct, 10);
+  assert.deepStrictEqual(b.labor.wageCents, { c1: 3200, c2: 3000 });
+});
+test('two bids keep their own numbers, and a Settings edit moves neither', () => {
+  const d = S.emptyData();
+  const first = S.newBid(d, { customerName: 'UDA', title: 'One', jobType: 'service' });
+  d.settings.hoursPerDay = 10;
+  d.settings.burdenPct = 40;
+  d.settings.crew[0].wageCents = 5000;
+  const second = S.newBid(d, { customerName: 'UDA', title: 'Two', jobType: 'service' });
+  assert.strictEqual(first.pricing.hoursPerDay, 8);
+  assert.strictEqual(second.pricing.hoursPerDay, 10);
+  assert.strictEqual(first.pricing.burdenPct, 25);
+  assert.strictEqual(second.pricing.burdenPct, 40);
+  assert.strictEqual(first.labor.wageCents.c1, 3200);
+  assert.strictEqual(second.labor.wageCents.c1, 5000);
+  // And the shop's numbers moving again reaches neither of them.
+  d.settings.overheadPct = 99;
+  assert.strictEqual(first.pricing.overheadPct, 10);
+  assert.strictEqual(second.pricing.overheadPct, 10);
+});
+test('noteCrewWage stamps a man on his first line and never a second time', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'One', jobType: 'service' });
+  const third = { id: 'c3', name: 'Tim', wageCents: 2800, hidden: false };
+  d.settings.crew.push(third);
+  const undo = S.noteCrewWage(b, 'c3', d.settings);
+  assert.strictEqual(b.labor.wageCents.c3, 2800);
+  // Already stamped: nothing to write, and nothing to undo.
+  third.wageCents = 9900;
+  assert.strictEqual(S.noteCrewWage(b, 'c3', d.settings), null);
+  assert.strictEqual(b.labor.wageCents.c3, 2800);
+  undo();
+  assert.strictEqual('c3' in b.labor.wageCents, false);
+  // A bid off an older backup has no map at all and keeps its Settings
+  // fallback rather than growing one halfway.
+  const old = { labor: { crewIds: [], days: 0, tasks: null } };
+  assert.strictEqual(S.noteCrewWage(old, 'c1', d.settings), null);
+});
+test('duplicateBid keeps the source bid s snapshot', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });
+  d.bids.push(b);
+  d.settings.hoursPerDay = 12;
+  d.settings.burdenPct = 44;
+  d.settings.crew[0].wageCents = 6000;
+  const c = S.duplicateBid(d, b.id, '2026-09-20');
+  assert.strictEqual(c.pricing.hoursPerDay, 8);
+  assert.strictEqual(c.pricing.burdenPct, 25);
+  assert.strictEqual(c.labor.wageCents.c1, 3200);
+});
+test('the snapshot fields are optional, and a bad one is refused', () => {
+  const { d, b } = buildFullData();
+  delete b.pricing.hoursPerDay;
+  delete b.pricing.burdenPct;
+  delete b.labor.wageCents;
+  assert.ok(S.validateImport(JSON.stringify(d)), 'a bid older than the rule still loads');
+  b.pricing.hoursPerDay = 0;
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null, 'a day of no hours is not a day');
+  b.pricing.hoursPerDay = 10;
+  b.pricing.burdenPct = 140;
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null);
+  b.pricing.burdenPct = 25;
+  b.labor.wageCents = { c1: -1 };
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null);
+  // A wage stamped for somebody no longer on the crew is a stale key, not a
+  // broken file: refusing it would take the whole backup down.
+  b.labor.wageCents = { ghost: 3300 };
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});

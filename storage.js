@@ -322,6 +322,20 @@
       function validLabor(labor) {
         if (!isObj(labor)) return false;
         if (!isArr(labor.crewIds) || !labor.crewIds.every((id) => crewIds.has(id))) return false;
+        // OPTIONAL: what each man was put on this bid at. Absent means the bid
+        // is older than the rule and reads Settings, which is how the v1 and
+        // v2 fixtures keep pricing to the cent.
+        //
+        // The keys are NOT checked against the crew: a wage stamped for
+        // somebody later taken off this bid and then deleted in Settings is a
+        // stale key, not a broken file, and refusing it would take the whole
+        // backup down over a number nothing reads.
+        if (labor.wageCents !== undefined && labor.wageCents !== null) {
+          if (!isObj(labor.wageCents)) return false;
+          for (const k of Object.keys(labor.wageCents)) {
+            if (!isIntGte0(labor.wageCents[k])) return false;
+          }
+        }
         if (!isFiniteGte0(labor.days)) return false;
         if (labor.tasks !== null) {
           if (!isArr(labor.tasks)) return false;
@@ -371,6 +385,14 @@
         // Every file written before it exists has no such key and must still
         // load, so absent is legal and only a non-boolean is an error.
         if (b.pricing.touched !== undefined && !isBool(b.pricing.touched)) return null;
+        // OPTIONAL, all five: the cost-side numbers this bid was figured at.
+        // Absent is a bid written before "Settings never change an existing
+        // bid" and it reads Settings, so no file anywhere stops loading.
+        for (const k of ['burdenPct', 'consumablesPct', 'overheadPct']) {
+          if (b.pricing[k] !== undefined && !isPct(b.pricing[k])) return null;
+        }
+        if (b.pricing.hoursPerDay !== undefined && !(isIntGte0(b.pricing.hoursPerDay) && b.pricing.hoursPerDay > 0)) return null;
+        if (b.pricing.truckDayCents !== undefined && !isIntGte0(b.pricing.truckDayCents)) return null;
         // OPTIONAL on purpose, so no version bump and no migration: a backup
         // written before the did-you-forget answers were saved has no such key
         // and must still restore, with every row simply reading as unanswered.
@@ -488,17 +510,53 @@
   // of them said "Misc hardware" — one line reading as two things.
   const MISC_LABEL = 'Supports, anchors, and hardware';
 
+  // -------------------------------------------------------------------------
+  // SETTINGS NEVER CHANGE AN EXISTING BID
+  // -------------------------------------------------------------------------
+  // Every number that feeds a price is copied onto the bid the day it is
+  // written, and the bid reads its own copy forever after. BidMath.bidSetting
+  // and BidMath.crewWage are the reading half of the same rule; these two are
+  // the writing half.
+  //
+  // Optional fields with a Settings fallback, so a bid written before this
+  // existed prices exactly as it always did and no version has to move.
+  function wageSnapshot(s, crewIds) {
+    const map = {};
+    crewIds.forEach((id) => {
+      const c = s.crew.find((x) => x.id === id);
+      if (c && Number.isInteger(c.wageCents)) map[id] = c.wageCents;
+    });
+    return map;
+  }
+
+  // A man joining a bid AFTER it was written gets his wage stamped on the way
+  // in, on his first line: what he is paid the day he goes on this job is what
+  // this job pays him, and a raise next month leaves it alone. Returns an undo
+  // for persistOr, or null when there was nothing to write (he is already on
+  // the bid, or the bid is too old to have a map and must keep falling back).
+  function noteCrewWage(bid, crewId, settings) {
+    if (!bid || !bid.labor || !crewId) return null;
+    const map = bid.labor.wageCents;
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+    if (Object.prototype.hasOwnProperty.call(map, crewId)) return null;
+    const c = settings.crew.find((x) => x.id === crewId);
+    if (!c || !Number.isInteger(c.wageCents)) return null;
+    map[crewId] = c.wageCents;
+    return () => { delete map[crewId]; };
+  }
+
   function newBid(d, { customerName, title, jobType, dateISO }) {
     const cust = findOrCreateCustomer(d, customerName); const s = d.settings;
     const jt = JOB_TYPE.indexOf(jobType) !== -1 ? jobType : 'service';
     const detail = DETAIL.indexOf(cust.defaultDetail) !== -1 ? cust.defaultDetail : 'full';
+    const crewSeed = s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id);
     const b = { id: uid(), number: s.nextNumber, customerId: cust.id, title: title || '', dateISO: dateISO || todayISO(),
       status: 'draft', detail, jobType: jt,
       areas: [], misc: { label: MISC_LABEL, cents: 0 },
       // Hidden crew are people who don't work here any more: seeding them onto
       // a new bid would put a chip on the Labor screen for someone he'd have to
       // notice and take off, and would bill their wage until he did.
-      labor: { crewIds: s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id), days: 0, tasks: null },
+      labor: { crewIds: crewSeed, days: 0, tasks: null, wageCents: wageSnapshot(s, crewSeed) },
       rentals: [], equipment: [],
       // What he has already answered on the did-you-forget checklist, by row
       // name: 'no' (not on this job) or 'added' (it is on the bid now). A row
@@ -519,7 +577,12 @@
       //
       // which is what the price screen displays. Reports must compute it that
       // way and never read this field.
-      pricing: { marginPct: s.marginPct, rateCents: s.rateCents, cushionPct: s.cushionPct[jt], markupPct: s.markupPct },
+      // The five cost-side numbers are snapshotted alongside the three
+      // price-side ones. Settings sets what a NEW bid starts at, and stops
+      // there: nothing typed in Settings tomorrow reaches this bid.
+      pricing: { marginPct: s.marginPct, rateCents: s.rateCents, cushionPct: s.cushionPct[jt], markupPct: s.markupPct,
+        hoursPerDay: s.hoursPerDay, burdenPct: s.burdenPct, consumablesPct: s.consumablesPct,
+        truckDayCents: s.truckDayCents, overheadPct: s.overheadPct },
       // clauseIds starts null, not empty: "not chosen yet" is what lets the
       // proposal screen offer the Always group once and never argue with him
       // about it again. [] is his answer, and it sticks.
@@ -557,11 +620,18 @@
   // always BidMath.changeOrderPrice off the areas and labor below, so it
   // cannot go stale between the screen that edits the work and the paper that
   // quotes it.
-  function newChangeOrder(d, name) {
+  //
+  // Its men are stamped onto the PARENT BID's wage snapshot rather than onto a
+  // second map of its own: a change order is priced on the bid's terms, and
+  // one place for "what this job pays a man" is one answer. bid is optional so
+  // the older two-argument call still works.
+  function newChangeOrder(d, name, bid) {
     const s = d.settings;
+    const crewIds = s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id);
+    if (bid) crewIds.forEach((id) => noteCrewWage(bid, id, s));
     return {
       id: uid(), name: String(name || ''), areas: [],
-      labor: { crewIds: s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id), days: 0, tasks: null },
+      labor: { crewIds, days: 0, tasks: null },
     };
   }
   function duplicateBid(d, bidId, dateISO) {
@@ -704,6 +774,6 @@
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, MISC_LABEL, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
-    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
+    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, noteCrewWage, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     recordCatalogUse, numberInUse };
 });

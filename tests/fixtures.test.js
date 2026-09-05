@@ -90,3 +90,35 @@ test('backup-bids-v2.json really is a v2 file', () => {
   assert.ok(job && job.changeOrders.some((co) => (co.areas || []).length === 0 && co.labor.days > 0),
     'a labor-only change order is a v2 shape and belongs in the v2 photograph');
 });
+
+// THE NUMBERS THEMSELVES, HARD-CODED.
+//
+// "It still loads and still prices" is not enough once the pricing math starts
+// reading fields the fixtures do not have. These totals were captured from the
+// shipped code BEFORE bid-level snapshots existed (v2.1 Task F), so they are
+// the photograph of what these two files were worth on his phone. If a change
+// to BidMath moves one of them, the fallback that lets an old bid read
+// Settings has broken, and every bid already on the phone has silently
+// re-priced.
+//
+// Full / Summary / Scope are the same total by construction: the detail level
+// changes what the paper SAYS, never what the job costs.
+const FIXTURE_TOTALS = {
+  'backup-bids-v1.json': { 3053: 433112, 3054: 370000, 3055: 837460 },
+  'backup-bids-v2.json': { 3053: 516992, 3054: 371000, 3055: 1220960 },
+};
+
+for (const file of Object.keys(FIXTURE_TOTALS)) {
+  test(file + ': every bid still prices to the cent it always did', () => {
+    const d = S.validateImport(fs.readFileSync(path.join(dir, file), 'utf8'));
+    assert.ok(d, file + ' no longer loads');
+    const want = FIXTURE_TOTALS[file];
+    assert.strictEqual(d.bids.length, Object.keys(want).length, file + ' has grown or lost a bid');
+    d.bids.forEach((b) => {
+      ['full', 'summary', 'scope'].forEach((level) => {
+        assert.strictEqual(D.build(b, d, level).totalCents, want[b.number],
+          file + ': bid ' + b.number + ' at ' + level + ' has re-priced');
+      });
+    });
+  });
+}
