@@ -311,6 +311,66 @@ test('a typed price under the fixed cost floors the rate at 0, and that is not r
   assert.strictEqual(exact.priceCents, s.fixedPrice);
 });
 
+// ---------------------------------------------------------------------------
+// solve().why — WHICH of the four things happened to the price he typed
+// ---------------------------------------------------------------------------
+// The screen used to work this out from out.rateCents alone and got two cases
+// wrong: a price a nickel ABOVE the materials total was called a refusal to
+// quote at a loss, and a price typed at exactly the materials total showed
+// $0.00/hr with no explanation at all. The classification is a comparison of
+// the typed value, fixedPrice and the rate, so it lives here.
+
+test('why: a typed price that fits exactly is exact, and says nothing', () => {
+  const s = B.costStack(bid, settings);
+  const out = B.solve(s, 'price', s.fixedPrice + s.bidHours * 7123);
+  assert.strictEqual(out.why, 'exact');
+});
+
+test('why: a typed price that does not fit at whole cents is rounded', () => {
+  const s = B.costStack(bid, settings);
+  const out = B.solve(s, 'price', s.fixedPrice + s.bidHours * 7123 + 1);
+  assert.strictEqual(out.why, 'rounded');
+  assert.ok(out.rateCents > 0);
+});
+
+test('why: a typed price UNDER the fixed cost is floored', () => {
+  const s = B.costStack(bid, settings);
+  assert.strictEqual(B.solve(s, 'price', s.fixedPrice - 100).why, 'floored');
+  assert.strictEqual(B.solve(s, 'price', s.fixedPrice - 1).why, 'floored');
+  assert.strictEqual(B.solve(s, 'price', 0).why, 'floored');
+});
+
+// The case the old screen called 'floored'. At the fixed price, and anywhere
+// above it that is short of one whole cent an hour, the price FITS — there is
+// just nothing in it for labor. Parts-only bids land here on purpose.
+test('why: at or just above the fixed cost with no room for a cent an hour is no-labor', () => {
+  const s = B.costStack(bid, settings);
+  assert.strictEqual(s.bidHours, 36);
+  const exact = B.solve(s, 'price', s.fixedPrice);
+  assert.strictEqual(exact.why, 'no-labor');
+  assert.strictEqual(exact.rateCents, 0);
+  assert.strictEqual(exact.priceCents, s.fixedPrice);
+  // Five cents over 36 bid hours still buys no whole cent an hour.
+  const over = B.solve(s, 'price', s.fixedPrice + 5);
+  assert.strictEqual(over.why, 'no-labor');
+  assert.strictEqual(over.rateCents, 0);
+  // One cent an hour is the first price that is not no-labor.
+  assert.strictEqual(B.solve(s, 'price', s.fixedPrice + s.bidHours).why, 'exact');
+});
+
+test('why: no labor on the bid, and the rate and margin handles, report null or no-labor honestly', () => {
+  const s = B.costStack(bid, settings);
+  // Neither of these types a total, so neither has a typed price to classify.
+  assert.strictEqual(B.solve(s, 'rate', 6500).why, null);
+  assert.strictEqual(B.solve(s, 'margin', 25).why, null);
+  // With no hours at all, any price at or above the fixed cost is no-labor.
+  const b0 = { ...bid, labor: { crewIds: ['c1', 'c2'], days: 0, tasks: null } };
+  const s0 = B.costStack(b0, settings);
+  assert.strictEqual(s0.bidHours, 0);
+  assert.strictEqual(B.solve(s0, 'price', 999999).why, 'no-labor');
+  assert.strictEqual(B.solve(s0, 'price', s0.fixedPrice - 1).why, 'floored');
+});
+
 test('belowFloor', () => {
   assert.strictEqual(B.belowFloor(6400, 6500), true);
   assert.strictEqual(B.belowFloor(6500, 6500), false);

@@ -1203,8 +1203,31 @@ function walkForgetUnanswer(bid, name) {
   render();
 }
 
+// Is this row's line already sitting on the bid? The ✓ puts the question back
+// but does NOT take the line away — undoing an answer is not undoing an item —
+// so "Add it" a second time used to push a second identical one, and he found
+// two lift rentals on the proposal with no memory of adding either.
+function walkForgetHasLine(bid, name) {
+  const key = name.trim().toLowerCase();
+  if (!key) return false;
+  const same = (n) => String(n == null ? '' : n).trim().toLowerCase() === key;
+  return (bid.areas || []).some((a) => (a.items || []).some((it) => same(it.name)))
+    || (bid.rentals || []).some((x) => same(x.name))
+    || (bid.equipment || []).some((x) => same(x.name));
+}
+
 function walkForgetAdd(bid, name) {
   const key = name.trim().toLowerCase();
+
+  // Already there. Answer the row rather than adding a twin: the checklist is
+  // asking whether the bid covers this, and it does.
+  if (walkForgetHasLine(bid, name)) {
+    persistOr(walkForgetMark(bid, name, 'added'));
+    walkForgetPick = null;
+    showBanner(name + ' is already on the bid.');
+    render();
+    return;
+  }
 
   // Two of these rows are not material at all, so they go where their money
   // actually gets priced. The match is a rule rather than the two seed strings

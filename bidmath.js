@@ -187,8 +187,28 @@
 
   function marginPctOf(priceCents, costCents) { return priceCents > 0 ? (priceCents - costCents) / priceCents * 100 : 0; }
 
-  // The returned {rateCents, priceCents, marginPct} triple is authoritative; callers must display
+  // The returned {rateCents, priceCents, marginPct, why} is authoritative; callers must display
   // these values, never echo the typed input (e.g. a typed price below fixedPrice clamps the rate to 0).
+  //
+  // `why` classifies a TYPED PRICE against what came back, and it is null for
+  // the rate and margin handles because neither of them types a total. The
+  // screen turns it into a sentence and does no arithmetic of its own — the
+  // classification is a comparison of three numbers, and a screen that made it
+  // by looking at rateCents alone called an over-the-fixed-price bid a refusal:
+  //
+  //   'exact'    — the typed total was reachable at whole cents an hour. Say
+  //                nothing; the number on screen is the number he typed.
+  //   'rounded'  — reachable only between whole cents, so the rate rounded DOWN
+  //                and the price came back under by less than a cent per bid
+  //                hour. Nothing to decide, but he should see it.
+  //   'floored'  — he typed LESS than the materials, rentals and equipment cost.
+  //                The rate clamps to $0 rather than going negative, so the
+  //                price came back UP, at the fixed cost. That is not rounding,
+  //                it is the screen refusing to quote a job at a loss.
+  //   'no-labor' — he typed at or above the fixed cost, but not enough above it
+  //                to buy one whole cent an hour. The price fits; there is
+  //                simply nothing left for labor. A parts-only bid lands here
+  //                on purpose, and calling that a refusal would be a lie.
   //
   // A TYPED PRICE ROUNDS THE RATE DOWN, not to nearest (Adrian's call, 9/05).
   // The price is always fixedPrice + rate x bidHours off a whole-cent rate, so
@@ -218,7 +238,14 @@
     }
     if (!(rateCents > 0)) rateCents = 0; // also catches -0 and NaN, not just negatives
     const priceCents = stack.fixedPrice + rateCents * stack.bidHours;
-    return { rateCents, priceCents, marginPct: marginPctOf(priceCents, stack.trueCost) };
+    let why = null;
+    if (handle === 'price') {
+      if (value < stack.fixedPrice) why = 'floored';
+      else if (rateCents === 0) why = 'no-labor';
+      else if (priceCents !== value) why = 'rounded';
+      else why = 'exact';
+    }
+    return { rateCents, priceCents, marginPct: marginPctOf(priceCents, stack.trueCost), why };
   }
 
   function belowFloor(rateCents, floorCents) { return rateCents < floorCents; }

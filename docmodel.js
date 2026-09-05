@@ -221,7 +221,13 @@
         // print an empty section — neither line-item section is pushed with no rows.
         ...(materialRows.length ? [{ title: 'Materials', rows: materialRows }] : []),
         ...(equipRows.length ? [{ title: 'Equipment & rentals', rows: equipRows }] : []),
-        { title: 'Labor', rows: laborRows },
+        // Labor is omitted on the same rule, for the same reason: a bid with no
+        // labor days printed "Labor · 0 hrs · $0.00" under the parts, which
+        // reads to a customer like a line he forgot to price rather than a
+        // parts-only quote. laborCents is 0 at 0 hours, so the total does not
+        // move. A bid with NEITHER parts nor hours never gets this far — the
+        // share gate names Labor and stops it.
+        ...(stack.bidHours > 0 ? [{ title: 'Labor', rows: laborRows }] : []),
         ...coSections,
       ];
       // Full prints a scope only when he wrote one. The line items already

@@ -396,6 +396,25 @@ test('full level omits the Materials section on a labor-only bid, and the total 
   const totals = ['full', 'summary', 'scope'].map((l) => D.build(b, d, l).totalCents);
   assert.strictEqual(totals[0], totals[1]); assert.strictEqual(totals[1], totals[2]);
 });
+// A parts-only service bid: a breaker and a trip, no labor days logged. The
+// Labor row printed "0 hrs · $0.00" under the parts, which reads to a customer
+// like a line somebody forgot to price rather than a quote for parts.
+test('full level omits the Labor section on a bid with no labor days, and the total is unchanged', () => {
+  const { d, b } = fixture();
+  b.labor.days = 0; b.labor.tasks = null;
+  const stack = B.costStack(b, d.settings);
+  assert.strictEqual(stack.bidHours, 0);
+  const doc = D.build(b, d, 'full');
+  assert.deepStrictEqual(doc.sections.map((s) => s.title), ['Materials', 'Equipment & rentals']);
+  // Labor was $0 either way, so dropping the section moves no money.
+  assert.strictEqual(doc.totalCents, stack.fixedPrice);
+  const totals = ['full', 'summary', 'scope'].map((l) => D.build(b, d, l).totalCents);
+  assert.strictEqual(totals[0], totals[1]); assert.strictEqual(totals[1], totals[2]);
+  // The summary is a shape, not a list of sections: its Labor row stays.
+  assert.deepStrictEqual(D.build(b, d, 'summary').summary.map((r) => r.label),
+    ['Materials', 'Equipment & rentals', 'Labor (0 hrs)']);
+});
+
 test('summary level keeps the Materials row at $0.00 on a labor-only bid', () => {
   const { d, b } = fixture();
   b.areas = []; b.misc.cents = 0; b.rentals = []; b.equipment = [];

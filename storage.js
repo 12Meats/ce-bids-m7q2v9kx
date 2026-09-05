@@ -542,7 +542,12 @@
     const src = d.bids.find((b) => b.id === bidId); if (!src) return null;
     const c = JSON.parse(JSON.stringify(src));
     c.id = uid(); c.number = d.settings.nextNumber; d.settings.nextNumber += 1;
+    // forgetAnswers is cleared with the job and the sent flags for the same
+    // reason: the copy is a bid he has not walked yet. Carrying last month's
+    // "No, no permits on this one" onto a new building answers a question
+    // nobody asked, and answers it wrong.
     c.dateISO = dateISO || todayISO(); c.status = 'draft'; c.sentAt = null; c.savedToFilesAt = null; c.lostReason = null; c.job = null;
+    c.forgetAnswers = {};
     c.areas.forEach((a) => { a.id = uid(); a.photoIds = []; });
     d.bids.push(c); return c;
   }

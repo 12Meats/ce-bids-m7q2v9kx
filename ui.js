@@ -556,6 +556,9 @@ function unpricedWarn() { return inlineWarn(UNPRICED_WARN_TEXT); }
 //
 // A change order with nothing on it is skipped for the same reason: it does
 // not print either.
+//
+// Labor is the exception to "every entry is a line": see the tail of the
+// function. It has no row to tap, and it is the last thing checked.
 function unpricedLines(bid, settings) {
   const out = [];
   const markup = BidMath.resolveMarkup(bid, settings);
@@ -573,12 +576,29 @@ function unpricedLines(bid, settings) {
   (bid.equipment || []).forEach((x) => {
     if (!(BidMath.equipmentLine(x) > 0)) out.push({ kind: 'equipment', name: x.name || 'this equipment' });
   });
+  let coCents = 0;
   ((bid.job && bid.job.changeOrders) || []).forEach((co) => {
     if (BidMath.changeOrderIsEmpty(co)) return;
-    if (!(BidMath.changeOrderPrice(co, bid, settings) > 0)) {
-      out.push({ kind: 'changeOrder', name: co.name || 'this change order' });
-    }
+    const cents = BidMath.changeOrderPrice(co, bid, settings);
+    coCents += cents;
+    if (!(cents > 0)) out.push({ kind: 'changeOrder', name: co.name || 'this change order' });
   });
+
+  // Labor is the one line he cannot tap, so it is not in any loop above — and
+  // it was the one line that could reach a customer at $0.00. An empty bid with
+  // no hours on it priced out at nothing and shared clean, because every check
+  // here was a check on a line that existed.
+  //
+  // The gate is the WHOLE bid, not the labor row: parts-only bids are real, and
+  // a service call that is a breaker and no days must still share. So this
+  // fires only when there are no hours AND nothing else is priced either —
+  // which is exactly the bid whose total is $0.00. It goes last so a named
+  // unpriced line still wins the banner: "Labor" sends him nowhere, a name
+  // sends him to the line.
+  const stack = BidMath.costStack(bid, settings);
+  if (stack.bidHours === 0 && stack.fixedPrice + coCents === 0) {
+    out.push({ kind: 'labor', name: 'Labor' });
+  }
   return out;
 }
 

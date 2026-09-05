@@ -234,6 +234,40 @@ test('a fully priced bid has no unpriced lines', () => {
   assert.deepEqual(unpricedLines(b, d.settings), []);
 });
 
+// Labor has no row to tap, so it was the one line that could reach a customer
+// at $0.00: a bid with nothing on it priced out at nothing and shared clean.
+test('a bid with no hours and nothing priced is blocked, naming Labor', () => {
+  const { d, b } = pricedBid();
+  b.areas = []; b.labor.days = 0; b.labor.tasks = null;
+  const lines = unpricedLines(b, d.settings);
+  assert.deepEqual(lines.map((l) => l.name), ['Labor']);
+  assert.equal(lines[0].kind, 'labor');
+  assert.equal(unpricedBlockText(lines), 'Put a price on "Labor" first.');
+});
+
+// Parts-only bids are real: a breaker handed over with no days logged has a
+// price, so nothing here may stand in front of it.
+test('a bid with priced materials and no labor days is not blocked', () => {
+  const { d, b } = pricedBid();
+  b.labor.days = 0; b.labor.tasks = null;
+  assert.deepEqual(unpricedLines(b, d.settings), []);
+  // A rental alone counts too, and so does misc.
+  const bare = pricedBid();
+  bare.b.areas = []; bare.b.labor.days = 0; bare.b.labor.tasks = null;
+  bare.b.rentals.push({ name: 'Scissor lift', days: 1, cents: 28500, markup: false });
+  assert.deepEqual(unpricedLines(bare.b, bare.d.settings), []);
+});
+
+// A named line still wins the banner: "Labor" sends him nowhere to tap.
+test('an unpriced named line outranks the Labor gate in the banner', () => {
+  const { d, b } = pricedBid();
+  b.areas[0].items = [{ catalogId: null, name: 'Permits', unit: 'lot', qty: 1, costCents: 0, priceCents: null }];
+  b.labor.days = 0; b.labor.tasks = null;
+  const lines = unpricedLines(b, d.settings);
+  assert.deepEqual(lines.map((l) => l.name), ['Permits', 'Labor']);
+  assert.equal(unpricedBlockText(lines), 'Put a price on "Permits" first.');
+});
+
 test('items, rentals and equipment that would print at $0 are all found, in walking order', () => {
   const { d, b } = pricedBid();
   b.areas[0].items.push({ catalogId: null, name: 'Permits', unit: 'lot', qty: 1, costCents: 0, priceCents: null });

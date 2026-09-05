@@ -1457,7 +1457,10 @@
   </nav>
 
   <!-- ---------- Number keypad panel ---------- -->
-  <div id="panel-keypad" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="keypadLabel" hidden>
+  <!-- aria-describedby points at the caption even though it starts hidden: a
+       hidden element is skipped by screen readers, so the description simply
+       arrives with the caption instead of needing to be wired on and off. -->
+  <div id="panel-keypad" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="keypadLabel" aria-describedby="keypadCaption" hidden>
     <h2 id="keypadLabel" class="panel-title"></h2>
     <p id="keypadWas" class="panel-was"></p>
     <p id="keypadCaption" class="panel-caption" hidden></p>

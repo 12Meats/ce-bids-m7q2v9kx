@@ -174,6 +174,22 @@ test('duplicateBid: copies content, fresh number/date/status, no job data or sen
   b.clauseIds = ['k01'];
   assert.deepStrictEqual(S.duplicateBid(d, b.id, '2026-09-20').clauseIds, ['k01']);
 });
+// The did-you-forget answers go the way the job goes. A copy is a bid he has
+// not walked yet: last month's "No, no permits" is an answer about a different
+// building, and inheriting it hides the question on the one job where it costs.
+test('duplicateBid: the did-you-forget answers do not travel to the copy', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });
+  b.forgetAnswers = { Permits: 'no', 'Lift rental': 'added' };
+  d.bids.push(b);
+  const c = S.duplicateBid(d, b.id, '2026-09-20');
+  assert.deepStrictEqual(c.forgetAnswers, {});
+  // And the original keeps its own answers.
+  assert.deepStrictEqual(b.forgetAnswers, { Permits: 'no', 'Lift rental': 'added' });
+  // An empty map is a shape validateImport accepts, so the copy still saves.
+  // duplicateBid already pushed it onto d.bids; pushing again is a duplicate id.
+  assert.notStrictEqual(S.validateImport(JSON.stringify(d)), null);
+});
 test('recordCatalogUse: bumps uses and lastCost; addCatalogItem creates', () => {
   const d = S.emptyData();
   const p = S.addCatalogItem(d, { category: 'conduit', name: '1" rigid', unit: 'ft' });

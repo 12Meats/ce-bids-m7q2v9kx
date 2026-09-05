@@ -67,9 +67,11 @@ const PRICE_TOP_ITEMS = 3;
 
 let priceMenu = null;      // the rental/equipment line showing its Delete row
 let pricePicker = false;   // true while the tool picker is up
-// Why the price on screen is not the price he typed:
-//   { kind: 'rounded' | 'floored', priceCents, fixedPrice }
-// Two different pieces of news, and they must not wear each other's words.
+// What BidMath made of the price he typed:
+//   { kind: 'rounded' | 'floored' | 'no-labor', priceCents, fixedPrice }
+// Three different pieces of news, and they must not wear each other's words.
+// The kind is solve()'s `why` (minus 'exact', which has nothing to say); this
+// screen only picks the sentence.
 let priceWhy = null;
 
 function priceClearTransient() {
@@ -764,22 +766,17 @@ function priceApply(bid, handle, value) {
     return;
   }
 
-  // Why the price he is about to look at is not the price he typed. There are
-  // two reasons and they are not the same news:
+  // Which of the three sentences below to show, if any. The classification is
+  // solve()'s — see the `why` block in bidmath. This screen used to decide it
+  // here off out.rateCents alone, which got two cases wrong: a price a nickel
+  // ABOVE the materials total was called a refusal to quote at a loss, and a
+  // price typed at exactly the materials total showed $0.00/hr and said
+  // nothing at all about why.
   //
-  //   rounded — the rate landed on whole cents an hour and the price was
-  //             re-derived from it. The rate rounds DOWN, so the price only
-  //             ever comes back at or under what he typed, by less than one
-  //             cent per bid hour. Nothing to decide, but he should see it.
-  //   floored — he typed less than the materials, rentals and equipment cost.
-  //             solve() clamps the labor rate to $0 rather than going negative,
-  //             so the price came back at the fixed cost and the difference is
-  //             not rounding — it is the screen refusing to quote a job at a
-  //             loss without saying so.
-  //
-  // Calling the second one "rounded" would be a lie about a much bigger number.
-  priceWhy = (handle === 'price' && out.priceCents !== value)
-    ? { kind: out.rateCents > 0 ? 'rounded' : 'floored', priceCents: out.priceCents, fixedPrice: stack.fixedPrice }
+  // 'exact' is the fourth answer and it prints nothing: the number on screen
+  // is the number he typed, and a sentence saying so is noise.
+  priceWhy = (handle === 'price' && out.why && out.why !== 'exact')
+    ? { kind: out.why, priceCents: out.priceCents, fixedPrice: stack.fixedPrice }
     : null;
   render();
 }
@@ -842,6 +839,12 @@ function buildHandles(bid, stack, solved) {
       + moneyText(priceWhy.fixedPrice)
       + '. A price under that means paying to work, so the labor rate is $0/hr.');
     box.appendChild(note);
+  } else if (priceWhy && priceWhy.kind === 'no-labor') {
+    // Not amber. The price he typed fits, it just has no room in it for hours,
+    // which is a real way to bid parts. A warning here would cry wolf.
+    box.appendChild(caption('That leaves nothing for labor over your '
+      + moneyText(priceWhy.fixedPrice)
+      + ' of materials, rentals, and equipment, so the rate is $0/hr.'));
   } else if (priceWhy) {
     box.appendChild(caption('Closest price at whole cents per hour: ' + moneyText(priceWhy.priceCents) + '.'));
   }
