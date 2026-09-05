@@ -73,6 +73,11 @@ const PROPOSAL_PDF_KEEP = 10;        // previous PDFs listed for one bid
 
 let proposalClausesOpen = false;  // the clause library, expanded
 let proposalRevealClauses = false; // one render long, after the tap that opened them
+// Which clause GROUPS are unfolded inside the library. Every one of them is
+// shut when the library opens: twenty-seven clauses in one scroll is a wall,
+// and the six group names with their ticked counts beside them are the whole
+// answer to "what is on this bid" without opening any of them.
+const proposalGroupsOpen = new Set();
 let proposalTermsOn = false;      // a service bid that wants terms anyway
 // He has ticked or un-ticked something in the library this session, so an
 // empty list is his answer and not merely the shape a Full bid was seeded in.
@@ -117,6 +122,7 @@ function proposalCustomer(bid) {
 function enterProposal(bidId) {
   if (typeof bidId === 'string' && bidId) state.bidId = bidId;
   proposalClausesOpen = false;
+  proposalGroupsOpen.clear();
   proposalClausesEdited = false;
   proposalOfferAlways = false;
   proposalNudgesOff.clear();
@@ -570,44 +576,68 @@ function proposalClauseRow(bid, clause) {
   return btn;
 }
 
-// Every clause in one group, plus the all-or-nothing button. Nineteen taps to
-// put the Always block on a bid is nineteen chances to miss one.
-function proposalClauseGroup(bid, title, list) {
+// Every clause in one group, folded shut until he opens it. The group name
+// with its ticked count beside it — "Always (8 on)" — is what he came to read;
+// the eight lines under it are what he came to change, and only sometimes.
+// Twenty-seven rows all open is a scroll he has to get to the bottom of before
+// the next group even starts.
+//
+// The all-or-nothing button only appears with the group open: nineteen taps to
+// put a block on a bid is nineteen chances to miss one, but a "Turn all on"
+// beside a shut group is a button that changes something he cannot see.
+function proposalClauseGroup(bid, key, title, list) {
   const wrap = document.createElement('div');
   wrap.className = 'prop-group';
+  const open = proposalGroupsOpen.has(key);
 
   const head = document.createElement('div');
   head.className = 'prop-group-head';
-  // Title, count, control — three spans on one line, so a long group name
-  // wraps on its own without taking the count and the button with it. The
-  // list is the printable clauses, so the count is what the paper will carry.
+
+  // The name and the count are ONE button: the whole line unfolds the group,
+  // which is a bigger target than a caret and says so with the caret on it.
+  const on = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'prop-group-toggle';
+  toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const caret = document.createElement('span');
+  caret.className = 'prop-group-caret';
+  caret.setAttribute('aria-hidden', 'true');
+  caret.textContent = open ? '▾' : '▸';
+  toggle.appendChild(caret);
+  // Title and count as two spans, so a long group name wraps on its own
+  // without dragging the count onto a line of its own.
   const h = document.createElement('span');
   h.className = 'prop-group-title';
   h.textContent = title;
-  head.appendChild(h);
-  const on = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
+  toggle.appendChild(h);
   const n = document.createElement('span');
   n.className = 'prop-group-count';
-  // "19 of 19" is a fraction to work out; "19 on" is the answer. And the
-  // control says what it does rather than what state it names: "None" read as
-  // a label for the group rather than as a button that empties it.
-  //
-  // The separator belongs BETWEEN the count and the button, which is where it
-  // now is: "Always · 19 on · Turn all off". Hung off the end of the count it
-  // was a dot with nothing after it whenever the line wrapped.
-  n.textContent = '· ' + on + ' on ·';
-  head.appendChild(n);
+  // "19 of 19" is a fraction to work out; "19 on" is the answer.
+  n.textContent = '(' + on + ' on)';
+  toggle.appendChild(n);
+  toggle.addEventListener('click', () => {
+    if (open) proposalGroupsOpen.delete(key);
+    else proposalGroupsOpen.add(key);
+    render();
+  });
+  head.appendChild(toggle);
+
   const allOn = on === list.length;
-  head.appendChild(textButton(allOn ? 'Turn all off' : 'Turn all on', 'link-btn', () => {
-    const current = proposalClauseIds(bid);
-    const ids = list.map((c) => c.id);
-    proposalWriteClauses(bid, allOn
-      ? current.filter((id) => ids.indexOf(id) === -1)
-      : current.concat(ids.filter((id) => current.indexOf(id) === -1)));
-  }));
+  // The control says what it DOES rather than what state it names: "None" read
+  // as a label for the group rather than as a button that empties it.
+  if (open) {
+    head.appendChild(textButton(allOn ? 'Turn all off' : 'Turn all on', 'link-btn', () => {
+      const current = proposalClauseIds(bid);
+      const ids = list.map((c) => c.id);
+      proposalWriteClauses(bid, allOn
+        ? current.filter((id) => ids.indexOf(id) === -1)
+        : current.concat(ids.filter((id) => current.indexOf(id) === -1)));
+    }));
+  }
   wrap.appendChild(head);
 
-  list.forEach((c) => wrap.appendChild(proposalClauseRow(bid, c)));
+  if (open) list.forEach((c) => wrap.appendChild(proposalClauseRow(bid, c)));
   return wrap;
 }
 
@@ -682,10 +712,39 @@ function proposalNudges(bid) {
   return out;
 }
 
+// Shuts the library. One function because three things do it: the Done button
+// at the top of the strip, the strip's own Done at the bottom, and the card
+// title — the heading is the thing above the open library, and tapping the
+// name of what you are inside of is how a thumb tries to get out of it.
+function proposalCloseClauses() {
+  proposalClausesOpen = false;
+  render();
+}
+
 function buildClauses(bid) {
   const box = card('Terms & conditions');
   const list = proposalClauseList(bid);
   const count = proposalPrintingClauses(bid).length;
+
+  // With the library open the card's own heading closes it. Not a decoration:
+  // on a 375-point phone the library is taller than the glass, and the title
+  // is the one landmark he can find without reading anything.
+  if (proposalClausesOpen) {
+    const heading = box.querySelector('.card-title');
+    if (heading) {
+      heading.classList.add('card-title-tap');
+      heading.setAttribute('role', 'button');
+      heading.setAttribute('tabindex', '0');
+      heading.title = 'Tap to close the clause list';
+      heading.addEventListener('click', proposalCloseClauses);
+      heading.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          proposalCloseClauses();
+        }
+      });
+    }
+  }
 
   if (proposalOfferAlways) {
     proposalPrompt(box, 'A Scope & price bid usually carries your standard terms. Add them?',
@@ -710,18 +769,35 @@ function buildClauses(bid) {
   // accent edge, with the way out at the bottom instead of a block button
   // shoulder to shoulder with the next card.
   const groups = document.createElement('div');
+
+  // THE WAY OUT, AT THE TOP. Twenty-seven rows put Done a full screen and a
+  // half below the fold, so the only way to shut the library was to scroll to
+  // the bottom of it — past every clause he had already decided about. This
+  // bar sticks under the app chrome (the same trick, and the same top offset,
+  // as the walk's running tally) and carries both things he wants while he is
+  // in there: how many are on, and the way out.
+  const onCount = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
+  const bar = document.createElement('div');
+  bar.className = 'prop-clause-bar';
+  const tally = document.createElement('span');
+  tally.className = 'prop-clause-tally';
+  tally.textContent = onCount + ' of ' + list.length + ' on';
+  bar.appendChild(tally);
+  bar.appendChild(textButton('Done', 'btn prop-clause-done', proposalCloseClauses));
+  groups.appendChild(bar);
+
   const named = new Set(CLAUSE_GROUPS.map(([k]) => k));
   CLAUSE_GROUPS.forEach(([key, title]) => {
     const group = list.filter((c) => c.group === key);
-    if (group.length) groups.appendChild(proposalClauseGroup(bid, title, group));
+    if (group.length) groups.appendChild(proposalClauseGroup(bid, key, title, group));
   });
   const other = list.filter((c) => !named.has(c.group));
-  if (other.length) groups.appendChild(proposalClauseGroup(bid, 'Other', other));
+  if (other.length) groups.appendChild(proposalClauseGroup(bid, 'other', 'Other', other));
 
   attachedStrip(open, [], {
     content: groups,
     cancelLabel: 'Done',
-    cancel: () => { proposalClausesOpen = false; render(); },
+    cancel: proposalCloseClauses,
   });
   // The groups open below the button he tapped, which on a small phone is
   // below the fold: the first group comes up to meet him. Once, on the render

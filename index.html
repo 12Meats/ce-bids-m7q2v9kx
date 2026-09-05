@@ -504,6 +504,11 @@
        than a card's own title, so the heading and the cards read as one
        section instead of as a stray line above them. */
     .group-heading { margin: 0 0 var(--space-1); }
+    /* A card title that is also the way out of what is open under it — the
+       clause library. Nothing about it changes except the cursor and a press
+       state: it is still the heading, it just answers a tap. */
+    .card-title-tap { cursor: pointer; }
+    .card-title-tap:active { color: var(--color-accent); }
 
     /* A row is the whole tap target — no small pencil icons to aim at. */
     .row {
@@ -1385,6 +1390,30 @@
     }
     .prop-prompt-text { margin: 0 0 var(--space-2); font-size: 0.95rem; color: var(--color-text); }
 
+    /* THE WAY OUT OF THE CLAUSE LIBRARY, AT THE TOP OF IT. Twenty-seven rows
+       put "Done" a screen and a half below the fold, so shutting the list meant
+       scrolling past every clause he had already decided about. Sticky under
+       the app chrome, the same offset the walk's running tally uses, in the
+       strip's own colour so the rows pass behind it — and the shadow paints
+       the 12px gap under it in that colour too, or a row would show through in
+       a sliver as the list scrolls. */
+    .prop-clause-bar {
+      position: sticky;
+      top: var(--chrome-height);
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: var(--space-1) 0;
+      background: #eef2f7;
+      box-shadow: 0 var(--space-2) 0 #eef2f7;
+    }
+    .prop-clause-tally { font-weight: 700; color: var(--color-accent); }
+    /* Sized to its own word: a full-width Done at the top of the list would be
+       a second primary action over a screen that already has Share pinned. */
+    .prop-clause-done { flex: 0 0 auto; min-height: 44px; padding: 0 20px; }
+
     .prop-group { margin-top: var(--space-2); }
     .prop-group-head {
       display: flex;
@@ -1393,6 +1422,24 @@
       gap: var(--space-2);
       margin-bottom: 2px;
     }
+    /* The group name and its ticked count are one 48px target that folds the
+       group open. A caret alone is a 12px thing to aim at with a thumb. */
+    .prop-group-toggle {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-1);
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 48px;
+      padding: 0;
+      text-align: left;
+      background: none;
+      border: 0;
+      font-family: inherit;
+      color: var(--color-text-muted);
+    }
+    .prop-group-toggle:active { color: var(--color-accent); }
+    .prop-group-caret { flex: 0 0 auto; font-size: 0.8rem; }
     /* One line: the group on the left, then how many of it are ticked and the
        All/None control on the right. .link-btn is a full-width block button
        everywhere else in the app, and that width belongs to a card, not to a
@@ -1404,10 +1451,10 @@
       min-width: 0;
       overflow-wrap: anywhere;
       font-weight: 700;
-      color: var(--color-text-muted);
+      color: inherit;
       font-size: 0.95rem;
     }
-    .prop-group-count { flex: 0 0 auto; color: var(--color-text-muted); font-size: 0.95rem; white-space: nowrap; }
+    .prop-group-count { flex: 0 0 auto; color: inherit; font-size: 0.95rem; white-space: nowrap; }
     .prop-group-head .link-btn {
       flex: 0 0 auto;
       width: auto;
