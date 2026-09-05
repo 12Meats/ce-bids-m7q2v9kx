@@ -68,3 +68,25 @@ test('backup-bids-v1.json really is a pre-forgetAnswers file', () => {
   assert.strictEqual(d.settings.rateCents, 6500, 'the v1 fixture must carry v1 defaults');
   assert.strictEqual(d.settings.floorCents, 6500, 'the v1 fixture must carry v1 defaults');
 });
+
+// And the same by name for v2, so the file that is supposed to be the
+// photograph of THIS release cannot quietly be regenerated without the fields
+// this release added. If one of these ever fails, the fixture is wrong, not
+// the assertion.
+test('backup-bids-v2.json really is a v2 file', () => {
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v2.json'), 'utf8'));
+  assert.ok(d, 'the v2 fixture does not load');
+  assert.strictEqual(d.settings.rateCents, 8500, 'v2 shipped an $85 rate');
+  assert.strictEqual(d.settings.floorCents, 8500, 'v2 shipped an $85 floor');
+  assert.ok(d.bids.every((b) => b.forgetAnswers && typeof b.forgetAnswers === 'object'),
+    'every v2 bid carries the answered checklist');
+  assert.ok(d.bids.some((b) => (b.rentals || []).some((r) => typeof r.areaId === 'string')),
+    'a rental named on the walk carries the room he was standing in');
+  assert.ok(d.bids.some((b) => b.pricing.touched === true),
+    'a bid he priced carries pricing.touched, which is what ticks the step strip');
+  assert.ok(d.bids.some((b) => b.pricing.cushionPct < 0),
+    'bid hours below real hours is a negative cushion, and it has to survive a backup');
+  const job = d.bids.map((b) => b.job).find(Boolean);
+  assert.ok(job && job.changeOrders.some((co) => (co.areas || []).length === 0 && co.labor.days > 0),
+    'a labor-only change order is a v2 shape and belongs in the v2 photograph');
+});
