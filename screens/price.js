@@ -299,10 +299,23 @@ function buildRentals(bid, markup) {
   return box;
 }
 
+// The rental's cents field is the TOTAL for the whole hire, not a day rate
+// (Adrian's call, 9/05: it is what his paper bids say — "Lift rental · 1 week ·
+// $501"). The line used to read "Scissor lift  $285.00" with an "8 days" chip
+// under it, which reads as $285 a day; the word "total" on the value is what
+// stops that, and the prompt below asks the question the same way.
+function rentalTotalLabel(name) {
+  return 'What will the ' + (name || 'rental') + ' cost in total?';
+}
+function rentalTotalCaption(days) {
+  return 'For all ' + pricePlural(days, 'day', 'days') + ', what the rental house charges.';
+}
+
 function buildRentalLine(bid, x, markup) {
-  const line = priceLine(x.name || 'Rental', moneyText(x.cents), () => {
+  const line = priceLine(x.name || 'Rental', moneyText(x.cents) + ' total', () => {
     promptMoney(x.cents, {
-      label: (x.name || 'Rental') + ' — what it costs you',
+      label: rentalTotalLabel(x.name),
+      caption: rentalTotalCaption(x.days),
       done: (cents) => {
         const prev = x.cents;
         // Clear means none of it, which is a real answer here, not a cancel.
@@ -349,7 +362,8 @@ function priceAddRental(bid) {
   promptRentalName(state.data.catalog, '', (name) => {
     pricePromptDays(1, name + ' — how many days?', null, (days) => {
       promptMoney(null, {
-        label: name + ' — what it costs you',
+        label: rentalTotalLabel(name),
+        caption: rentalTotalCaption(days),
         done: (cents) => {
           const rental = { name, days, cents: cents === null ? 0 : cents, markup: false };
           bid.rentals.push(rental);

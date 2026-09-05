@@ -1246,6 +1246,15 @@
       margin-top: 4px;
       font-size: 0.95rem;
     }
+    /* One sentence under the question, for the keypads where the question on
+       its own is ambiguous -- the rental total being the first of them. */
+    .panel-caption {
+      color: var(--color-text-muted);
+      text-align: center;
+      margin-top: 6px;
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
     /* The typed digits are the dominant element -- what the thumb just did is
        what the eye should land on. */
     .panel-digits {
@@ -1435,6 +1444,7 @@
   <div id="panel-keypad" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="keypadLabel" hidden>
     <h2 id="keypadLabel" class="panel-title"></h2>
     <p id="keypadWas" class="panel-was"></p>
+    <p id="keypadCaption" class="panel-caption" hidden></p>
     <div id="keypadDigits" class="panel-digits" aria-live="polite"></div>
     <div id="keypadGrid" class="keypad panel-keypad">
       <button type="button" class="key" data-digit="1">1</button>

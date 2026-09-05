@@ -31,6 +31,26 @@ test('full level: sections Materials / Equipment & rentals / Labor with a labor 
   assert.strictEqual(doc.meta.number, 3052);
   assert.strictEqual(doc.meta.validThrough, '2026-10-10');
 });
+// The rental's cents field is the TOTAL for the hire, so the row prints the
+// day count in the quantity column and the whole total in the money column,
+// with NOTHING in the unit-price column: a per-day number there would read as
+// a rate and turn an $285 lift into $2,280 on the customer's page.
+test('a rental row prints name, day count and the whole total, and no unit price', () => {
+  const { d, b } = fixture();
+  b.rentals = [{ name: 'Scissor lift', days: 8, cents: 28500, markup: false }];
+  b.equipment = [];
+  const doc = D.build(b, d, 'full');
+  const section = doc.sections.find((s) => s.title === 'Equipment & rentals');
+  assert.deepStrictEqual(section.rows, [
+    { desc: 'Scissor lift', qtyText: '8 days', unitCents: null, cents: 28500 },
+  ]);
+  // One day is one day, not "1 days".
+  b.rentals = [{ name: 'Trencher', days: 1, cents: 19900, markup: false }];
+  const one = D.build(b, d, 'full').sections.find((s) => s.title === 'Equipment & rentals');
+  assert.strictEqual(one.rows[0].qtyText, '1 day');
+  assert.strictEqual(one.rows[0].cents, 19900);
+});
+
 test('all three levels report the identical total', () => {
   const { d, b } = fixture();
   const totals = ['full', 'summary', 'scope'].map((l) => D.build(b, d, l).totalCents);

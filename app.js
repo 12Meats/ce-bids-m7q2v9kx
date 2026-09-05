@@ -150,7 +150,7 @@ function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.op
 
 // --- Number keypad ---------------------------------------------------------
 
-// promptNumber(current, { label, allowDecimal, maxChars, maxDecimals, wasText, done })
+// promptNumber(current, { label, caption, allowDecimal, maxChars, maxDecimals, wasText, done })
 // current: the existing value (Number) or null — shown as "was 12" but never
 // preloaded into the buffer: retyping beats editing on a phone. wasText
 // overrides that line for callers that format their own (see promptMoney).
@@ -169,6 +169,13 @@ function promptNumber(current, opts) {
   el('keypadWas').textContent = opts.wasText || ((typeof current === 'number' && isFinite(current))
     ? 'was ' + numText(current)
     : 'was not set');
+
+  // An optional sentence under the question, for the few keypads where the
+  // question alone leaves the answer ambiguous. Hidden, not blank, so a
+  // caption-less panel keeps its old spacing exactly.
+  const cap = el('keypadCaption');
+  cap.textContent = opts.caption || '';
+  cap.hidden = !opts.caption;
 
   // The decimal key only exists for callers that allow one; otherwise it stays
   // blanked so 0 and backspace never shift under the thumb.
@@ -226,7 +233,7 @@ function keypadClear() {
   if (done) done(null);
 }
 
-// promptMoney(cents, { label, done }) — the ONE money entry point. Every later
+// promptMoney(cents, { label, caption, done }) — the ONE money entry point. Every later
 // screen that takes dollars goes through this, so the cents<->dollars
 // conversion and its rounding live in exactly one place: the keypad speaks
 // dollars, the data model only ever sees integer cents.
@@ -237,6 +244,7 @@ function promptMoney(cents, opts) {
   const has = typeof cents === 'number' && isFinite(cents);
   promptNumber(has ? cents / 100 : null, {
     label: opts.label,
+    caption: opts.caption,
     allowDecimal: true,
     maxDecimals: 2, // cents are the smallest thing money has
     wasText: has ? 'was ' + BidMath.fmt(cents) : 'was not set',
