@@ -553,6 +553,17 @@ function renderSettingsCompany() {
 // further: the id stays in the file, an old bid keeps him and keeps
 // validating, and Store.newBid simply stops seeding him onto new ones.
 
+function enterSettingsCrew() {
+  settingsMenu = null;
+  settingsShowHidden.crew = false;
+}
+
+function renderSettingsCrew() {
+  const host = el('settingsCrewContent');
+  host.textContent = '';
+  host.appendChild(buildSetCrew());
+}
+
 function buildSetCrew() {
   const s = setS();
   const box = card('Crew');
@@ -988,6 +999,17 @@ function settingsAskToolCost(name, again) {
 // still reads the whole list top to bottom either way.
 const SETTINGS_LIST_FOLD = 3;
 
+// EVERYTHING THE CARD HAS TO SAY ABOUT ITSELF IS BEHIND THE SAME TAP. Folded,
+// a list card is a heading, three rows, "Show all 19" and the way to add one:
+// that is a door with a sample of what is behind it, which is all a card on an
+// index owes. The caption explaining how the walk reads the list, and the
+// button that puts the standard rows back, are answers to questions he only
+// has once he is looking at the whole list — so they open with it. A list
+// short enough not to fold has no "Show all" to open, so it keeps them.
+function settingsListWideOpen(total, listName) {
+  return total <= SETTINGS_LIST_FOLD || settingsListOpen[listName];
+}
+
 function settingsListFoldToggle(box, listName, total) {
   if (total <= SETTINGS_LIST_FOLD) return;
   const open = settingsListOpen[listName];
@@ -1143,9 +1165,11 @@ function buildSetForget() {
   }
   box.appendChild(textButton('+ Item', 'btn btn-block mt-3',
     () => settingsAddString('forgetList', 'Anything missing', 'Permits', false)));
-  settingsStandardButton(box, 'Add the standard list', 'rows',
-    (d) => Store.addStandardForget(d), s.forgetList, (before) => { setS().forgetList = before; });
-  box.appendChild(caption('The walk asks you about these, in this order. Put what you forget most at the top.'));
+  if (settingsListWideOpen(s.forgetList.length, 'forgetList')) {
+    settingsStandardButton(box, 'Add the standard list', 'rows',
+      (d) => Store.addStandardForget(d), s.forgetList, (before) => { setS().forgetList = before; });
+    box.appendChild(caption('The walk asks you about these, in this order. Put what you forget most at the top.'));
+  }
   return box;
 }
 
@@ -1165,9 +1189,11 @@ function buildSetNotePhrases() {
   }
   box.appendChild(textButton('+ Phrase', 'btn btn-block mt-3',
     () => settingsAddString('notePhrases', 'Note or exclusion', 'Does not include...', false)));
-  settingsStandardButton(box, 'Add the standard notes', 'phrases',
-    (d) => Store.addStandardNotes(d), s.notePhrases, (before) => { setS().notePhrases = before; });
-  box.appendChild(caption('One tap each on the proposal screen. Taking one off here leaves it on the bids that already print it.'));
+  if (settingsListWideOpen(s.notePhrases.length, 'notePhrases')) {
+    settingsStandardButton(box, 'Add the standard notes', 'phrases',
+      (d) => Store.addStandardNotes(d), s.notePhrases, (before) => { setS().notePhrases = before; });
+    box.appendChild(caption('One tap each on the proposal screen. Taking one off here leaves it on the bids that already print it.'));
+  }
   return box;
 }
 
@@ -1700,11 +1726,11 @@ function buildSetLock() {
 // ---------------------------------------------------------------------------
 // THE DOORS ON THE INDEX
 // ---------------------------------------------------------------------------
-// Five screens reached from rows here: the three libraries that got big, the
-// thirteen rates, and the company. All five used to be cards laid out flat on
-// this screen, which is what turned Settings into a scroll he had to hunt down
-// — the jump strip at the top was a patch over exactly that, and it went with
-// them.
+// Six screens reached from rows here: the three libraries that got big, the
+// thirteen rates, the crew, and the company. All six used to be cards laid out
+// flat on this screen, which is what turned Settings into a scroll he had to
+// hunt down — the jump strip at the top was a patch over exactly that, and it
+// went with them.
 //
 // A row, a screen. The value on the right is the answer to the only question
 // he asks before tapping one: what is behind this, and is it still right.
@@ -1717,7 +1743,13 @@ function buildSetDoors() {
   const s = setS();
   const box = card();
 
-  // Rates leads them: it is the only one of the four he opens to change a
+  // Crew leads them. A wage is new bids only since the snapshot rule landed, so
+  // this stopped being a weekly card and became a door like the rest — but it
+  // is still the one he is likeliest to open, and the men's names on the right
+  // answer the only question he asks before tapping it.
+  box.appendChild(row('Crew', settingsCrewSummary(s.crew), () => show('settings-crew')));
+
+  // Rates next: it is the only one of the five he opens to change a
   // number rather than to look something up, and the rate on the right is the
   // answer to "is this still what I am charging?" without opening anything.
   box.appendChild(row('Rates', moneyText(s.rateCents) + '/hr', () => show('settings-rates')));
@@ -1731,9 +1763,31 @@ function buildSetDoors() {
     settingsCountText(s.clauses.filter((c) => !c.hidden).length, 'clause', 'clauses'),
     () => show('settings-terms')));
 
-  box.appendChild(caption('Your numbers, the parts you count on a walk, the tools you own, and the '
-    + 'terms that go on the back of a proposal.'));
+  box.appendChild(caption('Who works for you, your numbers, the parts you count on a walk, the '
+    + 'tools you own, and the terms that go on the back of a proposal.'));
   return box;
+}
+
+// "2 · Shawn, George" — the count first, because that is the number that has to
+// be right before a bid is figured, then as many names as the line will hold.
+// A crew of six would run past the row, so the names stop and say how many did
+// not fit rather than pushing the value off the screen.
+const SETTINGS_CREW_NAMES_MAX = 24;
+
+function settingsCrewSummary(crew) {
+  const list = crew.filter((c) => !c.hidden);
+  if (!list.length) return 'Nobody yet';
+  const names = [];
+  let width = 0;
+  for (const c of list) {
+    const name = c.name || 'Worker';
+    const cost = (names.length ? 2 : 0) + name.length;
+    if (names.length && width + cost > SETTINGS_CREW_NAMES_MAX) break;
+    names.push(name);
+    width += cost;
+  }
+  const rest = list.length - names.length;
+  return list.length + ' · ' + names.join(', ') + (rest ? ' +' + rest : '');
 }
 
 // The company door, on its own down between the two lists and the PIN. What is
@@ -2443,19 +2497,18 @@ function settingsSaveAndRender(revert) {
 // RENDER
 // ---------------------------------------------------------------------------
 
-// SETTINGS IS AN INDEX. It is a list of doors and the four things short enough
-// to answer in place — the crew and their wages, the next bid number, and the
-// two plain lists folded to three rows each. Everything long is behind a row:
-// the rates, the three libraries, the company. Laid flat this screen was six
-// and a half thousand pixels, and the jump strip that used to sit over it was
-// an index over an index. Both are gone.
+// SETTINGS IS AN INDEX. It is a list of doors and the three things short enough
+// to answer in place — the next bid number and the two plain lists, folded to
+// three rows each with everything they can say about themselves folded in
+// behind the same tap. Everything long is behind a row: the crew, the rates,
+// the three libraries, the company. Laid flat this screen was six and a half
+// thousand pixels, and the jump strip that used to sit over it was an index
+// over an index. Both are gone.
 //
-// Order is how often he touches it, not how the file is organized: the crew
-// and the rates change with the week, the company address and the PIN were
-// typed once. The sections in the file itself stay in their old order so the
-// diff stays readable.
+// Order is how often he touches it, not how the file is organized. The
+// sections in the file itself stay in their old order so the diff stays
+// readable.
 const SETTINGS_CARDS = [
-  ['set-crew', () => buildSetCrew()],
   ['set-doors', () => buildSetDoors()],
   ['set-counter', () => buildSetCounter()],
   ['set-forget', () => buildSetForget()],
@@ -2503,6 +2556,11 @@ registerScreen('settings', {
 // still lit underneath — so the phone's back gesture and the button at the top
 // do the same thing, and coming back lands on the index rather than on a card
 // halfway down it.
+registerScreen('settings-crew', {
+  id: 'screen-settings-crew', title: 'Crew', back: 'settings', tab: 'settings',
+  enter: enterSettingsCrew, render: renderSettingsCrew,
+});
+
 registerScreen('settings-rates', {
   id: 'screen-settings-rates', title: 'Rates', back: 'settings', tab: 'settings',
   enter: enterSettingsRates, render: renderSettingsRates,
