@@ -11,13 +11,20 @@ const S = require('../storage.js');
 const B = require('../bidmath.js');
 
 // Seed settings: two men at $32.00 and $30.00, 8-hour days, cushion 10% on
-// service and 15% on project, and a $65.00 rate on every new bid.
+// service and 15% on project.
 function doc() { return S.emptyData(); }
 
-// A bid with a job on it, priced at the seed rate. days is the labor line's
+// The rate every fixture bid below is sold at. Pinned here rather than taken
+// from the shipped default, because every dollar figure in this file is worked
+// out by hand against it: moving the default rate must not silently rewrite
+// what these tests are asserting.
+const STATS_TEST_RATE = 6500;
+
+// A bid with a job on it, priced at STATS_TEST_RATE. days is the labor line's
 // days, so real hours are 2 men x days x 8.
 function job(d, { customer, title, jobType, days, dateISO, weeks, surprises, completedAt, status }) {
   const b = S.newBid(d, { customerName: customer, title, jobType, dateISO: dateISO || '2026-01-05' });
+  b.pricing.rateCents = STATS_TEST_RATE;
   b.areas.push({ id: 'a-' + b.number, name: 'Room', items: [
     { catalogId: null, name: 'Wire', unit: 'ft', qty: 100, costCents: 200, priceCents: null } ], photoIds: [] });
   b.labor.days = days;
@@ -32,6 +39,7 @@ function job(d, { customer, title, jobType, days, dateISO, weeks, surprises, com
 
 function lost(d, reason, n) {
   const b = S.newBid(d, { customerName: 'Lost ' + n, title: 'Gone', jobType: 'service', dateISO: '2026-01-05' });
+  b.pricing.rateCents = STATS_TEST_RATE;
   b.status = 'lost';
   b.lostReason = reason;
   d.bids.push(b);
@@ -215,7 +223,7 @@ test('a mixed-rate shop values each job unused hours at its own rate', () => {
   a.pricing.rateCents = 10000;   // $100.00
   b.pricing.rateCents = 8000;    // $80.00
   const st = B.estimatingStats(d.bids, d.settings);
-  // 6 x $100 + 6 x $80 + 6 x $65 (the seed rate), not 18 hours at any one of them.
+  // 6 x $100 + 6 x $80 + 6 x $65 (the fixture rate), not 18 hours at any one of them.
   assert.strictEqual(st.surprises.unspentCents, 6 * 10000 + 6 * 8000 + 6 * 6500);
 });
 

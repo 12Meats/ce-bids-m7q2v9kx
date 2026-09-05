@@ -36,7 +36,8 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
   const d = S.emptyData();
   assert.strictEqual(d.version, 1);
   assert.strictEqual(d.settings.company.roc, 'AZ ROC #276507');
-  assert.strictEqual(d.settings.rateCents, 6500);
+  assert.strictEqual(d.settings.rateCents, 8500);
+  assert.strictEqual(d.settings.floorCents, 8500);
   assert.ok(d.catalog.length >= 50 && d.catalog.length <= 90);
   assert.ok(d.catalog.every((p) => p.lastCostCents === null && p.uses === 0));
   assert.deepStrictEqual([...new Set(d.catalog.map((p) => p.category))].sort(),

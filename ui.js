@@ -256,7 +256,7 @@ const CATALOG_CATEGORIES = [
   ['rentals', 'Rentals/Equipment'],
 ];
 
-const CATALOG_UNITS = ['ft', 'ea', 'roll', 'lot', 'day'];
+const CATALOG_UNITS = ['ft', 'ea', 'roll', 'lot', 'day', 'box', 'case'];
 
 // Order matters: what goes on everything, then the three kinds of job that
 // carry their own risk, then subs. A clause whose group is not named here is

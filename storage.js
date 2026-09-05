@@ -105,7 +105,7 @@
         // equipment/clause instead of splicing it, so old bids that reference
         // its id by reference stay valid forever.
         crew: [{ id: 'c1', name: 'Shawn', wageCents: 3200, hidden: false }, { id: 'c2', name: 'George', wageCents: 3000, hidden: false }],
-        hoursPerDay: 8, burdenPct: 25, rateCents: 6500, floorCents: 6500, marginPct: 25, markupPct: 18, consumablesPct: 3,
+        hoursPerDay: 8, burdenPct: 25, rateCents: 8500, floorCents: 8500, marginPct: 25, markupPct: 18, consumablesPct: 3,
         truckDayCents: 9500, overheadPct: 10, cushionPct: { service: 10, project: 15 }, equipmentPct: 4, validityDays: 30,
         taxMode: 'included',
         equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false })),

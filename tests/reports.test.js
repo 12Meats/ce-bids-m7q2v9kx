@@ -54,8 +54,14 @@ const {
 // that reads perfectly off a shape estimatingStats never produces is a
 // sentence nobody will ever see.
 
+// The rate is pinned here rather than taken from the defaults: every sentence
+// below quotes dollars, and a change to the shipped default rate must not
+// rewrite what these sentences are asserting.
+const REPORTS_TEST_RATE = 6500;
+
 function job(d, o) {
   const b = S.newBid(d, { customerName: o.customer, title: o.title, jobType: o.jobType, dateISO: '2026-01-05' });
+  b.pricing.rateCents = REPORTS_TEST_RATE;
   b.areas.push({ id: 'a-' + b.number, name: 'Room', items: [
     { catalogId: null, name: 'Wire', unit: 'ft', qty: 100, costCents: 200, priceCents: null } ], photoIds: [] });
   b.labor.days = o.days;
@@ -70,6 +76,7 @@ function job(d, o) {
 
 function lost(d, reason, n) {
   const b = S.newBid(d, { customerName: 'Lost ' + n, title: 'Gone', jobType: 'service', dateISO: '2026-01-05' });
+  b.pricing.rateCents = REPORTS_TEST_RATE;
   b.status = 'lost';
   b.lostReason = reason;
   d.bids.push(b);

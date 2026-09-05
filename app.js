@@ -706,7 +706,20 @@ function wireNav() {
   });
 }
 
+// Ask the browser to keep this origin's data even when the phone is short of
+// space. Every bid he has ever written lives in localStorage and IndexedDB, and
+// storage a browser considers "best effort" is storage it is allowed to throw
+// away on its own. Fire-and-forget on purpose: iOS grants or refuses it without
+// a prompt in a home-screen app, there is nothing useful to say either way, and
+// a browser without the API must not break boot.
+function requestPersistentStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  } catch { /* no storage manager on this browser */ }
+}
+
 function boot() {
+  requestPersistentStorage();
   if (Store.loadProblem() === 'corrupt') {
     showBanner('Storage was unreadable — restore from a backup in Settings', 'danger', { persistent: true });
   }
