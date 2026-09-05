@@ -65,8 +65,9 @@ const PRICE_DAY_KEYS = 6;
 const PRICE_MAX_DAYS = 365;
 const PRICE_TOP_ITEMS = 3;
 
-let priceMenu = null;      // the rental/equipment line showing its Delete row
+let priceMenu = null;      // the rental/equipment line showing its actions
 let pricePicker = false;   // true while the tool picker is up
+let priceHoursMenu = false; // the hours line showing cushion / bid hours
 // What BidMath made of the price he typed:
 //   { kind: 'rounded' | 'floored' | 'no-labor', priceCents, fixedPrice }
 // Three different pieces of news, and they must not wear each other's words.
@@ -77,6 +78,7 @@ let priceWhy = null;
 function priceClearTransient() {
   priceMenu = null;
   pricePicker = false;
+  priceHoursMenu = false;
   priceWhy = null;
 }
 
@@ -267,11 +269,18 @@ function priceMoreChip(line) {
   return c;
 }
 
-function priceDeleteRow(label, onDelete) {
+// The strip that opens under a line he tapped: [label, class, onTap] each.
+// One builder for all of them, so the rental's two buttons and the equipment
+// line's three sit in the same box at the same size.
+function priceActions(buttons) {
   const wrap = document.createElement('div');
   wrap.className = 'price-line-actions';
-  wrap.appendChild(textButton(label, 'btn btn-danger-outline', onDelete));
+  buttons.forEach(([label, cls, onTap]) => wrap.appendChild(textButton(label, 'btn ' + cls, onTap)));
   return wrap;
+}
+
+function priceDeleteRow(label, onDelete) {
+  return priceActions([[label, 'btn-danger-outline', onDelete]]);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,23 +344,31 @@ function buildRentalLine(bid, x, markup) {
     render();
   }));
 
-  line.sub.appendChild(chip('Marked up', !!x.markup, () => {
-    const prev = x.markup;
-    x.markup = !prev;
-    priceSave(() => { x.markup = prev; });
-    render();
-  }));
-
   line.sub.appendChild(priceMoreChip(x));
 
   // Only worth saying when the two numbers differ — an un-marked-up rental
-  // prints at exactly what it cost, and a line repeating itself is noise.
+  // prints at exactly what it cost, and a line repeating itself is noise. Not
+  // while the menu is open either: the markup button down there carries the
+  // same sentence, and saying it twice on one line is one of them being wrong.
   const prints = BidMath.rentalPrice(x, markup);
-  if (prints !== x.cents) line.appendChild(caption('Prints at ' + moneyText(prints)));
+  if (prints !== x.cents && priceMenu !== x) line.appendChild(caption('Prints at ' + moneyText(prints)));
 
   if (!(prints > 0)) line.appendChild(unpricedWarn());
 
   if (priceMenu === x) {
+    // "Marked up" used to be a chip on the line, which said whether the switch
+    // was on and never what it did. Here it is a plain two-state button with
+    // the answer beside it: turn it on and the sentence next to it changes to
+    // the number that goes on the paper.
+    line.appendChild(priceActions([
+      [x.markup ? 'Markup on' : 'Markup off', x.markup ? 'btn-on' : '', () => {
+        const prev = x.markup;
+        x.markup = !prev;
+        priceSave(() => { x.markup = prev; });
+        render();
+      }],
+    ]));
+    line.appendChild(caption('Prints at ' + moneyText(prints)));
     line.appendChild(priceDeleteRow('Delete rental', () => priceDeleteRental(bid, x)));
   }
   return line;
@@ -434,15 +451,18 @@ function buildEquipment(bid) {
   return box;
 }
 
+// A tool ON this bid. Three things can be wrong with the line and none of them
+// had a door before: the days, what a day of it is worth ON THIS JOB, and the
+// fact that it should not be on the bid at all. So the whole line opens a strip
+// with those three, and the chips underneath go back to being what they say
+// they are — facts, not half-controls.
 function buildEquipmentLine(bid, x) {
-  const line = priceLine(x.name || 'Equipment', moneyText(BidMath.equipmentLine(x)), null);
-
-  line.sub.appendChild(priceDaysChip(x.days, (v) => {
-    const prev = x.days;
-    x.days = v;
-    priceSave(() => { x.days = prev; });
+  const line = priceLine(x.name || 'Equipment', moneyText(BidMath.equipmentLine(x)), () => {
+    priceMenu = priceMenu === x ? null : x;
     render();
-  }));
+  });
+
+  line.sub.appendChild(priceFactChip(pricePlural(x.days, 'day', 'days'), 'chip-flat'));
 
   if (x.dayCents > 0) {
     line.sub.appendChild(priceFactChip(moneyText(x.dayCents) + '/day', 'chip-flat'));
@@ -450,17 +470,44 @@ function buildEquipmentLine(bid, x) {
     line.sub.appendChild(buildEquipmentRateChip(x));
   }
 
-  line.sub.appendChild(priceMoreChip(x));
-
   // The same amber a $0 rental gets. The chip above says how to fix it; this
   // says what is wrong, in the words every other unpriced line on this bid
   // uses, so one glance down the screen finds all of them.
   if (!(BidMath.equipmentLine(x) > 0)) line.appendChild(unpricedWarn());
 
   if (priceMenu === x) {
-    line.appendChild(priceDeleteRow('Delete equipment', () => priceDeleteEquipment(bid, x)));
+    line.appendChild(priceActions([
+      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Equipment') + ' — how many days?', line, (v) => {
+        const prev = x.days;
+        x.days = v;
+        priceSave(() => { x.days = prev; });
+        render();
+      })],
+      ['$/day for this bid', '', () => priceEquipmentDayRate(x)],
+      ['Remove', 'btn-danger-outline', () => priceDeleteEquipment(bid, x)],
+    ]));
   }
   return line;
+}
+
+// What a day of his own tool is worth ON THIS BID. It writes the LINE's
+// dayCents and nothing else: the tool in Settings keeps the rate every other
+// bid quotes it at. A job where the threader is the only reason he is there
+// can carry more of it than the job where it came along, and neither answer
+// should reach back through the file and change the other.
+function priceEquipmentDayRate(x) {
+  promptMoney(x.dayCents, {
+    label: (x.name || 'Equipment') + ' — a day on this bid',
+    caption: "Only this bid. The tool's rate in Settings stays.",
+    done: (cents) => {
+      // Clear means none of it, which is a real answer: a tool that rode along
+      // and is not being billed. The amber line then says so.
+      const prev = x.dayCents;
+      x.dayCents = cents === null ? 0 : cents;
+      priceSave(() => { x.dayCents = prev; });
+      render();
+    },
+  });
 }
 
 // A line carrying dayCents 0 — an older bid, or a tool whose cost never got
@@ -563,6 +610,14 @@ function priceNewTool(bid) {
     placeholder: 'What it is',
     done: (name) => {
       if (!name) return;
+      // He typed the name of a tool the list already has. That is how five
+      // Benders got in here: the picker was a wall of chips, the one he wanted
+      // was below the fold, and + New tool was easier than looking. So the
+      // list is asked first, and a name it already knows offers the one thing
+      // he was probably really after — the cost, which is the number that was
+      // wrong or missing on the old one.
+      const twin = Store.findEquipmentByName(state.data, name);
+      if (twin) { priceExistingTool(bid, twin); return; }
       promptMoney(null, {
         label: 'What does a ' + name + ' cost new?',
         done: (cents) => {
@@ -581,6 +636,36 @@ function priceNewTool(bid) {
           pricePickEquipment(bid, tool);
         },
       });
+    },
+  });
+}
+
+// + New tool, when the name is already in the list. Both answers put the tool
+// on this bid — he asked for it, and refusing to add it would leave him with
+// nothing to show for the two panels he just filled in. The question is only
+// whether the number Settings holds is still right:
+//
+//   Update it        — the cost he has in his hand now, written to the tool,
+//                      which re-figures its day rate everywhere it is offered.
+//   Use it as it is  — straight on to the days question, the same as picking
+//                      it out of the list.
+async function priceExistingTool(bid, tool) {
+  const name = tool.name || 'That tool';
+  const has = tool.costCents != null;
+  const update = await confirmPanel(
+    name + ' already exists' + (has ? ' at ' + moneyText(tool.costCents) : ' with no cost on it') + '. Update its cost?',
+    { ok: 'Update it', cancel: 'Use it as it is' }
+  );
+  if (!update) { pricePickEquipment(bid, tool); return; }
+
+  promptMoney(tool.costCents, {
+    label: 'What does a ' + name + ' cost new?',
+    done: (cents) => {
+      if (cents === null || !(cents > 0)) { pricePickEquipment(bid, tool); return; }
+      const prev = tool.costCents;
+      tool.costCents = cents;
+      if (!priceSave(() => { tool.costCents = prev; })) { render(); return; }
+      pricePickEquipment(bid, tool);
     },
   });
 }
@@ -606,6 +691,47 @@ async function priceDeleteEquipment(bid, x) {
 //
 // Every row is a field off ONE costStack call, taken at the top of the render
 // so that no two rows can be reading different versions of the same bid.
+
+// The hours he is putting on the paper, typed as hours. The cushion is then
+// whatever percentage makes those hours (BidMath.cushionForBidHours), so the
+// number he typed is the number the row comes back reading — the percentage is
+// the app's arithmetic, not his.
+//
+// Fewer hours than the job really takes is allowed. He knows what a job is
+// worth to him better than a cost stack does, and there are weeks where the
+// answer is to eat some of it to get the work. The red line under the row says
+// which way round the two numbers are, and that is the whole of the app's
+// opinion about it.
+//
+// With no labor on the bid there is nothing to divide by — every cushion makes
+// zero hours — so the question is refused rather than answered with a
+// percentage that does nothing.
+function priceBidHours(bid, stack, node) {
+  promptNumber(stack.bidHours, {
+    label: 'Bid hours',
+    // "9999" hours is four years of one man. A fifth digit is a typo.
+    maxChars: 5,
+    wasText: 'was ' + pricePlural(stack.bidHours, 'hr', 'hrs'),
+    caption: 'You figured ' + pricePlural(stack.realHours, 'hr', 'hrs') + ' of real work.',
+    done: (v) => {
+      if (v === null) return;
+      if (!(stack.realHours > 0)) {
+        showBanner('Add labor first — there are no hours to put a number on');
+        shake(node);
+        return;
+      }
+      if (!Number.isInteger(v) || v < 1) {
+        showBanner('Bid hours are whole hours, 1 or more');
+        shake(node);
+        return;
+      }
+      const prev = bid.pricing.cushionPct;
+      bid.pricing.cushionPct = BidMath.cushionForBidHours(stack.realHours, v);
+      priceSave(() => { bid.pricing.cushionPct = prev; });
+      render();
+    },
+  });
+}
 
 function priceSettingsPctRow(label, value, current, keypadLabel, what, apply) {
   const line = row(label, value, async () => {
@@ -692,23 +818,73 @@ function buildCostStack(bid, stack, markup) {
 
   box.appendChild(row('Rentals', moneyText(stack.rentalsCost)));
   box.appendChild(row('Equipment', moneyText(stack.equipmentCost)));
-  box.appendChild(row('Misc hardware', moneyText(stack.misc)));
+
+  // ONE name for this line. The walk called it "Supports, anchors, and
+  // hardware" and this screen called the same number "Misc hardware", which is
+  // how one line reads as two things and the row on this side reads as dead —
+  // it was, and now it is the same keypad the walk opens. The label is the
+  // bid's own, because it is his to edit.
+  const miscLabel = (bid.misc && bid.misc.label) || MISC_LABEL;
+  box.appendChild(row(miscLabel, moneyText(stack.misc), () => {
+    promptMoney(bid.misc.cents, {
+      label: miscLabel,
+      done: (cents) => {
+        const prev = bid.misc.cents;
+        // Clear means none of it, which is a real answer here, not a cancel —
+        // the same rule the walk's copy of this keypad follows.
+        bid.misc.cents = cents === null ? 0 : cents;
+        priceSave(() => { bid.misc.cents = prev; });
+        render();
+      },
+    });
+  }));
 
   // No cents on this row on purpose: the cushion does not cost him anything,
   // it quotes hours he hopes not to work. Its money shows up in the price
   // above, through bid hours.
+  //
+  // Two ways in, because he thinks about it both ways. Some days the answer is
+  // "put fifteen percent on it"; some days it is "I am bidding this at forty
+  // hours" and the percentage is arithmetic he should not have to do. The
+  // second one back-solves through BidMath.cushionForBidHours and can go
+  // negative — see the red line below.
   const cushionPct = bid.pricing.cushionPct != null ? bid.pricing.cushionPct : 0;
   const cushion = row('Hours cushion ' + pctText(cushionPct),
-    '+' + pricePlural(stack.bidHours - stack.realHours, 'hr', 'hrs'), () => {
-      pricePromptPct(cushionPct, 'Hours cushion %, this bid', cushion, (v) => {
-        const prev = bid.pricing.cushionPct;
-        bid.pricing.cushionPct = v;
-        priceSave(() => { bid.pricing.cushionPct = prev; });
-        render();
-      });
+    numText(stack.bidHours) + ' bid hrs', () => {
+      priceHoursMenu = !priceHoursMenu;
+      render();
     });
   box.appendChild(cushion);
-  box.appendChild(caption('Hours you quote but hope not to work. This bid only.'));
+
+  if (priceHoursMenu) {
+    box.appendChild(priceActions([
+      ['Cushion for this bid', '', () => {
+        pricePromptPct(cushionPct, 'Hours cushion %, this bid', cushion, (v) => {
+          const prev = bid.pricing.cushionPct;
+          bid.pricing.cushionPct = v;
+          priceSave(() => { bid.pricing.cushionPct = prev; });
+          render();
+        });
+      }],
+      ['Bid hours', '', () => priceBidHours(bid, stack, cushion)],
+    ]));
+  }
+
+  // A cushion below zero is not hours he hopes not to work, it is hours he is
+  // taking off the job, and the usual sentence would be describing the
+  // opposite of what the row says.
+  box.appendChild(caption((cushionPct < 0
+    ? 'Hours you are taking off the job. You figured '
+    : 'Hours you quote but hope not to work. You figured ')
+    + pricePlural(stack.realHours, 'hr', 'hrs') + '. This bid only.'));
+
+  // Not a warning about a mistake — he may well have meant it, and the app
+  // does not argue with him about his own price. It is the sentence that makes
+  // sure he knows which way round the two numbers are.
+  if (stack.bidHours < stack.realHours) {
+    box.appendChild(priceNote("You'd be selling " + numText(stack.bidHours)
+      + ' hours for work you figured at ' + numText(stack.realHours) + '.', true));
+  }
 
   box.appendChild(priceSettingsPctRow(
     'Overhead ' + pctText(s.overheadPct), moneyText(stack.overhead),

@@ -350,6 +350,9 @@
     .btn-danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
     .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
     .btn-block { display: block; width: 100%; text-align: center; }
+    /* A two-state button that is ON. Not a primary action — pressing it turns
+       the thing OFF — so it wears the accent as a state, not as a promise. */
+    .btn-on { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
     /* A button that is off is off: a live-looking control that does nothing is
        worse than a dim one that explains itself in the caption underneath. */
     .btn:disabled { opacity: .45; cursor: default; }
@@ -917,8 +920,11 @@
     .price-line-name { font-weight: 700; min-width: 0; }
     .price-line-value { font-weight: 700; white-space: nowrap; }
     .price-line-sub { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 4px; }
-    .price-line-actions { display: flex; margin-top: var(--space-1); }
-    .price-line-actions .btn { flex: 1; min-height: 48px; }
+    /* Wraps, because "$/day for this bid" and two more will not sit on one
+       390px line and a button squeezed to four characters is a button he
+       cannot read. Same shape as the Settings strip. */
+    .price-line-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+    .price-line-actions .btn { flex: 1 1 40%; min-height: 48px; padding: 0 12px; }
 
     /* The tool picker's chips, shared with the walk's rental/equipment sheet. */
     .equip-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
