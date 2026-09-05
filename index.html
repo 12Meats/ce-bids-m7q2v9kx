@@ -348,6 +348,8 @@
       background: transparent;
     }
 
+    /* The second and last red control in the app — see .btn-danger for the
+       whole rule. Inside a keypad panel and nowhere else. */
     .key-back {
       color: var(--color-danger);
       font-size: 1.4rem;
@@ -366,9 +368,20 @@
     }
     .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
     .btn-confirm { background: var(--color-confirm); border-color: var(--color-confirm); color: #fff; }
-    /* The ONLY red control in the app, and it exists in exactly one place: the
-       primary button on a confirm panel, beside the sentence naming what is
-       about to go. Nothing on a screen is red — see .link-btn-quiet. */
+    /* THE RED RULE, IN FULL.
+       A warning is AMBER — --color-warn-*, the colour of the nudge bands, the
+       inline warnings and .caption-warn. A warning is a thing he should look
+       at, not a thing that has gone wrong, and a screen that shouts in red at
+       a two-week-old backup teaches him to stop reading red.
+       RED PAINTS A CONTROL IN EXACTLY TWO PLACES, and tests/ui.test.js scans
+       this stylesheet to keep it at two:
+         1. .btn-danger — the primary button on a confirm panel, beside the
+            sentence naming what is about to go. A colour asking a question.
+         2. .key-back — the ⌫ key inside a keypad panel, where red is the
+            keyboard convention for the key that takes a digit back and there
+            is nothing else on the panel it could be confused with.
+       Everything else that takes something away wears .link-btn-quiet: muted
+       text, no outline, last in its strip. */
     .btn-danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
     /* A real second choice: "Split into tasks" beside "Next: Costs & price",
        where two identical grey blocks used to read as two ways forward. */
@@ -451,9 +464,10 @@
     }
 
     /* The same line when what it says is a problem: how long it has been since
-       the last backup, past the point where that is news. Red and bold, so it
-       stops being furniture. */
-    .caption-danger { color: var(--color-danger); font-weight: 700; }
+       the last backup, past the point where that is news. AMBER and bold, so it
+       stops being furniture without pretending something has broken — see
+       .btn-danger for why red is not available to it. */
+    .caption-warn { color: var(--color-warn-text); font-weight: 700; }
 
     /* The build stamp at the very bottom of Settings. Centered and quiet: it is
        reference, not something to read on the way past. */
@@ -547,6 +561,16 @@
     }
     .row:last-child { border-bottom: none; }
     .row-label { color: var(--color-text-muted); }
+    /* The walk's two-line row, on a settings row: the name on top, what it is
+       under it. Only drawn when a caller asks for one (row's opts.sub), so
+       every other row in the app keeps its single flex line — and inside it
+       the label takes .walk-row-name's shape rather than a plain row label's,
+       because a muted name over a muted sub is one grey block, not two lines.
+       Both are display:block: as inline spans they ran together into
+       "3/4" hubBoxes & fittings". */
+    .row-text { flex: 1; min-width: 0; }
+    .row-text > .row-label { display: block; color: var(--color-text); font-weight: 700; }
+    .row-sub { display: block; margin-top: 2px; font-size: 0.9rem; color: var(--color-text-muted); }
     .row-value { font-weight: 700; text-align: right; }
     /* A value too long to sit beside its label: "Send it to" and a real work
        email came to more than the row was wide, and the label wrapped to two
@@ -660,6 +684,14 @@
     .attached-strip-btns .btn { flex: 1 1 auto; min-height: 48px; padding: 0 12px; font-size: 0.95rem; }
     /* Backing out of a menu is not a destructive act and must not wear the
        colour of one: a text button, not an outlined red one. */
+    /* A strip whose only action is the quiet one is two muted lines stacked:
+       "Delete" over "Cancel", same colour, same weight, and nothing saying
+       they are two different answers. The hairline says it. */
+    .strip-rule {
+      height: 1px;
+      margin-top: var(--space-2);
+      background: var(--color-border);
+    }
     .attached-strip .attached-strip-cancel {
       width: auto;
       min-height: 48px;
@@ -818,11 +850,10 @@
       border: 1px solid var(--color-warn-border);
       color: var(--color-warn-text);
     }
-    .nudge-danger {
-      background: rgba(185, 28, 28, 0.1);
-      border-color: var(--color-danger);
-      color: var(--color-danger);
-    }
+    /* There is no red nudge. A band on the home screen is a warning — a bid
+       nobody answered, a phone with no backup — and warnings are amber here.
+       Full red on the first screen of the app was the loudest thing in it,
+       said on the day he installed it, about something he had not done yet. */
     .nudge:active { filter: brightness(0.96); }
     /* The band is a toggle, so it has to look pressed while its filter is on. */
     .nudge-on { box-shadow: inset 0 0 0 2px currentColor; }
@@ -999,9 +1030,19 @@
        is asking a question instead of waiting to be pressed. */
     .link-btn.link-btn-quiet {
       color: var(--color-text-muted);
-      font-weight: 600;
+      /* Never lighter than the Cancel under it. At 600 beside a 700 Cancel the
+         only real action in a strip read as the caption of the one that backs
+         out of it — quiet is a COLOUR here, not a weight. */
+      font-weight: 700;
     }
-    .link-btn.link-btn-quiet:active { color: var(--color-danger); }
+    /* Pressed, it goes to body colour. It used to go red, which put a third
+       red control in a stylesheet whose rule is two. */
+    .link-btn.link-btn-quiet:active { color: var(--color-text); }
+    /* The same quiet link on a dark ground — the photo viewer, which is #0f172a
+       edge to edge. --color-text-muted is #475569 and lands at 2.4:1 on it,
+       which is not a visible button, it is a rumour of one. #cbd5e1 is 13:1. */
+    .link-btn.link-btn-quiet.on-dark { color: #cbd5e1; }
+    .link-btn.link-btn-quiet.on-dark:active { color: #ffffff; }
     /* A side trip out of a strip that is not one of the row's own edits, and
        not destructive either: "Check price" opens a search in another tab. */
     .link-btn.link-btn-strip { color: var(--color-accent); }
@@ -1869,6 +1910,19 @@
     <section id="screen-settings" class="screen" hidden>
       <!-- Filled entirely by screens/settings.js. -->
       <div id="settingsContent" class="screen-content"></div>
+    </section>
+
+    <!-- ---------- Rates and Company -- Task H fix round ----------
+         Two more sub-screens off the index, for the reason the libraries got
+         theirs: thirteen numbers and eleven company fields are two cards he
+         opens a few times a year, and laid flat on the index they were most of
+         the scroll between Crew and Backup. Filled by screens/settings.js. -->
+    <section id="screen-settings-rates" class="screen" hidden>
+      <div id="settingsRatesContent" class="screen-content"></div>
+    </section>
+
+    <section id="screen-settings-company" class="screen" hidden>
+      <div id="settingsCompanyContent" class="screen-content"></div>
     </section>
 
     <!-- ---------- The three libraries -- Task H ----------

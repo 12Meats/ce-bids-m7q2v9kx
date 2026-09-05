@@ -689,9 +689,105 @@ test('the red class exists once, for the confirm panel, and has no outline twin'
   const html = readSrc('index.html');
   assert.equal(html.includes('btn-danger-outline'), false,
     '.btn-danger-outline has no users left and must not come back');
-  assert.equal(html.split('.btn-danger').length - 1, 1, 'one .btn-danger rule');
+  // The class is DECLARED once. The name also turns up in the comment block
+  // above it that spells the rule out, so the count is of rules and not of the
+  // string: a selector, then a brace.
+  assert.equal((html.match(/\.btn-danger\s*\{/g) || []).length, 1, 'one .btn-danger rule');
   // app.js is the only file that puts it on anything, and only on the confirm.
   const app = readSrc('app.js');
   assert.equal((app.match(/btn-danger/g) || []).length, 1);
   assert.match(app, /opts\.danger \? 'btn-danger' : 'btn-primary'/);
+});
+
+// ---------------------------------------------------------------------------
+// THE DANGER TOKEN, SCANNED
+// ---------------------------------------------------------------------------
+// The grep above only catches somebody reaching for the CLASS. The way red
+// really comes back is somebody reaching for the COLOUR: a new rule with
+// `color: var(--color-danger)` in it, on a warning band or a caption or a
+// delete link, and the app is loud again one selector at a time. So this
+// reads the stylesheet the way a browser does and asks which selectors end up
+// painting with that token, in any of the three spellings it has in this file.
+//
+// Two lists, because red does two different jobs here and only one of them is
+// negotiable:
+//
+//   CONTROLS  — a thing under his thumb. Exactly two, and that is the rule:
+//               the primary button on a confirm panel, where the colour is
+//               asking a question, and the ⌫ key inside a keypad panel, where
+//               red is the keyboard's own convention for the key that takes a
+//               digit back. A THIRD ONE IS A BUG. Warnings are amber.
+//   MARKS     — a status painted on the glass, never pressed: a Lost pill, a
+//               field that was refused, dots that shook, a bar past its
+//               budget, a number under the floor. Red is the right word for
+//               "this went wrong" and none of these is a thing to press.
+//
+// Anything in NEITHER list fails, which is the point: the test does not care
+// whether the new rule is a good idea, it cares that nobody adds one quietly.
+const RED_CONTROLS = ['.btn-danger', '.key-back'];
+const RED_MARKS = [
+  '.banner-danger',
+  '.bar-over',
+  '.panel-digits.shake',
+  '.pill-lost',
+  '.pin-dots.shake .dot',
+  '.price-note-bad',
+  '.rep-bad .row-value',
+  'input.field-invalid',
+];
+
+// Every selector in index.html's inline stylesheet whose own body paints with
+// the danger red. Comments go first (they quote the token while explaining the
+// rule), then :root, which is where the token is DEFINED rather than used.
+function dangerSelectors(html) {
+  const style = html.slice(html.indexOf('<style>') + 7, html.indexOf('</style>'));
+  const css = style.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found = new Set();
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(css)) !== null) {
+    const selector = m[1].trim().replace(/\s+/g, ' ');
+    const body = m[2];
+    // The declaration of the custom property is not a use of it.
+    const uses = /var\(\s*--color-danger\s*\)/.test(body)
+      || /#b91c1c/i.test(body)
+      || /rgba?\(\s*185\s*,\s*28\s*,\s*28\s*[,)]/.test(body);
+    if (!uses) continue;
+    if (selector === ':root' || selector.startsWith('@')) continue;
+    found.add(selector);
+  }
+  return [...found].sort();
+}
+
+test('red paints exactly two controls, and every other red selector is a known mark', () => {
+  const found = dangerSelectors(readSrc('index.html'));
+  const allowed = RED_CONTROLS.concat(RED_MARKS).sort();
+  const strangers = found.filter((sel) => allowed.indexOf(sel) === -1);
+  assert.deepStrictEqual(strangers, [],
+    'new red selector — a warning is amber, see .btn-danger in index.html: ' + strangers.join(', '));
+  // And the other direction, so a rule that gets deleted takes its allowance
+  // with it rather than leaving a hole the next one can slip through.
+  const gone = allowed.filter((sel) => found.indexOf(sel) === -1);
+  assert.deepStrictEqual(gone, [], 'allow-listed red that no longer exists: ' + gone.join(', '));
+});
+
+test('the two red controls are the confirm primary and the keypad backspace', () => {
+  const found = dangerSelectors(readSrc('index.html'));
+  const controls = found.filter((sel) => RED_MARKS.indexOf(sel) === -1);
+  assert.deepStrictEqual(controls, RED_CONTROLS.slice().sort(),
+    'red belongs to the confirm panel primary and the keypad backspace, nothing else');
+});
+
+// The two that had it and gave it back. Named rather than counted, so the fix
+// cannot be undone by somebody who reads the rule and disagrees with it.
+test('the home nudge and the backup caption are amber, not red', () => {
+  const html = readSrc('index.html');
+  assert.equal(html.includes('.nudge-danger'), false,
+    'a nudge band is a warning and warnings are amber');
+  assert.equal(html.includes('.caption-danger'), false,
+    '.caption-danger is .caption-warn now');
+  assert.match(html, /\.caption-warn \{ color: var\(--color-warn-text\)/);
+  const bids = readSrc('screens/bids.js');
+  assert.equal(/nudgeBand\([^)]*'danger'/.test(bids), false,
+    'no screen asks for a red band');
 });

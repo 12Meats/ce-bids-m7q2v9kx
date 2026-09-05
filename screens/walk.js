@@ -1012,7 +1012,11 @@ function buildPhotoView(area, id) {
   const actions = document.createElement('div');
   actions.className = 'walk-photo-actions';
   actions.appendChild(textButton('Close', 'btn', () => { walkPhotoOpenId = null; render(); }));
-  actions.appendChild(textButton('Delete', 'link-btn link-btn-quiet', () => walkDeletePhoto(area, id)));
+  // .on-dark, because this is the one place a quiet link sits on the navy:
+  // the muted grey every other screen uses is 2.4:1 against #0f172a, which is
+  // a Delete he cannot see until he already knows it is there.
+  actions.appendChild(textButton('Delete', 'link-btn link-btn-quiet on-dark',
+    () => walkDeletePhoto(area, id)));
   wrap.appendChild(actions);
   return wrap;
 }

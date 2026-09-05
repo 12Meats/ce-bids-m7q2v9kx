@@ -176,7 +176,23 @@ function row(label, value, onTap, opts) {
   // A blank value would collapse the line and leave nothing to aim at.
   v.textContent = (value === null || value === undefined || value === '') ? '—' : String(value);
 
-  node.appendChild(l);
+  // opts.sub: the walk's muted second line, for a fact ABOUT the thing rather
+  // than the thing's own value — which drawer a part came out of, when a
+  // search is crossing all six of them. The value slot is left alone: what a
+  // part is counted in belongs on the right, where every other row's answer
+  // is, and a category shoved in beside it made one slot say two things.
+  if (opts && opts.sub) {
+    const text = document.createElement('span');
+    text.className = 'row-text';
+    const sub = document.createElement('span');
+    sub.className = 'row-sub';
+    sub.textContent = String(opts.sub);
+    text.appendChild(l);
+    text.appendChild(sub);
+    node.appendChild(text);
+  } else {
+    node.appendChild(l);
+  }
   node.appendChild(v);
   if (onTap && !(opts && (opts.keypad || opts.strip))) node.appendChild(chevron());
   return node;
@@ -320,11 +336,26 @@ function attachedStrip(parentRowEl, buttons, opts) {
   all.filter((b) => b.link && !b.quiet).forEach((b) => {
     wrap.appendChild(b.node || textButton(b.label, 'link-btn link-btn-strip', b.onTap));
   });
-  all.filter((b) => b.quiet).forEach((b) => {
+  const quiet = all.filter((b) => b.quiet);
+  quiet.forEach((b) => {
     wrap.appendChild(b.node || textButton(b.label, 'link-btn link-btn-quiet', b.onTap));
   });
 
+  // A strip with buttons in it already separates the quiet line from the
+  // Cancel under it — there is a row of blocks above them saying which part of
+  // the strip is which. A strip whose ONLY action is quiet has no such row:
+  // "Delete" and "Cancel" are two muted left-aligned lines of the same size,
+  // and the first of them stops reading as a thing to press at all. A hairline
+  // is the whole fix, and it costs one pixel.
+  const lonely = quiet.length > 0 && list.length === 0
+    && all.filter((b) => b.link && !b.quiet).length === 0;
+
   if (typeof o.cancel === 'function') {
+    if (lonely) {
+      const rule = document.createElement('div');
+      rule.className = 'strip-rule';
+      wrap.appendChild(rule);
+    }
     // Whatever was tracked before is replaced: two strips are never open at
     // once, and the second one drawn is the one on the glass.
     currentStrip = o.cancel;

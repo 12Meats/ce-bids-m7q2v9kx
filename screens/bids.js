@@ -82,7 +82,7 @@ function buildNudges() {
   // Two different holes, and having one is no reason to stop saying the other:
   // filing a proposal to Files does nothing for a phone that has never been
   // backed up. A fresh install has nothing to back up, though — opening the
-  // app for the first time to a red warning teaches him to ignore red warnings.
+  // app for the first time to a warning band teaches him to ignore them.
   if (backupAge === null && state.data.bids.length > 0) parts.push('no backup yet');
   if (backupAge !== null && backupAge > NUDGE_DAYS) parts.push(`last backup ${backupAge} days ago`);
   if (parts.length) {
@@ -94,7 +94,10 @@ function buildNudges() {
     const tail = backupAge === null || backupAge > NUDGE_DAYS
       ? ' Tap here to send one.'
       : ' Tap here to file them.';
-    wrap.appendChild(nudgeBand(sentence + '.' + tail, 'danger', () => show('settings')));
+    // 'warn', like the band above it. Both bands say the same KIND of thing —
+    // something you have not done yet — and this one was full red on the first
+    // screen of the app, which is where he learns what red means here.
+    wrap.appendChild(nudgeBand(sentence + '.' + tail, 'warn', () => show('settings')));
   }
 
   return wrap;

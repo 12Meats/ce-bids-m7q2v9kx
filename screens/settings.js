@@ -396,10 +396,15 @@ function settingsPromptText(current, label, placeholder, node, opts, apply) {
 }
 
 // ---------------------------------------------------------------------------
-// COMPANY
+// COMPANY — its own screen
 // ---------------------------------------------------------------------------
-// What prints across the top of every proposal, and the signature at the
-// bottom. None of it touches a number, so none of it asks a question first.
+// What prints across the top of every proposal, the signature at the bottom,
+// how the paper looks, what it says about tax, and where "Check price" goes.
+// None of it touches a number, so none of it asks a question first.
+//
+// Eleven rows he typed once, on the day the app was installed, sitting between
+// two lists he edits every month. It is a door on the index now, for the same
+// reason the three libraries got theirs.
 
 const SETTINGS_COMPANY_FIELDS = [
   ['name', 'Company', 'Cantu Electric LLC', true],
@@ -469,26 +474,73 @@ function buildSetCompany() {
   // document (an older backup has no such field), so the row falls back to the
   // default rather than showing a blank.
   const priceRow = settingRow(box, 'Supply house search',
-    (co.priceSearchUrl || PRICE_SEARCH_DEFAULT) === PRICE_SEARCH_DEFAULT ? 'Google Shopping' : 'Your own link',
-    () => {
-      settingsPromptText(co.priceSearchUrl || PRICE_SEARCH_DEFAULT, 'Supply house search',
-        PRICE_SEARCH_DEFAULT, priceRow, {
-          required: true,
-          // The one line that has to be in front of him while he is typing it:
-          // a link pasted off his phone is a link with a search already on the
-          // end of it, and {q} is the only thing this app needs him to know.
-          caption: 'Put {q} where the part name goes. Ask Adrian for your supply house\'s link.',
-        }, (text) => {
-          const prev = co.priceSearchUrl;
-          co.priceSearchUrl = text;
-          settingsSaveAndRender(() => {
-            if (prev === undefined) delete co.priceSearchUrl; else co.priceSearchUrl = prev;
-          });
-        });
-    },
+    settingsPriceSearchIsDefault(co) ? 'Google Shopping' : 'Your own link',
+    () => settingsEditPriceSearch(priceRow),
     'Where "Check price" on a part sends you. It opens in another tab.');
 
+  // THE WAY BACK. A link pasted wrong, or a supply house he stopped using,
+  // used to leave him retyping Google's own search URL out of memory to undo
+  // it. Quiet, and only on the card when there is something to undo.
+  if (!settingsPriceSearchIsDefault(co)) {
+    box.appendChild(textButton('Use Google Shopping', 'link-btn link-btn-quiet', () => {
+      const prev = co.priceSearchUrl;
+      co.priceSearchUrl = PRICE_SEARCH_DEFAULT;
+      settingsSaveAndRender(() => {
+        if (prev === undefined) delete co.priceSearchUrl; else co.priceSearchUrl = prev;
+      });
+    }));
+  }
+
   return box;
+}
+
+function settingsPriceSearchIsDefault(co) {
+  const raw = co && typeof co.priceSearchUrl === 'string' ? co.priceSearchUrl.trim() : '';
+  return raw === '' || raw === PRICE_SEARCH_DEFAULT;
+}
+
+// A TEMPLATE THAT IS NOT A LINK IS NOT SAVED.
+//
+// This string is handed to window.open. Anything he can paste off a phone that
+// is not http(s) — a bare "supplyhouse.com", a stray "javascript:", the search
+// TERM instead of the search page — either opens nothing at all or opens
+// something this app has no business opening, and either way the failure turns
+// up days later as a part row that quietly does nothing when it is tapped. So
+// the prompt refuses it and comes straight back with the reason in its own
+// LABEL: the text panel sits over the banner area, so a banner fired from in
+// here is a banner nobody ever sees. Same shape as settingsAskWage.
+//
+// priceSearchUrl() still falls back when {q} is missing — a link without one
+// gets the part name put on the end — so a missing placeholder is a shrug and
+// not a refusal. It is the scheme, and only the scheme, that is a hard no.
+function settingsEditPriceSearch(node, again) {
+  const co = setS().company;
+  settingsPromptText(co.priceSearchUrl || PRICE_SEARCH_DEFAULT,
+    'Supply house search' + (again ? '. It has to start with https://' : ''),
+    PRICE_SEARCH_DEFAULT, node, {
+      required: true,
+      // The one line that has to be in front of him while he is typing it:
+      // a link pasted off his phone is a link with a search already on the
+      // end of it, and {q} is the only thing this app needs him to know.
+      caption: 'Put {q} where the part name goes. Ask Adrian for your supply house\'s link.',
+    }, (text) => {
+      if (!/^https?:\/\//i.test(text)) { settingsEditPriceSearch(node, true); return; }
+      const prev = co.priceSearchUrl;
+      co.priceSearchUrl = text;
+      settingsSaveAndRender(() => {
+        if (prev === undefined) delete co.priceSearchUrl; else co.priceSearchUrl = prev;
+      });
+    });
+}
+
+// Coming into the Company screen is coming into it clean, the way Settings
+// itself does: nothing this screen opens survives a trip out of it.
+function enterSettingsCompany() { settingsMenu = null; }
+
+function renderSettingsCompany() {
+  const host = el('settingsCompanyContent');
+  host.textContent = '';
+  host.appendChild(buildSetCompany());
 }
 
 // ---------------------------------------------------------------------------
@@ -612,12 +664,18 @@ function settingsAskWage(name, again) {
 }
 
 // ---------------------------------------------------------------------------
-// RATES
+// RATES — its own screen
 // ---------------------------------------------------------------------------
 // Every row here carries its reach in its caption, in his words, and since the
 // snapshot rule landed there is only one reach left to carry: NEW BIDS ONLY.
 // Nothing on this card moves a bid that already exists. See the header comment
 // for how each claim was checked against costStack and Store.newBid.
+//
+// Thirteen numbers is a screen, not a card. Sitting on the index it was the
+// single longest thing on it and the one he scrolled past most, because the
+// number he comes here to change is one of thirteen and he had to read all of
+// them on the way to anything else. A door with the labour rate written on it
+// answers the only question he asks before opening it.
 
 function buildSetRates() {
   const s = setS();
@@ -719,6 +777,15 @@ function buildSetRates() {
   return box;
 }
 
+// Coming into Rates is coming into it clean, the way Settings itself does.
+function enterSettingsRates() { settingsMenu = null; }
+
+function renderSettingsRates() {
+  const host = el('settingsRatesContent');
+  host.textContent = '';
+  host.appendChild(buildSetRates());
+}
+
 // The seven plain percentages. Every one of them is copied onto a new bid and
 // reaches no further, so none of them asks anything first.
 function settingsPctRow(box, s, key, label, captionText) {
@@ -770,7 +837,7 @@ function renderSettingsEquipment() {
 
 function buildSetEquipment() {
   const s = setS();
-  const box = card('Your tools');
+  const box = card('Equipment');
   const hidden = s.equipment.filter((e) => e.hidden);
   const list = s.equipment.filter((e) => !e.hidden || settingsShowHidden.equipment);
 
@@ -915,9 +982,11 @@ function settingsAskToolCost(name, again) {
 // Both of these lists tripled in v2.1 — nineteen did-you-forget rows and
 // fourteen note phrases — and laid flat they are 2,800px of a 6,500px screen,
 // which is nearly half of Settings spent on two lists he edits twice a year.
-// Six is what the walk shows of the same list, and for the same reason: the
-// ones he forgets most are at the top, and the rest are one tap away.
-const SETTINGS_LIST_FOLD = 6;
+// THREE, not six. Settings is an index now, and an index is a list of doors:
+// three rows is enough to say what KIND of thing is behind this one, which is
+// all a row on an index has to do. "Show all 19" is one tap away, and the walk
+// still reads the whole list top to bottom either way.
+const SETTINGS_LIST_FOLD = 3;
 
 function settingsListFoldToggle(box, listName, total) {
   if (total <= SETTINGS_LIST_FOLD) return;
@@ -1058,7 +1127,7 @@ function settingsStandardButton(box, label, what, apply, list, restore, after) {
 
 function buildSetForget() {
   const s = setS();
-  const box = card('Did you forget');
+  const box = card('Anything missing');
   if (s.forgetList.length === 0) {
     box.appendChild(emptyNote('Nothing on the list.'));
   } else {
@@ -1073,7 +1142,7 @@ function buildSetForget() {
     settingsListFoldToggle(box, 'forgetList', s.forgetList.length);
   }
   box.appendChild(textButton('+ Item', 'btn btn-block mt-3',
-    () => settingsAddString('forgetList', 'Did you forget', 'Permits', false)));
+    () => settingsAddString('forgetList', 'Anything missing', 'Permits', false)));
   settingsStandardButton(box, 'Add the standard list', 'rows',
     (d) => Store.addStandardForget(d), s.forgetList, (before) => { setS().forgetList = before; });
   box.appendChild(caption('The walk asks you about these, in this order. Put what you forget most at the top.'));
@@ -1305,10 +1374,21 @@ function settingsCatalogBackStep(peek) {
     if (!peek) { settingsNewPart = null; render(); }
     return true;
   }
-  if (settingsCategory || settingsCatalogSearch.trim() !== '') {
+  // ONE BACK IS ONE STEP. Opening a drawer pushes a history entry and so does
+  // starting a search inside it, so a back that undid both spent two entries
+  // on one screen change and the NEXT press had nothing left to do — it looked
+  // swallowed. Search first, because it is the thing he did last.
+  if (settingsCatalogSearch.trim() !== '') {
+    if (!peek) {
+      settingsCatalogSearch = '';
+      settingsMenu = null;
+      render();
+    }
+    return true;
+  }
+  if (settingsCategory) {
     if (!peek) {
       settingsCategory = null;
-      settingsCatalogSearch = '';
       settingsMenu = null;
       render();
     }
@@ -1442,9 +1522,14 @@ function buildSetCatalogTools(hiddenCount) {
 function buildSetCatalogRow(box, p, searching) {
   const key = 'part:' + p.id;
   const unit = p.unit || '—';
-  const line = settingRow(box, p.name || 'Part',
-    searching ? catalogCategoryLabel(p.category) + ' · ' + unit : unit,
-    () => settingsToggleMenu(key), null, { strip: true });
+  // The unit stays in the value slot, where every other row in this app puts
+  // its answer, and the drawer goes on the walk's muted sub-line under the
+  // name. "Fittings · ea" in one slot made the row say two different kinds of
+  // thing in the same breath, and the one he was reading for — how it is
+  // counted — was the half at the end.
+  const line = settingRow(box, p.name || 'Part', unit,
+    () => settingsToggleMenu(key), null,
+    { strip: true, sub: searching ? catalogCategoryLabel(p.category) : null });
   if (p.hidden) line.classList.add('set-hidden');
 
   if (!settingsMenuOpen(key)) return;
@@ -1613,24 +1698,29 @@ function buildSetLock() {
 }
 
 // ---------------------------------------------------------------------------
-// LIBRARIES
+// THE DOORS ON THE INDEX
 // ---------------------------------------------------------------------------
-// The three lists that got big. Two hundred parts, thirty tools and
-// twenty-seven clauses used to be three cards on this screen, which is what
-// turned Settings into a scroll he had to hunt down — the jump strip at the
-// top was a patch over exactly that, and it is gone with them.
+// Five screens reached from rows here: the three libraries that got big, the
+// thirteen rates, and the company. All five used to be cards laid out flat on
+// this screen, which is what turned Settings into a scroll he had to hunt down
+// — the jump strip at the top was a patch over exactly that, and it went with
+// them.
 //
-// Three rows, three screens. The count is on the row because it is the answer
-// to the only question he asks before tapping one: is anything in there.
+// A row, a screen. The value on the right is the answer to the only question
+// he asks before tapping one: what is behind this, and is it still right.
 
 function settingsCountText(n, one, many) {
   return n + ' ' + (n === 1 ? one : many);
 }
 
-function buildSetLibraries() {
+function buildSetDoors() {
   const s = setS();
-  const box = card('Libraries');
+  const box = card();
 
+  // Rates leads them: it is the only one of the four he opens to change a
+  // number rather than to look something up, and the rate on the right is the
+  // answer to "is this still what I am charging?" without opening anything.
+  box.appendChild(row('Rates', moneyText(s.rateCents) + '/hr', () => show('settings-rates')));
   box.appendChild(row('Parts catalog',
     settingsCountText(state.data.catalog.filter((p) => !p.hidden).length, 'part', 'parts'),
     () => show('settings-catalog')));
@@ -1641,8 +1731,20 @@ function buildSetLibraries() {
     settingsCountText(s.clauses.filter((c) => !c.hidden).length, 'clause', 'clauses'),
     () => show('settings-terms')));
 
-  box.appendChild(caption('The parts you count on a walk, the tools you own, and the terms that go '
-    + 'on the back of a proposal.'));
+  box.appendChild(caption('Your numbers, the parts you count on a walk, the tools you own, and the '
+    + 'terms that go on the back of a proposal.'));
+  return box;
+}
+
+// The company door, on its own down between the two lists and the PIN. What is
+// behind it was typed once and is read off the paper, not off this screen, so
+// the row says who the paper is from and nothing else.
+function buildSetCompanyDoor() {
+  const co = setS().company;
+  const box = card();
+  box.appendChild(row('Company', co.name, () => show('settings-company')));
+  box.appendChild(caption('What prints at the top of a proposal, how it looks, what it says about '
+    + 'tax, and where "Check price" goes.'));
   return box;
 }
 
@@ -2154,11 +2256,11 @@ function settingsBackupAgeLine() {
   const age = daysSince(s.lastBackupAt);
   if (!s.lastBackupAt || age === null) {
     p.textContent = 'No backup yet';
-    p.classList.add('caption-danger');
+    p.classList.add('caption-warn');
     return p;
   }
   p.textContent = 'Last backup: ' + fmtDate(s.lastBackupAt) + ' (' + settingsAgeWords(age) + ')';
-  if (age > SET_BACKUP_STALE_DAYS) p.classList.add('caption-danger');
+  if (age > SET_BACKUP_STALE_DAYS) p.classList.add('caption-warn');
   return p;
 }
 
@@ -2265,10 +2367,12 @@ function buildSetBackup() {
     if (f) settingsRestoreFrom(f);
   });
   box.appendChild(picker);
-  // Muted, and not red: it is the rarest thing on this card and the only one
-  // that replaces what is on the phone, so it reads as the small door in the
-  // corner rather than as the alarm. The confirm it opens carries the colour.
-  box.appendChild(textButton('Restore from backup', 'link-btn link-btn-quiet', () => picker.click()));
+  // A real button, outlined and neutral. It is not red, because it is not
+  // destructive from where he is standing: he taps it on the worst day this
+  // app has, with a new phone in his hand and a year of bids to get back, and
+  // a quiet grey line under the send button is not what a recovery looks
+  // like. The confirm it opens is what asks about the replacing.
+  box.appendChild(textButton('Restore from backup', 'btn btn-block mt-3', () => picker.click()));
 
   // One caption on this card is the date at the top of it - the answer to the
   // only question he opens it with. The rest of the explaining folds.
@@ -2339,24 +2443,24 @@ function settingsSaveAndRender(revert) {
 // RENDER
 // ---------------------------------------------------------------------------
 
-// Card order is how often he touches it, not how the file is organized. Crew,
-// rates and the three libraries change with the week; the company address and
-// the PIN were typed once and are not worth a scroll past every time. The
-// sections in the file itself stay in their old order so the diff stays
-// readable.
+// SETTINGS IS AN INDEX. It is a list of doors and the four things short enough
+// to answer in place — the crew and their wages, the next bid number, and the
+// two plain lists folded to three rows each. Everything long is behind a row:
+// the rates, the three libraries, the company. Laid flat this screen was six
+// and a half thousand pixels, and the jump strip that used to sit over it was
+// an index over an index. Both are gone.
 //
-// The jump strip that used to sit over this list is gone. It was an index over
-// an index, and it only ever existed because the parts catalog, the equipment
-// and the terms library were three long cards buried in here. They are three
-// rows and three screens now, so there is nothing left to jump past.
+// Order is how often he touches it, not how the file is organized: the crew
+// and the rates change with the week, the company address and the PIN were
+// typed once. The sections in the file itself stay in their old order so the
+// diff stays readable.
 const SETTINGS_CARDS = [
   ['set-crew', () => buildSetCrew()],
-  ['set-rates', () => buildSetRates()],
-  ['set-libraries', () => buildSetLibraries()],
+  ['set-doors', () => buildSetDoors()],
   ['set-counter', () => buildSetCounter()],
   ['set-forget', () => buildSetForget()],
   ['set-notes', () => buildSetNotePhrases()],
-  ['set-company', () => buildSetCompany()],
+  ['set-company', () => buildSetCompanyDoor()],
   ['set-lock', () => buildSetLock()],
   ['set-reports', () => buildSetReports()],
   ['set-backup', () => buildSetBackup()],
@@ -2394,10 +2498,21 @@ registerScreen('settings', {
   enter: enterSettings, render: renderSettings,
 });
 
-// The three libraries. Each one is a screen in its own right — its own history
-// entry, its own Back to Settings, the Settings tab still lit underneath — so
-// the phone's back gesture and the button at the top do the same thing, and
-// coming back lands on the index rather than on a card halfway down it.
+// The five screens the index's rows open. Each one is a screen in its own
+// right — its own history entry, its own Back to Settings, the Settings tab
+// still lit underneath — so the phone's back gesture and the button at the top
+// do the same thing, and coming back lands on the index rather than on a card
+// halfway down it.
+registerScreen('settings-rates', {
+  id: 'screen-settings-rates', title: 'Rates', back: 'settings', tab: 'settings',
+  enter: enterSettingsRates, render: renderSettingsRates,
+});
+
+registerScreen('settings-company', {
+  id: 'screen-settings-company', title: 'Company', back: 'settings', tab: 'settings',
+  enter: enterSettingsCompany, render: renderSettingsCompany,
+});
+
 registerScreen('settings-catalog', {
   id: 'screen-settings-catalog', title: 'Parts catalog', back: 'settings', tab: 'settings',
   enter: enterSettingsCatalog, backStep: settingsCatalogBackStep, render: renderSettingsCatalog,
