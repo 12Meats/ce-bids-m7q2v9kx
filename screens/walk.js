@@ -244,7 +244,13 @@ function renderWalkAreas(bid, edit, host) {
 
   if (areas.length === 0) {
     const box = card('Areas');
-    box.appendChild(emptyNote('Tap + Area and name the first room.'));
+    // On a change order the empty state must not read as an instruction. Half
+    // of them are pure labor ("they want the panel moved eight feet") and have
+    // no parts to count at all, so this says both ways out: count something, or
+    // go straight to Labor, which the pinned button now allows.
+    box.appendChild(emptyNote(co
+      ? 'Tap + Area if there are parts to count. A change order can be labor only, so Next: Labor is fine with nothing here.'
+      : 'Tap + Area and name the first room.'));
     host.appendChild(box);
   } else {
     // One card per area, not rows inside a shared one: this is the list he

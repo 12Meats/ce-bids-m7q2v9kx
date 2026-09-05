@@ -36,9 +36,20 @@ function fakeElement(id) {
     tabIndex: 0,
     textContent: '',
     placeholder: '',
+    // The banner area is a real parent in this stub: showBanner appends,
+    // counts and removes, and clearBanner walks the same list.
+    dataset: {},
+    parent: null,
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
-    appendChild(child) { this.children.push(child); return child; },
+    appendChild(child) { child.parent = this; this.children.push(child); return child; },
+    remove() {
+      const p = this.parent;
+      if (!p) return;
+      const i = p.children.indexOf(this);
+      if (i !== -1) p.children.splice(i, 1);
+      this.parent = null;
+    },
     addEventListener() {},
     removeEventListener() {},
     focus() {}, blur() {}, select() {}, setSelectionRange() {},
@@ -195,6 +206,42 @@ test('with no panel open the back gesture still goes back one screen', () => {
   assert.strictEqual(state.screen, 'bid');
   onPopState({ state: { ceb: 1 } });
   assert.strictEqual(state.screen, 'bids');
+});
+
+// ---------------------------------------------------------------------------
+// A banner belongs to the screen it was raised on
+// ---------------------------------------------------------------------------
+//
+// The blocked-share banner names a line and, since Task D, TAPS to it. Left
+// standing across a navigation it is about the bid he just left: on the next
+// bid it names a line that bid does not have, and its tap carries the old
+// bid's line with it and moves him to another bid's room without saying so.
+
+test('leaving a screen clears the banner that was raised on it', () => {
+  const bannerArea = () => document.getElementById('banner').children;
+  standInTheWalk();
+  let went = null;
+  sandbox.showBanner('Put a price on "Permits" first.', 'danger', { onTap: () => { went = 'permits'; } });
+  assert.strictEqual(bannerArea().length, 1);
+
+  show('bid');
+
+  assert.strictEqual(bannerArea().length, 0, 'the sentence ended with the screen');
+  assert.strictEqual(went, null);
+});
+
+test('a banner survives a re-show of the SAME screen, and a persistent one survives everything', () => {
+  standInTheWalk();
+  const bannerArea = () => document.getElementById('banner').children;
+  sandbox.showBanner('Added. Price it on the Costs & price screen.', 'ok');
+  show('walk');                      // the walk re-entered for another area
+  assert.strictEqual(bannerArea().length, 1, 'staying put is not leaving');
+
+  sandbox.clearBanner();
+  sandbox.showBanner('Storage was unreadable. Restore from a backup in Settings', 'danger', { persistent: true });
+  show('bids');
+  assert.strictEqual(bannerArea().length, 1, 'a condition that is still true stays on the glass');
+  sandbox.clearBanner(true);
 });
 
 test('show() never leaves a panel floating over the screen it arrived at', () => {

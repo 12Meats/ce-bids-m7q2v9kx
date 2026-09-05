@@ -684,6 +684,14 @@ function show(screenId, arg, opts) {
   // other caller that navigates while a panel is up.
   closeAnyPanel();
 
+  // A banner is about the screen it was raised on. Left standing across a
+  // navigation it becomes a lie: "Put a price on \"Permits\" first." was about
+  // the bid he just left, and on the next bid it names a line that bid does not
+  // have — and its tap, which carries the OLD bid's line with it, silently
+  // moves him to a different bid's room. Leaving a screen ends the sentence.
+  // Persistent banners are conditions, not events, so they stay.
+  if (key !== state.screen) clearBanner();
+
   // A tab return survives exactly one navigation — the tab tap that set it.
   // Anything else drops it, so Back off a tab can never jump to a screen he
   // left three moves ago.
