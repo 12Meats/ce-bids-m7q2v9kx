@@ -99,10 +99,11 @@ function walkClearTransient() {
 
 // The screen's enter hook. show('walk', id) opens that bid's own walk;
 // show('walk', { bidId, changeOrderId }) opens one change order inside that
-// bid's job; show('walk') — the Back button — keeps whichever we already had,
-// and with it the area he was standing in. The view state is thrown away
-// whenever the thing underneath it changes, so a second bid can never open
-// onto the first one's area, and a change order never onto the bid's.
+// bid's job; show('walk', { bidId, areaId }) opens straight into one area;
+// show('walk') — the Back button — keeps whichever we already had, and with it
+// the area he was standing in. The view state is thrown away whenever the
+// thing underneath it changes, so a second bid can never open onto the first
+// one's area, and a change order never onto the bid's.
 function enterWalk(arg) {
   if (arg !== undefined) {
     const t = navTarget(arg);
@@ -123,6 +124,22 @@ function enterWalk(arg) {
   if (walkForTargetId !== target) walkResetView();
   else walkClearTransient();
   walkForTargetId = target;
+
+  // An area named in the argument, after the reset above so it survives it.
+  // This is how the blocked banner lands him in the room the $0 item is in
+  // instead of on the list of rooms. An id that is not on what we are editing
+  // is ignored rather than opening an area view onto nothing.
+  const areaId = arg && typeof arg === 'object' && typeof arg.areaId === 'string' && arg.areaId
+    ? arg.areaId
+    : null;
+  if (areaId) {
+    const bid = walkBid();
+    const edit = walkChangeOrder(bid) || bid;
+    if (edit && (edit.areas || []).some((a) => a && a.id === areaId)) {
+      walkView = 'area';
+      walkAreaId = areaId;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

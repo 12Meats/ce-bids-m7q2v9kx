@@ -349,24 +349,18 @@ function bidStepDone(bid, settings, key) {
   if (key === 'labor') {
     try { return BidMath.costStack(bid, settings).bidHours > 0; } catch (e) { return false; }
   }
-  // A handle he moved. bid.pricing.touched is set by the price screen the first
-  // time one of the three handles, the markup or the cushion is changed. It is
-  // OPTIONAL — a bid written before this existed simply has no such key, which
-  // reads as untouched, which is the honest answer for a bid nobody has priced
-  // since. The fallback under it catches those: pricing that no longer matches
-  // the shop's defaults was moved by hand at some point.
-  if (key === 'price') {
-    const pr = bid.pricing || {};
-    if (pr.touched === true) return true;
-    const s = settings || {};
-    const seedCushion = s.cushionPct && typeof s.cushionPct === 'object'
-      ? s.cushionPct[bid.jobType]
-      : undefined;
-    return (s.rateCents !== undefined && pr.rateCents !== s.rateCents)
-      || (s.marginPct !== undefined && pr.marginPct !== s.marginPct)
-      || (s.markupPct !== undefined && pr.markupPct !== s.markupPct)
-      || (seedCushion !== undefined && pr.cushionPct !== seedCushion);
-  }
+  // A handle he moved, and nothing else. bid.pricing.touched is set by the
+  // price screen the first time one of the three handles, the markup or the
+  // cushion is changed. It is OPTIONAL — a bid written before this existed
+  // simply has no such key, which reads as untouched, which is the honest
+  // answer for a bid nobody has priced since.
+  //
+  // There used to be a fallback under this: pricing that no longer matched the
+  // shop's defaults counted as moved by hand. It compared the bid against
+  // Settings, so changing the shop rate in Settings ticked Price on every
+  // untouched bid on the phone at once. A step strip that ticks itself while
+  // he is on another screen is worse than one that is a little behind.
+  if (key === 'price') return (bid.pricing || {}).touched === true;
   if (key === 'proposal') return !!bid.sentAt;
   return false;
 }
@@ -1111,7 +1105,7 @@ function unpricedLines(bid, settings) {
   (bid.areas || []).forEach((a) => {
     (a.items || []).forEach((it) => {
       if (!(BidMath.itemPrice(it, markup).cents > 0)) {
-        out.push({ kind: 'item', name: it.name || 'this item', area: a.name || '' });
+        out.push({ kind: 'item', name: it.name || 'this item', area: a.name || '', areaId: a.id });
       }
     });
   });
@@ -1170,10 +1164,18 @@ function unpricedBlockText(lines) {
 // a rental and a piece of equipment are priced on the price screen, a change
 // order is scoped in its own walk inside the job, and the whole-bid total is
 // the price screen's handles.
+//
+// An item goes one better than the screen: it names the AREA it was counted
+// in, so the tap lands inside that room rather than on the list of rooms with
+// the hunt still to do. unpricedLines carries the area id for exactly this.
 function unpricedTarget(line, bid) {
   const bidId = bid && bid.id;
   if (!line) return null;
-  if (line.kind === 'item') return { screen: 'walk', arg: bidId };
+  if (line.kind === 'item') {
+    return line.areaId
+      ? { screen: 'walk', arg: { bidId, areaId: line.areaId } }
+      : { screen: 'walk', arg: bidId };
+  }
   if (line.kind === 'changeOrder' && line.id) {
     return { screen: 'walk', arg: { bidId, changeOrderId: line.id } };
   }

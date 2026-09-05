@@ -70,6 +70,12 @@ function enterLabor(arg) {
     if (t.bidId) state.bidId = t.bidId;
     laborCoId = t.changeOrderId;
   }
+  // The same belt the walk wears. With no argument this screen keeps the change
+  // order it had, which is wrong the moment that change order is gone — deleted
+  // on the job screen, or belonging to a bid we are no longer standing in. A
+  // change order that does not resolve on this bid is not one we are editing,
+  // and the honest fallback is the bid's own labor.
+  if (laborCoId && !laborChangeOrder(laborBid())) laborCoId = null;
   laborClearTransient();
 }
 

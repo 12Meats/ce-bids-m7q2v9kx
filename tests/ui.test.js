@@ -304,6 +304,10 @@ test('items, rentals and equipment that would print at $0 are all found, in walk
   assert.deepEqual(lines.map((l) => l.name), ['Permits', 'Scissor lift', 'Threader']);
   assert.deepEqual(lines.map((l) => l.kind), ['item', 'rental', 'equipment']);
   assert.equal(unpricedBlockText(lines), 'Put a price on "Permits" first.');
+  // The item carries the area it was counted in, which is what lets the banner
+  // land him in that room rather than on the list of rooms.
+  assert.equal(lines[0].areaId, b.areas[0].id);
+  assert.deepEqual(unpricedTarget(lines[0], b), { screen: 'walk', arg: { bidId: b.id, areaId: b.areas[0].id } });
 });
 
 test('unpriced is what will PRINT, not what it cost: a price override on a $0-cost item counts as priced', () => {
@@ -466,12 +470,20 @@ test('price is done when he has moved a handle, not when the bid has a price', (
   assert.strictEqual(bidStepDone(b, d.settings, 'price'), true);
 });
 
-test('a bid saved before the flag existed reads off its own pricing', () => {
+// The flag is the WHOLE answer. There used to be a fallback that compared the
+// bid's pricing against Settings and called any difference a hand-moved handle,
+// which meant changing the shop rate in Settings ticked Price on every
+// untouched bid at once — a strip that ticks itself on a screen he isn't on.
+test('pricing that differs from Settings does NOT tick an untouched bid', () => {
   const { d, b } = freshBid();
   assert.strictEqual(b.pricing.touched, undefined, 'the flag is absent until he prices something');
-  assert.strictEqual(bidStepDone(b, d.settings, 'price'), false);
-  // Pricing that no longer matches the shop's defaults was moved by hand.
+  // He changed the shop rate in Settings. This bid was never opened.
   b.pricing.rateCents = d.settings.rateCents + 500;
+  b.pricing.marginPct = d.settings.marginPct + 5;
+  b.pricing.markupPct = d.settings.markupPct + 5;
+  assert.strictEqual(bidStepDone(b, d.settings, 'price'), false);
+  // And the one thing that does tick it: a handle he moved.
+  b.pricing.touched = true;
   assert.strictEqual(bidStepDone(b, d.settings, 'price'), true);
 });
 
@@ -523,6 +535,10 @@ test('nothing at all names nothing at all', () => {
 
 test('the blocked banner points at the screen that holds the line', () => {
   const b = { id: 'bid-1' };
+  // An item names the area it was counted in, so the tap lands in that room.
+  assert.deepEqual(unpricedTarget({ kind: 'item', name: 'LED', areaId: 'a1' }, b),
+    { screen: 'walk', arg: { bidId: 'bid-1', areaId: 'a1' } });
+  // An older line with no area id still opens the walk.
   assert.deepEqual(unpricedTarget({ kind: 'item', name: 'LED' }, b), { screen: 'walk', arg: 'bid-1' });
   assert.deepEqual(unpricedTarget({ kind: 'rental', name: 'Lift' }, b), { screen: 'price', arg: 'bid-1' });
   assert.deepEqual(unpricedTarget({ kind: 'equipment', name: 'Bender' }, b), { screen: 'price', arg: 'bid-1' });
