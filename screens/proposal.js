@@ -17,12 +17,16 @@
 // exactly where it was. That is the promise the toggle makes, and it is the
 // one thing about this screen worth checking by hand.
 //
-// The cards, in the order he reads them:
+// The cards are CONTROLS FIRST and the document last. The preview used to sit
+// second, which put four screens of paper between him and the Share button —
+// the one thing this screen is for.
 //
 //   How much detail   — Full / Summary / Scope & price. Writes the bid AND
 //                       this customer's default, because a plant that wants
 //                       line items this time wants them next time.
-//   Preview           — the document, near enough.
+//   Send it           — build the PDF, hand it to the share sheet, and then
+//                       ask the two questions only he can answer. Plus the
+//                       archive copy and the customer's address to paste.
 //   Notes & exclusions— the sentences that keep him out of an argument later.
 //                       Chips are his own phrases; a new one can join them.
 //   Terms & conditions— the clause library, by group. Project bids start with
@@ -32,9 +36,10 @@
 //   Scope of work     — drafted from the walk, edited or dictated by him.
 //                       Optional on Full, which prints one only if he wrote
 //                       it, so Full offers the editor rather than a draft.
-//   Share             — build the PDF, hand it to the share sheet, and then
-//                       ask the two questions only he can answer.
 //   Previous PDFs     — every document this bid has ever produced.
+//   Preview           — the document, near enough, behind a button at the
+//                       bottom. Folded up unless he opens it, and it stays
+//                       open for the rest of the session once he has.
 //
 // SENT AND SAVED ARE FLAGS, NOT FACTS. Nothing in a PWA can tell whether a
 // share sheet ended in a sent email or a closed window, so the app doesn't
@@ -71,6 +76,12 @@ let proposalToken = 0;            // async list fills from an older render are d
 // share sheet the very same bytes the customer got rather than building a
 // second document that might not be identical (a price edited in between).
 let proposalLast = null;          // { bidId, id, blob, name }
+
+// Is the preview unfolded? Deliberately NOT reset by enterProposal, and
+// deliberately not stored on the bid either: it is a preference for this
+// session at the workbench, not a fact about the job. He checks the document
+// once, then spends the rest of the afternoon on the controls.
+let proposalPreviewOpen = false;
 
 function proposalBid() { return state.data.bids.find((b) => b.id === state.bidId) || null; }
 
@@ -743,6 +754,30 @@ function proposalLoadPdfs() {
   });
 }
 
+// Where he was on the page, and putting him back there.
+//
+// The share questions each re-render the whole screen, and the render that
+// follows the last of them used to land him at the top — four cards above the
+// button he had just pressed, with nothing on screen saying the document had
+// gone. The position is read BEFORE the sheet opens (the page does not move
+// while it is up) and restored after the questions, on the frame after the
+// render, because a page that has just been rebuilt has no scroll height yet.
+function proposalScrollNow() {
+  const doc = document.scrollingElement || document.documentElement;
+  return doc ? doc.scrollTop : 0;
+}
+
+function proposalScrollBack(top) {
+  const put = () => {
+    try {
+      const doc = document.scrollingElement || document.documentElement;
+      if (doc) doc.scrollTop = top;
+    } catch (e) { /* no layout in this environment */ }
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(put);
+  else put();
+}
+
 // The two questions the app cannot answer for itself. Asked one at a time,
 // after the sheet has closed, and written in ONE save so a refused write can
 // never leave a bid marked sent but not filed (or the other way round).
@@ -797,6 +832,10 @@ function proposalBlockedByUnpriced(bid) {
 async function proposalShare(bid) {
   if (proposalBusy) return;
   if (proposalBlockedByUnpriced(bid)) return;
+  // Read before anything re-renders: this is where he was standing when he
+  // pressed the button, and it is where he goes back to when the questions
+  // are done.
+  const wasAt = proposalScrollNow();
   proposalBusy = true;
   render();
 
@@ -848,8 +887,9 @@ async function proposalShare(bid) {
     render();
     return;
   }
-  if (result === 'cancelled') { render(); return; }
+  if (result === 'cancelled') { render(); proposalScrollBack(wasAt); return; }
   await proposalAfterShare(bid, { askSent: true });
+  proposalScrollBack(wasAt);
 }
 
 // The archive step, on its own. Re-shares the exact bytes the customer got
@@ -860,6 +900,7 @@ async function proposalSaveToFiles(bid) {
   // Checked here too, not only on Share: this hands over bytes that were built
   // before he added the line, and a copy in Files is a copy he will send.
   if (proposalBlockedByUnpriced(bid)) return;
+  const wasAt = proposalScrollNow();
   const last = proposalLast && proposalLast.bidId === bid.id ? proposalLast : null;
   const newest = proposalPdfs && proposalPdfs.length ? proposalPdfs[0] : null;
   // Both candidates are already bytes in memory — nothing is read from
@@ -888,8 +929,9 @@ async function proposalSaveToFiles(bid) {
   // He backed out of the sheet, so nothing left the phone and there is nothing
   // to ask about. Asking anyway is how a bid gets marked saved to Files on the
   // strength of a sheet he closed.
-  if (result === 'cancelled') { render(); return; }
+  if (result === 'cancelled') { render(); proposalScrollBack(wasAt); return; }
   await proposalAfterShare(bid, { askSent: false });
+  proposalScrollBack(wasAt);
 }
 
 // Mail cannot be pre-addressed from a web app: there is no way to hand iOS a
@@ -1054,17 +1096,32 @@ function renderProposal() {
     console.error('Could not build the document', err);
   }
 
+  // CONTROLS FIRST, PREVIEW LAST. The preview used to sit second, which put
+  // four screens of document between him and the Share button — the one thing
+  // this screen is for. It is still the whole document, still built off the
+  // same DocModel call, and it is now behind a button at the bottom for the
+  // times he actually wants to read it.
   host.appendChild(buildDetail(bid));
-  if (doc) host.appendChild(buildPreview(bid, doc));
-  else host.appendChild(inlineWarn("This bid can't be priced yet — check the Costs & price screen."));
+  // The exception to "controls first": a bid that cannot be priced has no
+  // document to share, and that has to be said before the Share button rather
+  // than under it.
+  if (!doc) host.appendChild(inlineWarn("This bid can't be priced yet — check the Costs & price screen."));
+  host.appendChild(buildShare(bid));
 
   host.appendChild(buildNotes(bid));
   if (bid.jobType === 'project' || proposalTermsOn) host.appendChild(buildClauses(bid));
   else host.appendChild(buildTermsToggle(bid));
   host.appendChild(buildValidity(bid));
   host.appendChild(buildScope(bid));
-  host.appendChild(buildShare(bid));
   host.appendChild(buildPrevious(bid));
+
+  if (doc) {
+    const toggle = textButton(proposalPreviewOpen ? 'Hide preview' : 'Preview', 'btn btn-block prop-preview-toggle',
+      () => { proposalPreviewOpen = !proposalPreviewOpen; render(); });
+    toggle.setAttribute('aria-expanded', proposalPreviewOpen ? 'true' : 'false');
+    host.appendChild(toggle);
+    if (proposalPreviewOpen) host.appendChild(buildPreview(bid, doc));
+  }
 }
 
 registerScreen('proposal', {
