@@ -244,6 +244,11 @@ function renderBidHeader(bid, host) {
   // --- Job type ---
   host.appendChild(fieldLabel('Job type'));
   host.appendChild(toggleRow(JOB_TYPE_OPTIONS, cur.jobType, (value) => {
+    // The button outlives what it was drawn for. A tap that lands after the
+    // draft became a real bid, or after the bid was deleted from another
+    // screen, has nothing to write to: it does nothing rather than throw and
+    // take the whole screen down with it.
+    if (isNew ? !bidDraft : !bid) return;
     if (isNew) bidDraft.jobType = value;
     else {
       const prev = bid.jobType;
@@ -256,6 +261,7 @@ function renderBidHeader(bid, host) {
   // --- Detail level ---
   host.appendChild(fieldLabel('Detail level'));
   host.appendChild(toggleRow(DETAIL_OPTIONS, cur.detail, (value) => {
+    if (isNew ? !bidDraft : !bid) return;
     if (isNew) { bidDraft.detail = value; bidDraft.detailTouched = true; }
     else {
       const prev = bid.detail;
@@ -306,10 +312,14 @@ function startTheWalk() {
   const prevNextNumber = s.nextNumber;
   const prevCustomerCount = state.data.customers.length;
 
+  // The detail level goes IN, it is not written on afterwards. newBid seeds
+  // the bid's notes off the level it lands on, so a level applied a line later
+  // seeded them off the customer's default instead of off what he just tapped.
   const bid = Store.newBid(state.data, {
     customerName: name,
     title: bidDraft.title,
     jobType: bidDraft.jobType,
+    detail: bidDraft.detail,
     dateISO: bidDraft.dateISO,
   });
   // If he typed a different number, honor it and keep the counter past it.
@@ -317,7 +327,6 @@ function startTheWalk() {
     bid.number = bidDraft.number;
     s.nextNumber = Math.max(s.nextNumber, bidDraft.number + 1);
   }
-  bid.detail = bidDraft.detail;
   state.data.bids.push(bid);
 
   // Walking a plant with a bid that was never saved is the worst outcome this

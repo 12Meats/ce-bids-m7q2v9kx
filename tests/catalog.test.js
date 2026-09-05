@@ -178,13 +178,55 @@ test('sizeKey: wire gauges climb from #14 to 4/0', () => {
   assert.equal(C.sizeKey('4/0 THHN'), 1004);
 });
 
-test('sizeKey: a name with no size in front of it has no key', () => {
-  ['J-box 4x4', 'Contactor', 'LED high bay', '20 A breaker', 'Cat6', 'T8 LED tube']
+test('sizeKey: a name with no size anywhere in it has no key', () => {
+  ['Contactor', 'LED high bay', 'Cat6', 'T8 LED tube', 'Motor starter NEMA 0', 'Photo eye']
     .forEach((n) => assert.equal(C.sizeKey(n), null, n));
   // A cable configuration is not a fraction of an inch: the inch mark is what
   // makes a fraction a trade size.
   assert.equal(C.sizeKey('10/4 SO cord'), null);
   assert.equal(C.sizeKey('12/4 SO cord'), null);
+});
+
+// GEAR IS RATED, NOT MEASURED. Read as text the breakers came off the shelf
+// 100, 15, 20, 200, 30, 60 — which is nobody's panel schedule.
+test('sizeKey reads a rating wherever it sits in the name, and keeps the units apart', () => {
+  const asc = (list) => {
+    const keys = list.map(C.sizeKey);
+    keys.forEach((k, i) => {
+      assert.ok(typeof k === 'number' && isFinite(k), list[i] + ' has no key');
+      if (i) assert.ok(k > keys[i - 1], list[i] + ' does not sort above ' + list[i - 1]);
+    });
+    return keys;
+  };
+  const amps = asc(['15 A 1-pole breaker', '20 A 1-pole breaker', '30 A 1-pole breaker',
+    '60 A 3-pole breaker', '100 A 3-pole breaker', '200 A 3-pole breaker']);
+  const hp = asc(['VFD 1 HP', 'VFD 3 HP', 'VFD 10 HP', 'VFD 50 HP']);
+  const kva = asc(['Transformer 15 kVA', 'Transformer 45 kVA', 'Transformer 75 kVA']);
+  const watts = asc(['LED high bay 100 W', 'LED high bay 240 W']);
+  const boxes = asc(['NEMA 4X S.S. 6x6', 'NEMA 4X S.S. 8x8', 'NEMA 4X S.S. 10x10',
+    'NEMA 4X S.S. 12x12']);
+  // A band each, so one number can be compared without ever saying that 15
+  // amps and 15 horsepower are the same size.
+  const band = (k) => Math.floor(k / 1000);
+  [amps, hp, kva, watts, boxes].forEach((keys) => {
+    assert.strictEqual(new Set(keys.map(band)).size, 1);
+  });
+  assert.strictEqual(new Set([amps, hp, kva, watts, boxes].map((k) => band(k[0]))).size, 5);
+  // The stainless in "NEMA 4X" is not a dimension, and a trade size still wins
+  // over a rating when the name leads with one.
+  assert.strictEqual(C.sizeKey('NEMA 4X S.S. 6x6'), C.sizeKey('J-box 6x6'));
+  assert.strictEqual(C.sizeKey('1-1/4" EMT'), 1.25);
+});
+
+// familyKey is sizeKey asked backwards: what is left when the size is out.
+test('familyKey is the name without its size, and a sizeless name is its own', () => {
+  assert.strictEqual(C.familyKey('1-1/4" EMT'), 'emt');
+  assert.strictEqual(C.familyKey('1/2" EMT'), 'emt');
+  assert.strictEqual(C.familyKey('15 A 1-pole breaker'), '1-pole breaker');
+  assert.strictEqual(C.familyKey('200 A 3-pole breaker'), '3-pole breaker');
+  assert.strictEqual(C.familyKey('VFD 10 HP'), 'vfd');
+  assert.strictEqual(C.familyKey('NEMA 4X S.S. 12x12'), 'nema 4x s.s.');
+  assert.strictEqual(C.familyKey('Contactor'), 'contactor');
 });
 
 test('matches: a category browses in trade-size order, history still first', () => {
@@ -253,22 +295,57 @@ test('every seeded conduit name carries a trade size', () => {
 });
 
 // The order he browses in, per category, off a catalog nobody has used yet:
-// sizes ascending, and the names with no size in them after all of them.
-test('each category browses size-ascending, sizeless names last', () => {
+// one family at a time, each family in size order, and the families with no
+// size in them after all the families that have one. That last rule is the
+// old "sizeless last", moved up from the part to the family it belongs to.
+test('each category browses family by family, sizes ascending inside each', () => {
   ['conduit', 'wire', 'boxes', 'lighting', 'gear', 'rentals'].forEach((category) => {
     const list = C.matches(SEED, { category, includeRentals: true });
     assert.ok(list.length > 0, category + ' is empty');
+    const seen = new Set();
+    let family = null;
     let last = -Infinity;
     let sawSizeless = false;
     list.forEach((p) => {
+      const f = C.familyKey(p.name);
       const k = C.sizeKey(p.name);
+      if (f !== family) {
+        assert.strictEqual(seen.has(f), false,
+          category + ': ' + f + ' is split into two runs');
+        seen.add(f);
+        family = f;
+        last = -Infinity;
+      }
       if (k === null) { sawSizeless = true; return; }
       assert.strictEqual(sawSizeless, false,
-        category + ': ' + p.name + ' has a size and comes after a name that has none');
+        category + ': ' + p.name + ' is sized and comes after a family that is not');
       assert.ok(k >= last, category + ': ' + p.name + ' (' + k + ') sorts under ' + last);
       last = k;
     });
   });
+});
+
+// The two lists he actually reads down, spelled out. Conduit is the reason
+// the family rule exists: sorted by size alone it was 1/2" EMT, 1/2" PVC,
+// 1/2" rigid, 1/2" seal-tight, 3/4" EMT — six materials shuffled together.
+test('conduit browses one material at a time, smallest first', () => {
+  const list = C.matches(SEED, { category: 'conduit' }).map((p) => p.name);
+  assert.deepStrictEqual(list.slice(0, 8), [
+    '1/2" EMT', '3/4" EMT', '1" EMT', '1-1/4" EMT', '1-1/2" EMT', '2" EMT',
+    '1/2" PVC', '3/4" PVC',
+  ]);
+});
+
+test('gear browses by rating, not by the first digit of the name', () => {
+  const list = C.matches(SEED, { category: 'gear' }).map((p) => p.name);
+  assert.deepStrictEqual(list.slice(0, 8), [
+    '15 A 1-pole breaker', '20 A 1-pole breaker', '30 A 1-pole breaker',
+    '20 A 2-pole breaker', '30 A 2-pole breaker', '60 A 2-pole breaker',
+    '30 A 3-pole breaker', '60 A 3-pole breaker',
+  ]);
+  const vfd = list.filter((n) => n.indexOf('VFD') === 0);
+  assert.deepStrictEqual(vfd, ['VFD 1 HP', 'VFD 3 HP', 'VFD 5 HP', 'VFD 10 HP',
+    'VFD 20 HP', 'VFD 30 HP', 'VFD 50 HP']);
 });
 
 // The two scales sizeKey runs, on the names the seed actually ships, because
@@ -295,9 +372,49 @@ test('every fitting family covers every conduit size', () => {
       assert.ok(SEED.some((p) => p.name === size + ' ' + family), 'no ' + size + ' ' + family);
     });
   });
-  ['coupling', 'connector', 'LB', 'hub', 'one-hole strap'].forEach((family) => {
+  // A fitting says what it fits: the setscrew connector and the liquidtight
+  // one are not the same part, and neither are the EMT and rigid couplings.
+  ['EMT connector (setscrew)', 'EMT coupling', 'liquidtight connector', 'rigid coupling',
+    'LB', 'hub', 'one-hole strap'].forEach((family) => {
     sizes.forEach((size) => {
       assert.ok(SEED.some((p) => p.name === size + ' ' + family), 'no ' + size + ' ' + family);
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// nearDuplicates — the same part, spelled his own way
+// ---------------------------------------------------------------------------
+
+test('nearDuplicates forgives the plural, the quotes and the word order, and nothing else', () => {
+  const standard = Store.standardCatalogNames();
+  const mine = [
+    part('boxes', '3/4" hubs'),
+    part('boxes', '1" hubs'),
+    part('boxes', 'LB 3/4"'),
+    part('boxes', '3/4" LB'),          // already the standard spelling
+    part('boxes', '3/4" connector'),   // a different fitting, not a spelling
+    part('conduit', '3/4" EMT'),
+    part('gear', 'Contactor'),
+  ];
+  const hits = C.nearDuplicates(mine, standard);
+  assert.deepStrictEqual(hits.map((h) => [h.name, h.standard]), [
+    ['3/4" hubs', '3/4" hub'],
+    ['1" hubs', '1" hub'],
+    ['LB 3/4"', '3/4" LB'],
+  ]);
+  // It hands back the row itself, because hiding it is the caller's job.
+  assert.strictEqual(hits[0].item, mine[0]);
+});
+
+test('nearDuplicates skips what is already put away, and takes plain strings', () => {
+  const standard = ['3/4" hub', 'Cable tugger'];
+  assert.deepStrictEqual(
+    C.nearDuplicates([part('boxes', '3/4" hubs', { hidden: true })], standard), []);
+  assert.deepStrictEqual(C.nearDuplicates(['3/4" HUBS'], standard).map((h) => h.standard), ['3/4" hub']);
+  // Not a list, not a name, nothing to say.
+  assert.deepStrictEqual(C.nearDuplicates(null, standard), []);
+  assert.deepStrictEqual(C.nearDuplicates([{ name: '' }, {}], standard), []);
+  assert.deepStrictEqual(C.nearDuplicates(['Tugger'], standard), [],
+    'a shorter name is not a spelling of a longer one');
 });

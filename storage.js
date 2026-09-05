@@ -128,8 +128,18 @@
     ],
 
     // --- BOXES: the fittings that hang the pipe, and what it lands in -------
-    sizedParts('boxes', CONDUIT_SIZES, 'coupling', 'ea'),
-    sizedParts('boxes', CONDUIT_SIZES, 'connector', 'ea'),
+    // A FITTING SAYS WHAT IT FITS. '3/4" connector' was two different parts
+    // under one name: the setscrew connector that goes on EMT and the
+    // liquidtight one that goes on seal-tight, which are not the same part, do
+    // not cost the same, and cannot both be the row he taps. '3/4" coupling'
+    // was the same problem between EMT and rigid. So every fitting names its
+    // material the way the bin does, and the two that were one row are two.
+    // Hubs are the exception only because there is nothing to distinguish:
+    // a hub is threaded, so a hub is rigid.
+    sizedParts('boxes', CONDUIT_SIZES, 'EMT connector (setscrew)', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'EMT coupling', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'liquidtight connector', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'rigid coupling', 'ea'),
     sizedParts('boxes', CONDUIT_SIZES, 'LB', 'ea'),
     sizedParts('boxes', CONDUIT_SIZES, 'hub', 'ea'),
     sizedParts('boxes', CONDUIT_SIZES, 'one-hole strap', 'ea'),
@@ -231,7 +241,10 @@
   const SEED_FORGET = [
     { name: 'Lift rental', kind: 'rental' },
     { name: 'Temporary power / generators', kind: 'rental' },
-    { name: 'Shutdown windows / after-hours', kind: 'rental' },
+    // A labor premium, not a rental. It opened the rental prompt, which asks
+    // for days and a day rate, and the after-hours money on a job is neither:
+    // it is a $0 line in an area, flagged amber, waiting for him to price it.
+    { name: 'Shutdown windows / after-hours', kind: 'item' },
     { name: 'Permits and inspection fees', kind: 'item' },
     { name: 'Core drilling / concrete cutting', kind: 'item' },
     { name: 'Disposal / dumpster', kind: 'rental' },
@@ -298,7 +311,12 @@
   const SEED_CLAUSES = [
     // always (8) — his own proposal, to his own customer
     { id: 'k01', group: 'always', title: 'Scope', text: 'This price covers the work listed in this proposal and nothing else. Anything not listed is not included. If you want something added, we will price it for you and you can decide then.' },
-    { id: 'k02', group: 'always', title: 'Price and material', text: 'This price is good for 30 days from the date on this proposal. Material is billed at what it costs us on the day we buy it. If material prices move between this proposal and the purchase, the difference goes on the invoice, and we will tell you before we buy.' },
+    // ONE VALIDITY PERIOD, IN ONE PLACE. This clause used to say thirty days
+    // in its own words while the terms block over it printed "Pricing held N
+    // days from the date above" off bid.validityDays. Change the days on a
+    // bid and the paper said both numbers, one paragraph apart. The line
+    // that reads the bid keeps the number; the clause points at it.
+    { id: 'k02', group: 'always', title: 'Price and material', text: 'Prices are good for the period stated on this proposal; material is billed at cost at the time of purchase.' },
     { id: 'k03', group: 'always', title: 'Payment', text: 'Payment is due within 30 days of the invoice date. On jobs over $10,000 we bill monthly for the work completed that month, and the last invoice is due 30 days after the work is finished.' },
     { id: 'k04', group: 'always', title: 'Late payment', text: 'Any amount not paid when it is due carries interest at 1.5% a month, or the highest rate Arizona law allows if that is less. The costs of collecting it, including reasonable attorneys\' fees, are added to the balance.' },
     { id: 'k05', group: 'always', title: 'Changes and concealed conditions', text: 'A price is figured on what we could see on the walk. If the job turns up something we could not see, a wall thicker than it looked, conduit that is not where the drawing puts it, or anything hidden behind or inside the building, we stop and price the change with you. Changes are priced and approved in writing before the work is done.' },
@@ -800,13 +818,21 @@
     return list.length ? [list[0]] : [];
   }
 
-  function newBid(d, { customerName, title, jobType, dateISO }) {
+  // detail and jobType are ASKED FOR, and the customer's default is only the
+  // fallback. They used to be settled here off the customer and then written
+  // over by the bid screen a line after the call, which meant the notes were
+  // seeded against a detail level that was already stale: a Scope & price bid
+  // arrived carrying the price note it is not supposed to have, and a Full bid
+  // for a scope-default customer arrived with none. Nothing may set bid.detail
+  // after this function: seedNotes reads the FINAL level, and it reads it here.
+  function newBid(d, { customerName, title, jobType, detail, dateISO }) {
     const cust = findOrCreateCustomer(d, customerName); const s = d.settings;
     const jt = JOB_TYPE.indexOf(jobType) !== -1 ? jobType : 'service';
-    const detail = DETAIL.indexOf(cust.defaultDetail) !== -1 ? cust.defaultDetail : 'full';
+    const level = DETAIL.indexOf(detail) !== -1 ? detail
+      : (DETAIL.indexOf(cust.defaultDetail) !== -1 ? cust.defaultDetail : 'full');
     const crewSeed = s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id);
     const b = { id: uid(), number: s.nextNumber, customerId: cust.id, title: title || '', dateISO: dateISO || todayISO(),
-      status: 'draft', detail, jobType: jt,
+      status: 'draft', detail: level, jobType: jt,
       areas: [], misc: { label: MISC_LABEL, cents: 0 },
       // Hidden crew are people who don't work here any more: seeding them onto
       // a new bid would put a chip on the Labor screen for someone he'd have to
@@ -841,7 +867,7 @@
       // clauseIds starts null, not empty: "not chosen yet" is what lets the
       // proposal screen offer the Always group once and never argue with him
       // about it again. [] is his answer, and it sticks.
-      scope: null, notes: seedNotes(s, detail), clauseIds: null, validityDays: s.validityDays,
+      scope: null, notes: seedNotes(s, level), clauseIds: null, validityDays: s.validityDays,
       sentAt: null, savedToFilesAt: null, lostReason: null, job: null };
     s.nextNumber += 1; return b;
   }
@@ -1033,6 +1059,13 @@
     return added;
   }
 
+  // The standard names themselves, for the one question Settings asks after an
+  // add: which of his own rows are the same thing under a different spelling.
+  // Catalog.nearDuplicates answers it and this hands it the list to answer it
+  // against, so the seed stays the only copy of what "standard" means.
+  function standardCatalogNames() { return SEED_CATALOG.map((row) => row[1]); }
+  function standardEquipmentNames() { return SEED_EQUIPMENT.slice(); }
+
   function addStandardNotes(d) {
     const list = d.settings.notePhrases;
     const have = new Set(list.map(lowerKey));
@@ -1053,11 +1086,12 @@
   // leaving them alongside the eight new ones would put both on the same
   // phone under the same heading.
   //
-  // So the old ones go, except the ones a bid still names: those are hidden,
+  // So the old ones go, except the ones a bid still names: those are HIDDEN,
   // which is the only kind of delete this file allows for anything a bid
-  // points at (DocModel drops a hidden clause off the paper, and the bid keeps
-  // validating). The standard set comes in with FRESH ids, so it can never
-  // collide with an id a hidden clause is still holding.
+  // points at. Hidden means "not offered on new bids" and nothing more: a bid
+  // that already names the clause keeps printing it, which is what makes this
+  // safe to tap on a phone with sent paper on it. The standard set comes in
+  // with FRESH ids, so it can never collide with an id a kept clause holds.
   //
   // Returns what happened, in the numbers the confirm and the banner say.
   function resetClauseLibrary(d) {
@@ -1134,5 +1168,6 @@
     forgetName, forgetKind, SEED_DEFAULT_NOTE,
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, noteCrewWage, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
+    standardCatalogNames, standardEquipmentNames,
     recordCatalogUse, numberInUse };
 });

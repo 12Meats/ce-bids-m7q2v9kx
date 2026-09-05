@@ -546,6 +546,13 @@ test('crewWage: the wage snapshot wins, and a man Settings forgot is not unknown
   const unknown2 = new Set();
   assert.deepStrictEqual(B.crewWage(['c1', 'c9'], settings, unknown2), [3200, 0]);
   assert.deepStrictEqual([...unknown2], ['c9']);
+  // MISSING FROM BOTH is still unknown, and a bid that HAS a map is the case
+  // that has to keep saying so: filling in a snapshot for the men on the bid
+  // must not turn a man who is on neither the map nor the payroll into a
+  // silent $0 line. He is flagged, and the screen says his name is gone.
+  const unknown3 = new Set();
+  assert.deepStrictEqual(B.crewWage(['c1', 'c9'], settings, unknown3, { c1: 2500 }), [2500, 0]);
+  assert.deepStrictEqual([...unknown3], ['c9']);
 });
 test('a change order is figured at the parent bid s wages, not at today s', () => {
   const parent = { ...bid, labor: { ...bid.labor, wageCents: { c1: 3200, c2: 3000 } } };

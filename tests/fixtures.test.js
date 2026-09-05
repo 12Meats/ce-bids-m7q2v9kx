@@ -122,3 +122,53 @@ for (const file of Object.keys(FIXTURE_TOTALS)) {
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// THE TWO LIBRARY MOVES, RUN AGAINST A REAL PHONE
+// ---------------------------------------------------------------------------
+// Both of these are one tap in Settings on a phone with sent paper on it, and
+// both used to be able to change what an old bid prints. Neither may.
+
+test('backup-bids-v1.json: resetting the terms library changes no bid on the phone', () => {
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v1.json'), 'utf8'));
+  const before = d.bids.map((b) => D.build(b, d, 'full').clauses.map((c) => c.title));
+  // #3054 is the sent bid, and it carries all nineteen of the old clauses.
+  assert.strictEqual(Math.max(...before.map((x) => x.length)), 19);
+
+  const out = S.resetClauseLibrary(d);
+  assert.strictEqual(out.added, 27, 'the standard library goes in whole');
+  assert.strictEqual(out.hidden, 19, 'the nineteen a bid still names are kept, hidden');
+
+  d.bids.forEach((b, i) => {
+    assert.deepStrictEqual(D.build(b, d, 'full').clauses.map((c) => c.title), before[i],
+      'bid ' + b.number + ' lost a term it had already promised');
+  });
+  // And nothing hidden is offered on the next bid he writes.
+  assert.strictEqual(d.settings.clauses.filter((c) => !c.hidden).length, out.added);
+  assert.ok(S.validateImport(JSON.stringify(d)));
+
+  // The clause that used to name its own thirty days now points at the line
+  // the document prints off bid.validityDays, so the paper says one number.
+  const k02 = d.settings.clauses.find((c) => !c.hidden && c.title === 'Price and material');
+  assert.strictEqual(k02.text.indexOf('30 days'), -1);
+  assert.ok(D.build(d.bids[1], d, 'full').terms.some((t) => /^Pricing held \d+ days/.test(t)));
+});
+
+test('backup-bids-v1.json: adding the standard parts leaves five of his own spellings to ask about', () => {
+  const C = require('../catalog.js');
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v1.json'), 'utf8'));
+  assert.ok(S.addStandardCatalog(d) > 0);
+  const dups = C.nearDuplicates(d.catalog, S.standardCatalogNames());
+  assert.deepStrictEqual(dups.map((x) => x.name + ' -> ' + x.standard), [
+    '3/4" hubs -> 3/4" hub',
+    '1" hubs -> 1" hub',
+    '3/4" S.S. hubs -> 3/4" S.S. hub',
+    'LB 3/4" -> 3/4" LB',
+    'LB 1" -> 1" LB',
+  ]);
+  // Hiding them is the answer, never deleting: two of these are on his bids.
+  dups.forEach((x) => { x.item.hidden = true; });
+  assert.ok(S.validateImport(JSON.stringify(d)));
+  assert.deepStrictEqual(C.nearDuplicates(d.catalog, S.standardCatalogNames()), [],
+    'once hidden they are not asked about again');
+});

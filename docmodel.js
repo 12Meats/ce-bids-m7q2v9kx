@@ -196,11 +196,23 @@
       ...(level === 'scope' ? ['Changes to scope priced by written change order before work proceeds.'] : []),
     ];
 
-    // Hidden clauses (soft-deleted in Settings) are excluded even when a bid
-    // still references their id.
+    // HIDDEN MEANS "NOT OFFERED ON NEW BIDS". IT DOES NOT MEAN "TAKEN OFF
+    // PAPER THAT IS ALREADY OUT".
+    //
+    // A hidden clause used to be dropped here even when the bid named it, and
+    // "Reset to the standard library" hides every old clause a bid still
+    // points at. Between the two, one tap in Settings took nineteen terms off
+    // a proposal that had already been signed: re-share it that afternoon, or
+    // print it for the file, and the paper came back short. Nothing warned
+    // him, because the bid still held all nineteen ids.
+    //
+    // So a clause a bid EXPLICITLY NAMES prints, hidden or not. What hidden
+    // does is keep it out of the list the proposal screen offers, which is the
+    // job it was written for: a clause he has retired never lands on a new
+    // bid, and a bid that already chose it keeps what it promised.
     const clauses = (bid.clauseIds || [])
       .map((id) => s.clauses.find((c) => c.id === id))
-      .filter((c) => c && !c.hidden);
+      .filter(Boolean);
 
     const baseDoc = {
       level, header, meta, terms, clauses, totalCents, fileName: fileName(bid, data),

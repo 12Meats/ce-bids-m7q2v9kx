@@ -104,6 +104,33 @@ test('the note a new bid carries follows the same split', () => {
     'the terms page carries the validity, so the chip would be saying it twice');
 });
 
+// THE LEVEL HE TAPPED, NOT THE ONE THE CUSTOMER USUALLY GETS.
+//
+// The bid screen used to hand newBid the customer and then write the detail
+// level on a line later, so the notes were seeded against a level that was
+// already stale: a Scope & price bid for a Full customer arrived carrying the
+// price note it is not supposed to have, and a Full bid for a scope-default
+// customer arrived with none. Both were invisible until the paper printed.
+test('the note follows the detail the bid is CREATED with, not the customer default', () => {
+  const d = S.emptyData();
+  const cust = S.findOrCreateCustomer(d, 'UDA');
+
+  cust.defaultDetail = 'full';
+  const scoped = S.newBid(d, { customerName: 'UDA', title: 'a', jobType: 'project', detail: 'scope' });
+  assert.strictEqual(scoped.detail, 'scope');
+  assert.deepStrictEqual(scoped.notes, []);
+
+  cust.defaultDetail = 'scope';
+  const full = S.newBid(d, { customerName: 'UDA', title: 'b', jobType: 'project', detail: 'full' });
+  assert.strictEqual(full.detail, 'full');
+  assert.deepStrictEqual(full.notes, ['Prices subject to change; final pricing based on actual material.']);
+
+  // A level that is not one of the three is not a level: the customer's
+  // default is still the fallback, and 'full' is the fallback for that.
+  assert.strictEqual(S.newBid(d, { customerName: 'UDA', title: 'c', jobType: 'project', detail: 'nonsense' }).detail,
+    'scope');
+});
+
 // ---------------------------------------------------------------------------
 // THE NUDGE
 // ---------------------------------------------------------------------------
@@ -123,10 +150,17 @@ test('trenching on the bid earns the trenching prompt, whichever door it came in
   assert.strictEqual(nudgeGroups(walked.bid).length, 1);
 });
 
-test('core drilling and a sub-contractor find their own groups', () => {
+// Core drilling used to nudge the trench group. Those three clauses are
+// soils, Arizona 811 and drainage — paving and buried-utility language — and
+// a hole through a slab earns none of them. There is no core-drill clause in
+// the library, so the prompt had nothing honest to offer.
+test('a sub-contractor finds its own group, and core drilling asks for nothing', () => {
   const { bid } = fixture('full');
   bid.forgetAnswers = { 'Core drilling / concrete cutting': 'added', 'Sub-contractor': 'added' };
-  assert.deepStrictEqual(nudgeGroups(bid), ['trench', 'subs']);
+  assert.deepStrictEqual(nudgeGroups(bid), ['subs']);
+  const drillOnly = fixture('full');
+  drillOnly.bid.forgetAnswers = { 'Core drilling / concrete cutting': 'added' };
+  assert.deepStrictEqual(nudgeGroups(drillOnly.bid), []);
 });
 
 test('a row he said no to is not a row that earns a prompt', () => {
@@ -137,8 +171,10 @@ test('a row he said no to is not a row that earns a prompt', () => {
 
 test('one prompt per group, and none once the group is already on the bid', () => {
   const { d, bid } = fixture('full');
-  // Trenching AND core drilling both end in the same clauses: one line, not two.
-  bid.forgetAnswers = { 'Trenching / backfill': 'added', 'Core drilling / concrete cutting': 'added' };
+  // A trench answered on the checklist and a trench typed as a line are one
+  // bid with trenching in it: one prompt, not two.
+  bid.forgetAnswers = { 'Trenching / backfill': 'added' };
+  bid.areas[0].items.push({ catalogId: null, name: 'Trench to the pad', unit: 'lot', qty: 1, costCents: 0, priceCents: null });
   assert.strictEqual(nudgeGroups(bid).length, 1);
   bid.clauseIds = d.settings.clauses.filter((c) => c.group === 'trench').map((c) => c.id);
   assert.deepStrictEqual(nudgeGroups(bid), [], 'nothing to add is nothing to ask about');

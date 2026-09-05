@@ -38,7 +38,8 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
   assert.strictEqual(d.settings.company.roc, 'AZ ROC #276507');
   assert.strictEqual(d.settings.rateCents, 8500);
   assert.strictEqual(d.settings.floorCents, 8500);
-  assert.ok(d.catalog.length >= 180 && d.catalog.length <= 200, 'the standard parts list is 180 to 200 names');
+  assert.ok(d.catalog.length >= 180 && d.catalog.length <= 220,
+    'the standard parts list is about two hundred names, not two thousand');
   assert.ok(d.catalog.every((p) => p.lastCostCents === null && p.uses === 0));
   assert.deepStrictEqual([...new Set(d.catalog.map((p) => p.category))].sort(),
     ['boxes', 'conduit', 'gear', 'lighting', 'rentals', 'wire']);
@@ -692,10 +693,14 @@ test('the seeded checklist names its own kinds, and the ones he forgets most com
     'Permits and inspection fees', 'Core drilling / concrete cutting', 'Disposal / dumpster',
   ]);
   const kind = (name) => S.forgetKind(d.settings.forgetList.find((r) => S.forgetName(r) === name));
-  ['Lift rental', 'Scaffolding', 'Temporary power / generators', 'Shutdown windows / after-hours',
+  ['Lift rental', 'Scaffolding', 'Temporary power / generators',
     'Equipment (owned tools)', 'Disposal / dumpster'].forEach((n) => {
     assert.strictEqual(kind(n), 'rental', n + ' has to reach the rental side of the bid');
   });
+  // After-hours money is a labor premium, not a rental. It used to open the
+  // rental prompt, which asks for days and a day rate, and there is no such
+  // thing as a day rate on a shutdown window.
+  assert.strictEqual(kind('Shutdown windows / after-hours'), 'item');
   ['Permits and inspection fees', 'Trenching / backfill', 'Sub-contractor', 'Patch and paint',
     'Travel days / per diem'].forEach((n) => {
     assert.strictEqual(kind(n), 'item', n + ' is a line in one of his areas');
@@ -768,6 +773,18 @@ test('Add the standard parts adds only the names he is missing', () => {
   assert.ok(d.catalog.every((p) => p.lastCostCents === null || p.lastCostCents === undefined
     || Number.isInteger(p.lastCostCents)));
   assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+// The standard names, handed out so Settings can ask about his own spellings
+// without a second copy of what "standard" means living in a screen file.
+test('the standard name lists are exactly what a fresh install ships', () => {
+  const d = S.emptyData();
+  assert.deepStrictEqual(S.standardCatalogNames(), d.catalog.map((p) => p.name));
+  assert.deepStrictEqual(S.standardEquipmentNames(), d.settings.equipment.map((e) => e.name));
+  // A copy, not the seed itself: nothing a caller does to it can reach the
+  // list every fresh install is built from.
+  S.standardCatalogNames().push('nope');
+  assert.strictEqual(S.standardCatalogNames().length, d.catalog.length);
 });
 
 test('the standard tools, checklist and notes add missing names, case-blind', () => {

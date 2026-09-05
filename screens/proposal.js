@@ -36,8 +36,8 @@
 //                       with the Always group ticked, because that is the
 //                       shape of the one proposal he ever put an addendum on;
 //                       Full and Summary start with none and are one tap away.
-//                       Trenching, core drilling and a sub-contractor on the
-//                       bid are PROMPTED for, never ticked behind him.
+//                       Trenching and a sub-contractor on the bid are
+//                       PROMPTED for, never ticked behind him.
 //   Valid for         — how long the price is good.
 //   Scope of work     — drafted from the walk, edited or dictated by him.
 //                       Optional on Full, which prints one only if he wrote
@@ -504,25 +504,27 @@ function buildNotes(bid) {
 // CLAUSES
 // ---------------------------------------------------------------------------
 
-// A hidden clause is soft-deleted in Settings, and DocModel.build drops it
-// from the document even when the bid still names its id. So it is not on the
-// paper, and it is not on this screen either: a ticked line he can read and a
-// count he can add up have to be the clauses the customer will get, or the one
-// place he checks his terms is the one place that lies about them.
-//
-// The id stays on the bid. Un-hiding the clause in Settings brings it back,
-// still ticked, rather than quietly dropping a term he chose.
+// Hiding a clause in Settings takes it off the shelf, not off the bids that
+// already picked it up. DocModel prints a hidden clause a bid explicitly
+// names, so this screen shows it too: a ticked line he can read and a count he
+// can add up have to be the clauses the customer will get, or the one place he
+// checks his terms is the one place that lies about them. He can untick it
+// here, which is the only way off, and it will never arrive on a new bid.
 function proposalClauseList(bid) {
-  return state.data.settings.clauses.filter((c) => !c.hidden);
+  const on = proposalClauseIds(bid);
+  return state.data.settings.clauses.filter((c) => !c.hidden || on.indexOf(c.id) !== -1);
 }
 
 // The clauses this bid PRINTS, in the order the document numbers them — the
-// same map-then-drop-hidden docmodel.js does, so "On this bid: 4 clauses" and
-// the four numbered titles in the preview are one answer counted once.
+// same map docmodel.js does, so "On this bid: 4 clauses" and the four numbered
+// titles in the preview are one answer counted once. Hidden is NOT dropped
+// here, for the same reason it is not dropped there: a clause this bid names
+// is a term this bid promised, and hiding it in Settings only stops it being
+// offered on the next one.
 function proposalPrintingClauses(bid) {
   return proposalClauseIds(bid)
     .map((id) => state.data.settings.clauses.find((c) => c.id === id))
-    .filter((c) => c && !c.hidden);
+    .filter(Boolean);
 }
 
 // Every write goes through here, so the null-to-array step happens once: the
@@ -646,11 +648,15 @@ function proposalAddGroup(bid, group) {
 // WHAT THE WALK SAYS THIS BID HAS IN IT. Two places carry that: the
 // did-you-forget answers, where 'added' means the line is on the bid, and the
 // item names themselves, because a trench he typed as a line is still a
-// trench. Trenching and core drilling both land in "Trenching & underground";
-// a sub-contractor lands in "Subcontractors".
+// trench.
+//
+// Core drilling used to be here, pointed at the trench group. It should not
+// have been: those three clauses are soils, Arizona 811 and drainage, written
+// for paving and for what is buried under a yard. A hole through a slab earns
+// none of them, and there is no core-drill clause in the library to offer, so
+// the prompt was asking him to put paving language on an indoor job.
 const PROPOSAL_NUDGES = [
   { group: 'trench', label: 'trenching', test: /trench/i },
-  { group: 'trench', label: 'core drilling', test: /core.?drill/i },
   { group: 'subs', label: 'a sub-contractor', test: /sub-?contract/i },
 ];
 
@@ -661,8 +667,8 @@ function proposalBidMentions(bid, re) {
 }
 
 // The nudges this bid has earned and he has not waved off: at most one line
-// per group, because "This bid has trenching" and "This bid has core drilling"
-// both end in the same clauses and two prompts for one answer is noise.
+// per group, because two prompts that end in the same clauses are one answer
+// asked twice.
 function proposalNudges(bid) {
   const out = [];
   const groups = new Set();

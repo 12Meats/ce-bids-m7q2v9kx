@@ -717,7 +717,8 @@ function buildSetEquipment() {
 
   box.appendChild(textButton('+ Tool', 'btn btn-block mt-3', settingsAddTool));
   settingsStandardButton(box, 'Add the standard tools', 'tools',
-    (d) => Store.addStandardEquipment(d), s.equipment, (before) => { setS().equipment = before; });
+    (d) => Store.addStandardEquipment(d), s.equipment, (before) => { setS().equipment = before; },
+    () => settingsOfferNearDuplicates('tools', setS().equipment, Store.standardEquipmentNames()));
   settingHiddenToggle(box, 'equipment', hidden.length);
   box.appendChild(caption('A day of a tool bills at ' + pctText(s.equipmentPct)
     + ' of what it cost new, to the nearest $5, never under $5, unless you set your own rate.'));
@@ -922,22 +923,51 @@ function settingsAddString(listName, label, placeholder, multiline) {
 // take() is handed the whole list back for the undo: these push many rows at
 // once, and a refused save has to put the list back the way it was rather than
 // unpick it row by row.
-function settingsAddStandard(what, apply, list, restore) {
+async function settingsAddStandard(what, apply, list, restore, after) {
   const before = list.slice();
   const added = apply(state.data);
   if (added === 0) {
     showBanner('You already have all the standard ' + what);
-    render();
-    return;
+  } else {
+    if (!persistOr(() => restore(before))) { render(); return; }
+    showBanner('Added ' + added + ' ' + (added === 1 ? what.replace(/s$/, '') : what), 'ok');
   }
-  if (!persistOr(() => restore(before))) { render(); return; }
-  showBanner('Added ' + added + ' ' + (added === 1 ? what.replace(/s$/, '') : what), 'ok');
+  // The second half of the job, and it runs on both paths: a tap that added
+  // nothing is exactly the tap where his own spellings are already sitting
+  // beside the standard ones.
+  if (after) { await after(); return; }
   render();
 }
 
-function settingsStandardButton(box, label, what, apply, list, restore) {
+// AFTER THE ADD, THE PAIRS.
+//
+// Adding the standard names touches nothing he has, which is the right rule
+// and leaves the wrong list: his '3/4" hubs' and the standard '3/4" hub' now
+// sit one row apart in the picker, and he has to remember which of the two he
+// has been tapping. Catalog.nearDuplicates finds the ones that are the same
+// words said differently, and this asks about them ONCE, in the plainest
+// sentence there is, with an example so he can see what it means before he
+// answers.
+//
+// HIDE, NEVER DELETE. His spellings are on old bids, and the app has one kind
+// of delete for anything a bid points at.
+async function settingsOfferNearDuplicates(what, rows, standardNames) {
+  const dups = Catalog.nearDuplicates(rows, standardNames);
+  if (!dups.length) { render(); return; }
+  const first = dups[0];
+  const ok = await confirmPanel(dups.length + ' of your ' + what + ' look like standard ones under a '
+    + 'different name (' + first.name + ' → ' + first.standard + '). Hide the older spellings?',
+    { ok: 'Hide them' });
+  if (!ok) { render(); return; }
+  dups.forEach((x) => { x.item.hidden = true; });
+  if (!persistOr(() => { dups.forEach((x) => { x.item.hidden = false; }); })) { render(); return; }
+  showBanner('Hid ' + dups.length + ' older ' + (dups.length === 1 ? 'spelling' : 'spellings'), 'ok');
+  render();
+}
+
+function settingsStandardButton(box, label, what, apply, list, restore, after) {
   box.appendChild(textButton(label, 'link-btn',
-    () => settingsAddStandard(what, apply, list, restore)));
+    () => settingsAddStandard(what, apply, list, restore, after)));
 }
 
 function buildSetForget() {
@@ -1023,8 +1053,8 @@ function buildSetTerms() {
   box.appendChild(textButton('+ Clause', 'btn btn-block mt-3', () => { settingsAddGroup = true; render(); }));
   box.appendChild(textButton('Reset to the standard library', 'link-btn', settingsResetClauses));
   settingHiddenToggle(box, 'clauses', hidden.length);
-  box.appendChild(caption('A hidden clause comes off every proposal, even bids that already picked it. '
-    + 'Unhide it and it is back on them.'));
+  box.appendChild(caption('Hiding a clause takes it off the list new bids are offered. '
+    + 'A bid that already picked it keeps printing it, until you untick it there.'));
   return box;
 }
 
@@ -1037,17 +1067,21 @@ function buildSetTerms() {
 // ends up on a customer's proposal.
 //
 // So the old ones go, except any a bid still names: those are hidden, which is
-// the only delete this app allows for something a bid points at. The sentence
-// says all of that before he taps, in the numbers it is about to move.
+// the only delete this app allows for something a bid points at. Hidden takes
+// a clause off the list NEW bids are offered and leaves sent paper alone, and
+// the sentence has to say exactly that. It used to say the clauses were
+// "hidden instead of removed", which he read as a delete he was being let off
+// lightly on, when in fact the bids that named them lose nothing at all.
 async function settingsResetClauses() {
   const s = setS();
   const inUse = s.clauses.filter((c) => Store.clauseInUse(state.data, c.id) > 0).length;
   const ok = await confirmPanel('Replace your terms library with the standard one? '
     + 'You have ' + s.clauses.length + ' clause' + (s.clauses.length === 1 ? '' : 's') + '. '
     + (inUse === 0
-      ? 'None of them are on a bid, so they are replaced.'
-      : inUse + ' of them ' + (inUse === 1 ? 'is' : 'are') + ' on a bid and will be hidden instead of removed, '
-        + 'so those bids keep printing what they already print.'),
+      ? 'None of them are on a bid, so they are all replaced.'
+      : inUse + ' of them ' + (inUse === 1 ? 'is' : 'are') + ' on a bid. '
+        + 'Clauses no bid uses are replaced. Clauses already on a bid are kept for that bid '
+        + 'and hidden from new ones.'),
     { ok: 'Replace them', danger: true });
   if (!ok) { render(); return; }
   const before = s.clauses;
@@ -1177,7 +1211,8 @@ function buildSetCatalog() {
   }
 
   settingsStandardButton(box, 'Add the standard parts', 'parts',
-    (dd) => Store.addStandardCatalog(dd), d.catalog, (before) => { state.data.catalog = before; });
+    (dd) => Store.addStandardCatalog(dd), d.catalog, (before) => { state.data.catalog = before; },
+    () => settingsOfferNearDuplicates('parts', state.data.catalog, Store.standardCatalogNames()));
   settingHiddenToggle(box, 'catalog', hidden.length);
   box.appendChild(caption('New parts get added from the walk. Hide takes it off the walk. '
     + 'Delete is only offered when no bid uses it. "Add the standard parts" adds the ones you are '

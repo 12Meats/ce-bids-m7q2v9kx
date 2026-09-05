@@ -206,13 +206,37 @@ test('full level: prints an explicit scope, drafts none, and the total is untouc
 // Refinement 2: hidden clauses excluded
 // -------------------------------------------------------------------------
 
-test('a hidden clause is excluded from the document even when referenced by id', () => {
+// HIDDEN MEANS "NOT OFFERED ON NEW BIDS", NOT "TAKEN OFF SENT PAPER".
+//
+// "Reset to the standard library" hides every old clause a bid still names.
+// While hidden was also dropped here, that one tap in Settings took nineteen
+// terms off a proposal that had already gone out: re-share it and the paper
+// came back short, with nothing to say so, because the bid still held all
+// nineteen ids.
+test('a hidden clause the bid names still prints; a hidden clause it does not name does not', () => {
   const { d, b } = fixture();
-  const hidden = d.settings.clauses.find((c) => c.id === 'k02');
-  hidden.hidden = true;
+  d.settings.clauses.find((c) => c.id === 'k02').hidden = true;
+  d.settings.clauses.find((c) => c.id === 'k03').hidden = true;
   b.clauseIds = ['k01', 'k02'];
   const doc = D.build(b, d, 'scope');
-  assert.deepStrictEqual(doc.clauses.map((c) => c.id), ['k01']);
+  assert.deepStrictEqual(doc.clauses.map((c) => c.id), ['k01', 'k02']);
+  // k03 is hidden and unnamed, so it is on no bid and on no paper.
+  assert.strictEqual(doc.clauses.some((c) => c.id === 'k03'), false);
+});
+
+// The other half of the same rule: a bid written on today's library, then
+// reset to the standard one, keeps every term it promised. This is the case
+// the fix exists for, run end to end.
+test('resetting the terms library leaves a sent bid printing exactly what it printed', () => {
+  const { d, b } = fixture();
+  b.clauseIds = d.settings.clauses.filter((c) => c.group === 'always').map((c) => c.id);
+  const before = D.build(b, d, 'scope').clauses.map((c) => c.title);
+  assert.strictEqual(before.length, 8);
+  const out = S.resetClauseLibrary(d);
+  assert.strictEqual(out.hidden, 8, 'the eight it names are kept, hidden');
+  assert.deepStrictEqual(D.build(b, d, 'scope').clauses.map((c) => c.title), before);
+  // And a NEW bid is offered only the standard set: nothing hidden reaches it.
+  assert.strictEqual(d.settings.clauses.filter((c) => !c.hidden).length, out.added);
 });
 
 // A bid he has never opened the proposal screen on carries null, not []. The

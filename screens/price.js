@@ -963,51 +963,114 @@ function buildCostStack(bid, stack, markup) {
 // So: one tap, and nothing guessed. The confirm names every number that will
 // move, old value and new, and a bid already on today's numbers never sees the
 // button at all.
+//
+// AND IT FREEZES. A bid written before the snapshot rule carries none of these
+// five fields and no wage map, so it reads Settings for all of them and keeps
+// reading Settings forever: raise the truck rate next month and a quote he
+// sent in August silently re-prices. Nothing on that bid DIFFERS from Settings
+// today, so the old rule never offered him the button, and the one bid that
+// most needed pinning down was the one bid that could not be. An absent field
+// is a move now, and using Settings writes ALL five and a wage for every man
+// on the bid, change orders included.
 
-// What Settings would change, one line each. Wages are named man by man,
-// because "the wages changed" is not something he can check.
+// Every crew id this bid pays, once each: the labor line, its task lines if it
+// has them, and the labor on every change order. A change order shares the
+// bid's one wage map, so a man who only ever worked a change order still has
+// to be in it.
+function priceBidCrewIds(bid) {
+  const out = [];
+  const take = (labor) => {
+    if (!labor) return;
+    const lines = [labor].concat((labor.tasks && labor.tasks.length) ? labor.tasks : []);
+    lines.forEach((ln) => (ln.crewIds || []).forEach((id) => {
+      if (id && out.indexOf(id) === -1) out.push(id);
+    }));
+  };
+  take(bid.labor);
+  ((bid.job && bid.job.changeOrders) || []).forEach((co) => take(co && co.labor));
+  return out;
+}
+
+// What Settings would change, one line each, plus the fields this bid does not
+// carry at all. Wages are named man by man, because "the wages changed" is not
+// something he can check. A 'freeze' move has no sentence of its own: nothing
+// about the bid's price moves when an absent field is filled in with the very
+// number it was already reading, so what the confirm says about those is that
+// the bid stops following Settings from here on.
 function priceSettingsMoves(bid, s) {
   const out = [];
   const label = { hoursPerDay: 'Hours per day', burdenPct: 'Burden', consumablesPct: 'Consumables',
     truckDayCents: 'Truck & gas', overheadPct: 'Overhead' };
   const say = (key, v) => (key === 'truckDayCents' ? moneyText(v)
     : key === 'hoursPerDay' ? numText(v) : pctText(v));
+  const p = bid.pricing || {};
   BidMath.SNAPSHOT_KEYS.forEach((key) => {
-    const now = BidMath.bidSetting(bid, s, key);
-    if (now === s[key]) return;
-    out.push({ kind: 'pricing', key, text: label[key] + ' ' + say(key, now) + ' to ' + say(key, s[key]) });
+    const own = p[key];
+    if (typeof own !== 'number' || !Number.isFinite(own)) { out.push({ kind: 'freeze', key }); return; }
+    if (own === s[key]) return;
+    out.push({ kind: 'pricing', key, text: label[key] + ' ' + say(key, own) + ' to ' + say(key, s[key]) });
   });
 
-  // Only the men this bid already carries a wage for. A bid older than the
-  // snapshot rule has no map, reads Settings for every wage already, and has
-  // nothing here to move.
-  const map = bid.labor && bid.labor.wageCents;
-  if (map) {
-    Object.keys(map).forEach((id) => {
-      const c = s.crew.find((x) => x.id === id);
-      if (!c || c.wageCents === map[id]) return;
-      out.push({ kind: 'wage', key: id,
-        text: (c.name || 'Crew') + ' ' + moneyText(map[id]) + ' to ' + moneyText(c.wageCents) + ' an hour' });
-    });
-  }
+  // The men on the bid and the men the map already names, so neither a wage
+  // that is missing nor one left behind by a crew change goes unlisted. A man
+  // Settings has forgotten is skipped: there is no wage to bring forward, and
+  // the bid keeps whatever it was written at.
+  const map = (bid.labor && bid.labor.wageCents && typeof bid.labor.wageCents === 'object'
+    && !Array.isArray(bid.labor.wageCents)) ? bid.labor.wageCents : null;
+  const ids = priceBidCrewIds(bid);
+  Object.keys(map || {}).forEach((id) => { if (ids.indexOf(id) === -1) ids.push(id); });
+  ids.forEach((id) => {
+    const c = s.crew.find((x) => x.id === id);
+    if (!c || !Number.isInteger(c.wageCents)) return;
+    const own = map ? map[id] : undefined;
+    if (!Number.isInteger(own)) { out.push({ kind: 'freeze', key: id }); return; }
+    if (own === c.wageCents) return;
+    out.push({ kind: 'wage', key: id,
+      text: (c.name || 'Crew') + ' ' + moneyText(own) + ' to ' + moneyText(c.wageCents) + ' an hour' });
+  });
   return out;
 }
 
+// The sentence, out of the moves. Kept apart from the tap so it can be read
+// back in a test: this is the one confirm on the screen that changes what a
+// sold bid costs, and it has to say so in words he would use.
+function priceUseSettingsText(moves) {
+  const said = moves.filter((m) => m.kind !== 'freeze').map((m) => m.text);
+  const freezing = moves.some((m) => m.kind === 'freeze');
+  const body = said.length
+    ? said.join('. ') + (freezing ? ", and freezes this bid at today's Settings" : '')
+    : "Nothing moves, and freezes this bid at today's Settings";
+  return PRICE_USE_SETTINGS + '? ' + body + '.';
+}
+
 async function priceUseSettings(bid, moves) {
-  const ok = await confirmPanel(PRICE_USE_SETTINGS + '? ' + moves.map((m) => m.text).join('. ') + '.',
-    { ok: 'Use them' });
+  const ok = await confirmPanel(priceUseSettingsText(moves), { ok: 'Use them' });
   if (!ok) { render(); return; }
   const s = priceSettings();
   const prevPricing = { ...bid.pricing };
-  const prevWages = (bid.labor && bid.labor.wageCents) ? { ...bid.labor.wageCents } : null;
-  moves.forEach((m) => {
-    if (m.kind === 'pricing') { bid.pricing[m.key] = s[m.key]; return; }
-    const c = s.crew.find((x) => x.id === m.key);
-    if (c) bid.labor.wageCents[m.key] = c.wageCents;
-  });
+  const hadWages = !!(bid.labor && bid.labor.wageCents);
+  const prevWages = hadWages ? { ...bid.labor.wageCents } : null;
+
+  // All five, not only the ones that differ: half a snapshot is a bid that is
+  // pinned on burden and still drifting on overhead.
+  if (!bid.pricing) bid.pricing = {};
+  BidMath.SNAPSHOT_KEYS.forEach((key) => { bid.pricing[key] = s[key]; });
+  if (bid.labor) {
+    if (!hadWages || typeof bid.labor.wageCents !== 'object' || Array.isArray(bid.labor.wageCents)) {
+      bid.labor.wageCents = {};
+    }
+    priceBidCrewIds(bid).forEach((id) => {
+      const c = s.crew.find((x) => x.id === id);
+      if (c && Number.isInteger(c.wageCents)) bid.labor.wageCents[id] = c.wageCents;
+    });
+  }
+
   if (!priceSave(() => {
     bid.pricing = prevPricing;
-    if (prevWages) bid.labor.wageCents = prevWages;
+    if (bid.labor) {
+      if (hadWages) bid.labor.wageCents = prevWages;
+      else delete bid.labor.wageCents;
+    }
   })) { render(); return; }
   showBanner('This bid is on your Settings numbers now', 'ok');
   render();
