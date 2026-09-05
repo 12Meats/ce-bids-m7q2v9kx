@@ -79,7 +79,23 @@ function jobSettings() { return state.data.settings; }
 // named by its Monday, so two entries for the same week are impossible.
 function jobThisMonday() { return Store.mondayOf(Store.todayISO()); }
 
-function jobSelectedMonday() { return jobWeekISO || jobThisMonday(); }
+// The two ends of the week nav, from Store.jobWeekWindow — the one rule about
+// which weeks a job can hold hours, clamped so the first week is never after
+// the last one.
+function jobWindow(bid) {
+  return Store.jobWeekWindow(bid.dateISO) || { firstISO: jobThisMonday(), lastISO: jobThisMonday() };
+}
+
+// The week on the glass. Defaults to the week he is standing in — the phone
+// comes out on a Friday afternoon — and is pulled back inside the window if
+// what it is holding fell outside it (a bid re-dated while the screen was up).
+function jobSelectedMonday(bid) {
+  const w = jobWindow(bid);
+  if (!jobWeekISO) return w.lastISO;
+  if (jobWeekISO < w.firstISO) return w.firstISO;
+  if (jobWeekISO > w.lastISO) return w.lastISO;
+  return jobWeekISO;
+}
 
 // 'This week', or the Monday spelled out. He does not think in ISO dates.
 function jobWeekLabel(weekISO) {
@@ -147,21 +163,18 @@ function jobLogHours(bid, weekISO) {
   });
 }
 
-// The oldest week the arrows will go to: the Monday of the week the bid was
-// walked in. bid.dateISO and not sentAt or the day it was won, because a job
-// cannot have been worked before it was measured, and dateISO is the only one
-// of the three that every bid is guaranteed to have. Without a floor the back
-// arrow ran into 2019 one tap at a time.
-function jobWeekFloor(bid) { return Store.mondayOf(bid.dateISO) || jobThisMonday(); }
-
 // ◀ ▶ around the week's name. Forward stops at the week he is standing in:
 // there are no hours yet in a week that has not happened. Back stops at the
-// bid's own week.
+// bid's own week — bid.dateISO and not sentAt or the day it was won, because a
+// job cannot have been worked before it was measured, and dateISO is the only
+// one of the three that every bid is guaranteed to have. Without a floor the
+// back arrow ran into 2019 one tap at a time.
 function jobWeekNav(bid, weekISO) {
   const wrap = document.createElement('div');
   wrap.className = 'job-weeknav';
 
-  const atStart = weekISO <= jobWeekFloor(bid);
+  const window_ = jobWindow(bid);
+  const atStart = weekISO <= window_.firstISO;
   const back = textButton('◀', 'btn job-weeknav-btn', atStart ? null : () => {
     jobWeekISO = Dates.addDays(weekISO, -7);
     render();
@@ -175,7 +188,7 @@ function jobWeekNav(bid, weekISO) {
   label.textContent = jobWeekLabel(weekISO);
   wrap.appendChild(label);
 
-  const atNow = weekISO === jobThisMonday();
+  const atNow = weekISO >= window_.lastISO;
   const fwd = textButton('▶', 'btn job-weeknav-btn', atNow ? null : () => {
     jobWeekISO = Dates.addDays(weekISO, 7);
     render();
@@ -188,13 +201,26 @@ function jobWeekNav(bid, weekISO) {
 }
 
 function buildHoursCard(bid, actuals, done) {
-  const weekISO = jobSelectedMonday();
+  const weekISO = jobSelectedMonday(bid);
   const entry = jobWeekEntry(bid.job, weekISO);
   const box = card('Hours');
 
   box.appendChild(jobWeekNav(bid, weekISO));
 
-  const line = row('Hours', entry ? numText(entry.hours) : '—',
+  // A job won the same week it was bid has exactly one week to log against, so
+  // BOTH arrows are off and the row reads dead. Say why: a greyed-out arrow
+  // that never explains itself is how a working screen gets read as a broken
+  // one on the first Friday of a job.
+  const window_ = jobWindow(bid);
+  if (window_.firstISO === window_.lastISO) {
+    box.appendChild(caption('This is the first week of the job, so there is nothing either side of it yet.'));
+  }
+
+  // Zero, not a dash. A week with no entry has had no hours logged against it,
+  // which is what zero means — and a dash on the one number this screen exists
+  // to collect read as a field that was not working. Clearing the keypad still
+  // takes the week's row off the job, so nothing about what is stored changes.
+  const line = row('Hours', entry ? numText(entry.hours) : '0',
     done ? null : () => jobLogHours(bid, weekISO));
   line.classList.add('job-hours');
   box.appendChild(line);

@@ -28,6 +28,33 @@
     return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
   }
 
+  // The window of weeks a job's hours can be logged in, both ends named by
+  // their Monday. Pure, and the only rule about it in the app:
+  //
+  //   lastISO  — the week he is standing in. There are no hours yet in a week
+  //              that has not happened.
+  //   firstISO — the week the bid was walked in, because a job cannot have
+  //              been worked before it was measured, AND NEVER LATER THAN
+  //              lastISO.
+  //
+  // That clamp is the fix for a job that opened dead. A bid dated ahead of
+  // today — he writes Monday's bid on Saturday, and the new-bid screen takes
+  // the date he types — put the floor in a week that has not happened yet. The
+  // screen opened on the current week, which was already BELOW its own floor,
+  // so the back arrow was off (nothing older allowed) and the forward arrow
+  // was off (nothing newer exists): two dead arrows on a live job. Clamping
+  // says the plain thing instead — if the bid is dated this week or later,
+  // this week is the only week there is.
+  //
+  // Returns null only if today itself is unreadable, which cannot happen from
+  // todayISO(); a bid with a broken date simply floors at this week.
+  function jobWeekWindow(bidDateISO, today) {
+    const lastISO = mondayOf(today || todayISO());
+    if (!lastISO) return null;
+    const walked = mondayOf(bidDateISO);
+    return { firstISO: walked && walked < lastISO ? walked : lastISO, lastISO };
+  }
+
   // -------------------------------------------------------------------------
   // Seed data
   // -------------------------------------------------------------------------
@@ -550,6 +577,6 @@
   function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
-  return { KEY, uid, todayISO, mondayOf, emptyData, validateImport, load, save, check, loadProblem,
+  return { KEY, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, recordCatalogUse, numberInUse };
 });

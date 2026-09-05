@@ -309,3 +309,51 @@ test('the oldest week the job screen offers is the Monday of the bid date', () =
   const { b } = fixture();
   assert.strictEqual(S.mondayOf(b.dateISO), '2026-09-07');   // Sep 10 2026 is a Thursday
 });
+
+// ---------------------------------------------------------------------------
+// The week window — the bug that made a fresh job open dead
+// ---------------------------------------------------------------------------
+//
+// Both arrows were disabled and Hours read "—" on a job won the day it was
+// bid. Two of those three are correct and one was not: forward stops at the
+// week he is standing in and back stops at the bid's own week, but the floor
+// was the raw Monday of bid.dateISO with nothing keeping it behind today. A
+// bid dated ahead of today — he writes Monday's bid on Saturday, and the
+// new-bid screen takes the date he types — floored the screen in a week that
+// had not happened, so the current week it opened on was already below its own
+// floor and there was no week the arrows would move to at all.
+
+test('the window runs from the bid week to this week', () => {
+  assert.deepStrictEqual(S.jobWeekWindow('2026-08-24', '2026-09-05'),
+    { firstISO: '2026-08-24', lastISO: '2026-08-31' });
+});
+
+test('a bid dated in the current week gives a one-week window, not an inverted one', () => {
+  // Sep 5 2026 is a Saturday; its Monday is Aug 31.
+  assert.deepStrictEqual(S.jobWeekWindow('2026-09-05', '2026-09-05'),
+    { firstISO: '2026-08-31', lastISO: '2026-08-31' });
+  assert.deepStrictEqual(S.jobWeekWindow('2026-08-31', '2026-09-05'),
+    { firstISO: '2026-08-31', lastISO: '2026-08-31' });
+});
+
+test('a bid dated in the FUTURE never floors the screen ahead of the week he is in', () => {
+  const w = S.jobWeekWindow('2026-09-07', '2026-09-05');   // next Monday's bid, written Saturday
+  assert.deepStrictEqual(w, { firstISO: '2026-08-31', lastISO: '2026-08-31' });
+  assert.ok(w.firstISO <= w.lastISO, 'the window may never be inverted');
+});
+
+test('a bid with an unreadable date falls back to this week rather than opening on nothing', () => {
+  assert.deepStrictEqual(S.jobWeekWindow('not a date', '2026-09-05'),
+    { firstISO: '2026-08-31', lastISO: '2026-08-31' });
+  assert.deepStrictEqual(S.jobWeekWindow(null, '2026-09-05'),
+    { firstISO: '2026-08-31', lastISO: '2026-08-31' });
+});
+
+test('the window never inverts, whatever the bid date, over a year either side of today', () => {
+  for (let i = -400; i <= 400; i += 1) {
+    const dateISO = D.addDays('2026-09-05', i);
+    const w = S.jobWeekWindow(dateISO, '2026-09-05');
+    assert.ok(w.firstISO <= w.lastISO, dateISO + ' inverted the window');
+    assert.strictEqual(w.lastISO, '2026-08-31', dateISO + ' moved the current week');
+  }
+});
