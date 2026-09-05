@@ -402,7 +402,7 @@ function renderWalkArea(bid, edit, area, host) {
     box.appendChild(emptyNote('Tap + Item to add conduit, wire, boxes, or parts.'));
   } else {
     // What the line will PRINT at, which is what decides whether it is still
-    // unpriced — a "Did you forget?" row lands here at $0 and has to say so
+    // unpriced — an "Anything missing?" row lands here at $0 and has to say so
     // until he puts a number on it.
     const markup = BidMath.resolveMarkup(bid, state.data.settings);
     // One sentence per card, then a mark. See unpricedWarns in ui.js.
@@ -1322,7 +1322,7 @@ function buildForgetRow(box, bid, name, answered) {
     // one of them is seven primary actions, which is none.
     const acts = document.createElement('div');
     acts.className = 'attached-strip-btns walk-forget-acts';
-    acts.appendChild(textButton('No', 'btn btn-outline', () => {
+    acts.appendChild(textButton('Not this job', 'btn btn-outline', () => {
       const undo = walkForgetMark(bid, name, 'no');
       persistOr(undo);
       walkForgetPick = null;
@@ -1353,7 +1353,7 @@ function buildForgetCard(bid) {
   const list = (state.data.settings.forgetList || []).map((row) => Store.forgetName(row)).filter(Boolean);
   if (list.length === 0) return null;
 
-  const box = card('Did you forget?');
+  const box = card('Anything missing?');
   const answered = list.filter((name) => {
     const a = walkForgetAnswerOf(bid, name);
     return a === 'no' || a === 'added';
@@ -1462,7 +1462,8 @@ function walkForgetAdd(bid, name) {
     return;
   }
 
-  // Everything else becomes a zero-cost line in one of HIS areas. It used to
+  // Everything else becomes a line in one of HIS areas, priced on the way in.
+  // It used to
   // invent an area called "General", which put a room on the bid that he never
   // walked and that the proposal then printed. The bid's own areas are the only
   // places work belongs:
@@ -1482,8 +1483,32 @@ function walkForgetAdd(bid, name) {
   render();
 }
 
+// The area is settled; the price is the same tap chain. "Where does the number
+// get added when clicking Add it" was the question, and the honest answer used
+// to be "on the item, in the area, one tap away, and nothing says so." Now the
+// keypad comes up with the row's own name on it, and the item lands priced.
+//
+// Clear is a real answer here, the same as it is on the misc line: he does not
+// know what the permits cost yet, so the line lands at $0 and wears the amber
+// flag until he does. Cancel is not an answer at all — nothing is added and the
+// row stays open, which is what backing out of the "Which area?" chips does too.
 function walkForgetAddToArea(bid, name, area) {
-  const item = { catalogId: null, name, unit: 'lot', qty: 1, costCents: 0, priceCents: null };
+  // The chips have done their job; taking them down before the keypad opens
+  // means the answer to "which area?" is not still sitting on the glass
+  // underneath a panel asking something else.
+  walkForgetPick = null;
+  render();
+  promptMoney(0, {
+    label: name + ', how much?',
+    caption: 'Clear if you do not know yet.',
+    done: (cents) => walkForgetCommitItem(bid, name, area, cents === null ? 0 : cents),
+  });
+}
+
+// The item and the answer reach the disk together or not at all: the row is
+// only 'added' once the line it is about really was saved.
+function walkForgetCommitItem(bid, name, area, costCents) {
+  const item = { catalogId: null, name, unit: 'lot', qty: 1, costCents, priceCents: null };
   area.items.push(item);
   const undoAnswer = walkForgetMark(bid, name, 'added');
 
@@ -1497,7 +1522,9 @@ function walkForgetAddToArea(bid, name, area) {
   // His words, from the wording table: the area is the one he just picked (or
   // the only one there is), so naming it again is noise in front of the thing
   // he has to do.
-  showBanner(name + ' added. Tap it to put a price on it.', 'ok');
+  showBanner(costCents > 0
+    ? name + ' added at ' + moneyText(costCents) + '.'
+    : name + ' added. Tap it to put a price on it.', 'ok');
   render();
 }
 
