@@ -366,8 +366,10 @@
     }
     .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
     .btn-confirm { background: var(--color-confirm); border-color: var(--color-confirm); color: #fff; }
+    /* The ONLY red control in the app, and it exists in exactly one place: the
+       primary button on a confirm panel, beside the sentence naming what is
+       about to go. Nothing on a screen is red — see .link-btn-quiet. */
     .btn-danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
-    .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
     /* A real second choice: "Split into tasks" beside "Next: Costs & price",
        where two identical grey blocks used to read as two ways forward. */
     .btn-outline { background: transparent; border-color: var(--color-accent); color: var(--color-accent); }
@@ -988,6 +990,31 @@
     }
     .link-btn.link-btn-inline:active { background: #e2e8f0; }
 
+    /* DELETE, EVERYWHERE IT APPEARS ON A SCREEN. Plain muted text, no outline,
+       no colour, 48px tall, and always the last thing in the strip or the menu
+       it belongs to. Two reasons it is not red: an outlined red button beside
+       Rename is the loudest thing in the strip, which points the eye at the one
+       action nobody wants; and it sat under the same thumb as the edits. The
+       red now lives only on the confirm panel's primary button, where a colour
+       is asking a question instead of waiting to be pressed. */
+    .link-btn.link-btn-quiet {
+      color: var(--color-text-muted);
+      font-weight: 600;
+    }
+    .link-btn.link-btn-quiet:active { color: var(--color-danger); }
+    /* A side trip out of a strip that is not one of the row's own edits, and
+       not destructive either: "Check price" opens a search in another tab. */
+    .link-btn.link-btn-strip { color: var(--color-accent); }
+
+    /* The link under a keypad's caption. Centred with the caption above it,
+       sized to its own words, and 48px like everything else a thumb lands on. */
+    .link-btn.panel-caption-action {
+      width: auto;
+      min-height: 48px;
+      margin: 0 auto var(--space-1);
+      text-align: center;
+    }
+
     .bid-nav {
       display: flex;
       flex-direction: column;
@@ -1102,8 +1129,10 @@
       padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
     }
     .walk-photo-view img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
-    .walk-photo-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
-    .walk-photo-actions .btn { flex: 1; min-height: 56px; }
+    /* Close is the button; Delete is a muted line under it, because nothing on
+       a screen is red and the way out of a photo is not the way to destroy it. */
+    .walk-photo-actions { margin-top: var(--space-3); }
+    .walk-photo-actions .btn { width: 100%; min-height: 56px; }
 
     .walk-sheet {
       position: fixed;
@@ -1186,8 +1215,6 @@
        size everything else here is built at. */
     .labor-hpd-change { flex: 0 0 auto; width: auto; min-height: 48px; margin-top: 0; padding: 0 8px; }
 
-    .labor-task-actions { display: flex; margin-top: var(--space-2); }
-    .labor-task-actions .btn { flex: 1; min-height: 48px; }
     /* The task he just added, for about a second — same flash the walk uses on
        a part, for the same reason: "did that go in?" answered without reading. */
     .labor-task-new { animation: walk-flash 1s ease-out; }
@@ -1581,44 +1608,9 @@
     }
     .set-mini:active { background: #e2e8f0; }
     .set-mini:disabled { opacity: .35; }
-    .set-mini-danger { color: var(--color-danger); }
 
     /* The six category buttons over the parts list, and the five group
        buttons in the clause picker. */
-    /* The jump strip: one horizontal row that scrolls sideways rather than
-       wrapping into four rows of chips and pushing the first card off the
-       screen it is meant to be an index to. */
-    .set-jump {
-      display: flex;
-      gap: var(--space-1);
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      padding-bottom: var(--space-1);
-      margin-bottom: var(--space-2);
-    }
-    .set-jump::-webkit-scrollbar { display: none; }
-    .set-jump .chip { flex: 0 0 auto; min-height: 48px; }
-    /* A row of chips ending flush with the screen edge looks like a row that
-       ends. The wrapper lays a fade over the last few pixels so the chip under
-       it is visibly cut off, which is the whole affordance: there is more of
-       this strip to the right. Not a tap target — pointer-events off, or it
-       would eat the tap on the chip beneath it. */
-    .set-jump-wrap { position: relative; }
-    /* Only when there is really more of it to the right: settings.js measures
-       scrollWidth against clientWidth after the render and puts this class on.
-       Unconditional, it greyed out the last chip on a wide phone for nothing. */
-    .set-jump-wrap.set-jump-over::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: var(--space-1);
-      width: 40px;
-      pointer-events: none;
-      background: linear-gradient(to right, rgba(248, 250, 252, 0), var(--color-bg) 70%);
-    }
-
     .set-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
 
     /* A clause group's header: name on the left, how many it holds on the
@@ -1879,6 +1871,22 @@
       <div id="settingsContent" class="screen-content"></div>
     </section>
 
+    <!-- ---------- The three libraries -- Task H ----------
+         Each one is its own screen rather than a card on Settings: two hundred
+         parts, thirty tools and twenty-seven clauses turned that index into a
+         scroll he had to hunt down. Filled entirely by screens/settings.js. -->
+    <section id="screen-settings-catalog" class="screen" hidden>
+      <div id="settingsCatalogContent" class="screen-content"></div>
+    </section>
+
+    <section id="screen-settings-equipment" class="screen" hidden>
+      <div id="settingsEquipmentContent" class="screen-content"></div>
+    </section>
+
+    <section id="screen-settings-terms" class="screen" hidden>
+      <div id="settingsTermsContent" class="screen-content"></div>
+    </section>
+
     <!-- ---------- Reports -- Task 15 ---------- -->
     <section id="screen-reports" class="screen" hidden>
       <!-- Filled entirely by screens/reports.js. -->
@@ -1899,6 +1907,12 @@
     <h2 id="keypadLabel" class="panel-title"></h2>
     <p id="keypadWas" class="panel-was"></p>
     <p id="keypadCaption" class="panel-caption" hidden></p>
+    <!-- One optional link under the caption, for the one panel that has
+         somewhere to send him: the cost of a part, and the search that might
+         tell him what it costs. It opens another tab and leaves the keypad
+         standing, so the number he came here to type is still half-typed when
+         he comes back. -->
+    <button type="button" id="keypadCaptionAction" class="link-btn panel-caption-action" hidden></button>
     <div id="keypadDigits" class="panel-digits" aria-live="polite"></div>
     <div id="keypadGrid" class="keypad panel-keypad">
       <button type="button" class="key" data-digit="1">1</button>

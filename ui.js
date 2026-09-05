@@ -250,8 +250,21 @@ function tapCard(opts) {
 // whatever comes next. Cancel is a text button — backing out of a menu is not
 // a destructive act and must not wear the color of one.
 //
-// buttons: [{ label, onTap, cls, disabled } | { node } | null]. A null entry is
-// skipped, so a caller can write `cond ? {...} : null` inline.
+// buttons: [{ label, onTap, cls, disabled, link, quiet } | { node } | null]. A
+// null entry is skipped, so a caller can write `cond ? {...} : null` inline.
+//
+// link and quiet take a button OUT of the grid and give it its own full-width
+// line under it, in the order grid -> link -> quiet -> Cancel:
+//   link   a navy text link. A side trip that is not one of the row's edits
+//          ("Check price" opens a search in another tab).
+//   quiet  a muted text link, and the ONLY shape a Delete or a Remove wears
+//          anywhere on a screen. Nothing on a screen is red: an outlined red
+//          Delete sitting beside Rename made the dangerous answer the loudest
+//          thing in the strip and put it under the same thumb. Red is left to
+//          the confirm panel's primary button, which is the one place a colour
+//          is asking a question rather than sitting there being pressed. Quiet
+//          entries come last, so the destructive one is always the furthest
+//          from where the thumb lands.
 // opts.label: a small heading over the buttons ("Which area?").
 // opts.content: any element to sit above the buttons (a row of chips).
 // opts.cancel: a function — renders the secondary Cancel. opts.cancelLabel
@@ -288,7 +301,8 @@ function attachedStrip(parentRowEl, buttons, opts) {
   if (o.label) wrap.appendChild(fieldLabel(o.label));
   if (o.content) wrap.appendChild(o.content);
 
-  const list = (buttons || []).filter(Boolean);
+  const all = (buttons || []).filter(Boolean);
+  const list = all.filter((b) => !b.link && !b.quiet);
   if (list.length) {
     const btns = document.createElement('div');
     btns.className = 'attached-strip-btns';
@@ -300,6 +314,15 @@ function attachedStrip(parentRowEl, buttons, opts) {
     });
     wrap.appendChild(btns);
   }
+
+  // Two passes rather than one filter, so the order on the glass is the order
+  // the rule promises and not the order the caller happened to list them in.
+  all.filter((b) => b.link && !b.quiet).forEach((b) => {
+    wrap.appendChild(b.node || textButton(b.label, 'link-btn link-btn-strip', b.onTap));
+  });
+  all.filter((b) => b.quiet).forEach((b) => {
+    wrap.appendChild(b.node || textButton(b.label, 'link-btn link-btn-quiet', b.onTap));
+  });
 
   if (typeof o.cancel === 'function') {
     // Whatever was tracked before is replaced: two strips are never open at
@@ -901,6 +924,45 @@ function equipmentPickerCard(title, equipment, equipmentPct, onPick) {
   });
   box.appendChild(chips);
   return box;
+}
+
+// ---------------------------------------------------------------------------
+// CHECKING A PRICE
+// ---------------------------------------------------------------------------
+// He asked where material prices come from. The honest answer is his supply
+// house's own account app, which knows HIS price; nothing public knows it. So
+// this is a shortcut, not a data source: the name of the part, dropped into
+// whatever search he already uses, opened in another tab so the keypad he was
+// typing into is still there when he comes back.
+//
+// The template is a string with {q} in it. Google Shopping is the default
+// because it needs no account, and Settings > Company can hold his supply
+// house's search link instead. A template with no {q} in it still works — the
+// name is appended — because a link pasted off his phone's address bar often
+// has the search on the end of it already.
+
+const PRICE_SEARCH_DEFAULT = 'https://www.google.com/search?tbm=shop&q={q}';
+
+function priceSearchUrl(settings, name) {
+  const co = settings && settings.company;
+  const raw = co && typeof co.priceSearchUrl === 'string' ? co.priceSearchUrl.trim() : '';
+  const template = raw || PRICE_SEARCH_DEFAULT;
+  const q = encodeURIComponent(String(name == null ? '' : name).trim());
+  return template.indexOf('{q}') === -1 ? template + q : template.split('{q}').join(q);
+}
+
+// Opens it, or says why it did not. A plant with no signal is the normal
+// condition in this app, and a new tab that lands on the browser's own "no
+// internet" page is a tab he then has to find his way back out of. Nothing
+// here blocks anything: the price he was typing is still the price he types.
+function openPriceSearch(settings, name) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    showBanner('No signal, so no price to look up. Type what you know.');
+    return false;
+  }
+  try { window.open(priceSearchUrl(settings, name), '_blank', 'noopener'); }
+  catch (e) { showBanner('Could not open the search.'); return false; }
+  return true;
 }
 
 // ---------------------------------------------------------------------------

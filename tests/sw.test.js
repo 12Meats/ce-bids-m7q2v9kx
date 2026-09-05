@@ -97,6 +97,24 @@ test('every screen file is precached', () => {
   assert.deepStrictEqual(missing, [], 'new screen not precached: ' + missing.join(', '));
 });
 
+// A screen registers itself with the id of the <section> it draws into, and
+// nothing checks that the section is there: show() would simply toggle
+// nothing, render into a null host and throw. Task H added three screens at
+// once (the three libraries), which is exactly when one gets forgotten.
+test('every screen registers against a section that exists in index.html', () => {
+  const screens = fs.readdirSync(path.join(ROOT, 'screens')).filter((f) => f.endsWith('.js'));
+  const missing = [];
+  for (const file of screens) {
+    const src = read('screens/' + file);
+    const re = /id:\s*'(screen-[a-z-]+)'/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      if (HTML.indexOf('<section id="' + m[1] + '"') === -1) missing.push(file + ' -> ' + m[1]);
+    }
+  }
+  assert.deepStrictEqual(missing, [], 'no section for: ' + missing.join(', '));
+});
+
 test('the manifest matches the app chrome', () => {
   assert.strictEqual(MANIFEST.name, 'CE Bids');
   assert.strictEqual(MANIFEST.display, 'standalone');

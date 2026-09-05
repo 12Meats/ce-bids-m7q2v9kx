@@ -93,21 +93,28 @@ let settingsMenu = null;
 // there is actually something hidden to show.
 let settingsShowHidden = { crew: false, equipment: false, clauses: false, catalog: false };
 
-let settingsCategory = 'conduit';   // which parts category the catalog card is showing
+// The three libraries are their own screens now (see LIBRARIES), so this is
+// their view state rather than Settings'.
+let settingsCategory = null;        // which parts category the catalog screen is in; null = the tiles
+let settingsCatalogSearch = '';     // what he has typed into the parts search
+let settingsCatalogListEl = null;   // the part of the catalog screen the search redraws
+let settingsNewPart = null;         // { name, category } while + New part is being answered
 let settingsGroupOpen = null;       // which clause group is expanded
 let settingsAddGroup = false;       // the + Clause group picker is up
+// The two plain-string lists, folded. See SETTINGS_LIST_FOLD.
+let settingsListOpen = { forgetList: false, notePhrases: false };
 
 // Coming back to Settings is coming back to the top of it. Everything the
 // last visit opened or unfolded is closed again, "Show hidden" included: four
 // lists quietly showing put-away men and tools is not the screen he thinks he
-// is looking at. The one thing that stays is settingsCategory — the parts
-// card is a filing cabinet, and the drawer he was last in is the drawer he
-// wants next time.
+// is looking at. The three libraries reset themselves on the way into their
+// own screens.
 function enterSettings() {
   settingsMenu = null;
   settingsAddGroup = false;
   settingsGroupOpen = null;
   settingsShowHidden = { crew: false, equipment: false, clauses: false, catalog: false };
+  settingsListOpen = { forgetList: false, notePhrases: false };
   // The backup card's blobs have to be in memory before its buttons are drawn,
   // never read inside the tap that presses one — see the BACKUP header for why.
   settingsResetBackup();
@@ -153,9 +160,17 @@ function settingRow(box, label, valueText, onTap, captionText, opts) {
 // every inline menu in this app now wears: inside the card, indented past the
 // row, tied to it by the accent edge, and with 16px of clear space before the
 // next row instead of a Cancel button touching it.
+// The third slot in a tuple is a class name, except for two words that are
+// shapes rather than classes: 'quiet' is the muted text link every Delete on
+// every screen now wears, last in the strip; 'link' is the navy one, for a
+// side trip out of the strip that is neither an edit nor a delete.
 function settingActions(parentEl, buttons, opts) {
   const o = opts || {};
-  return attachedStrip(parentEl, buttons.map(([label, cls, onTap]) => ({ label, cls, onTap })), {
+  return attachedStrip(parentEl, buttons.map(([label, cls, onTap]) => {
+    if (cls === 'quiet') return { label, onTap, quiet: true };
+    if (cls === 'link') return { label, onTap, link: true };
+    return { label, cls, onTap };
+  }), {
     label: o.label,
     content: o.content,
     cancel: () => { settingsMenu = null; render(); },
@@ -164,8 +179,11 @@ function settingActions(parentEl, buttons, opts) {
 
 // A 44px square: ▲ ▼ ✕. Small only in width — never in height, and never in
 // what happens when it is pressed.
+// Nothing on a screen is red, the ✕ on a list row included: it used to be the
+// one red thing on a card of grey arrows, which pointed the eye at the only
+// control there that takes something away.
 function settingMiniButton(glyph, label, disabled, onTap) {
-  const btn = textButton(glyph, 'set-mini' + (label === 'Remove' ? ' set-mini-danger' : ''), disabled ? null : onTap);
+  const btn = textButton(glyph, 'set-mini', disabled ? null : onTap);
   btn.setAttribute('aria-label', label);
   btn.disabled = !!disabled;
   return btn;
@@ -259,8 +277,11 @@ function settingsInUseText(uses) {
   return 'On ' + uses + ' bid' + (uses === 1 ? '' : 's') + ', so it can be hidden but not deleted.';
 }
 
+// Muted text, last in the strip, and the red is left to the confirm panel it
+// opens. See .link-btn-quiet: an outlined red Delete beside Rename was the
+// loudest thing in the strip and sat under the same thumb as the edits.
 function settingsDeleteAction(list, entry, what) {
-  return ['Delete', 'btn-danger-outline', async () => {
+  return ['Delete', 'quiet', async () => {
     // "Not on any bid" rather than "nothing uses it": one sentence covers a
     // man, a tool, a part and a clause without calling any of them "it".
     const ok = await confirmPanel('Delete ' + what + '? Not on any bid. This can\'t be undone.',
@@ -350,15 +371,18 @@ function settingsPromptWhole(current, label, node, min, max, refusal, apply) {
 // Cancel changes nothing, and an empty answer is only refused where a blank
 // would print blank on a customer's paper.
 //
-// opts is { required, multiline } — two separate questions, and they are kept
-// separate because the clause wording is BOTH. Folding them into one argument
-// is how a blanked clause used to reach the paper as a bare heading: the
-// wording asked for a big box and silently gave up its empty check to get it.
+// opts is { required, multiline, caption } — required and multiline are two
+// separate questions, and they are kept separate because the clause wording is
+// BOTH. Folding them into one argument is how a blanked clause used to reach
+// the paper as a bare heading: the wording asked for a big box and silently
+// gave up its empty check to get it. caption is the one line of help that has
+// to be on screen WHILE he is typing rather than under the row he tapped.
 function settingsPromptText(current, label, placeholder, node, opts, apply) {
   const o = opts || {};
   promptText(current, {
     label,
     placeholder,
+    caption: o.caption,
     multiline: !!o.multiline,
     done: (text) => {
       if (o.required && !text) {
@@ -422,6 +446,48 @@ function buildSetCompany() {
   box.appendChild(caption('How the PDF looks. Changes every proposal you print from now on, '
     + 'including ones you already sent.'));
 
+  // Tax sits here rather than with the rates because it is not a rate: it
+  // changes one SENTENCE on the paper and not one cent of the money. Beside
+  // twelve numbers that all reach a price, it read as a thirteenth.
+  const s = setS();
+  box.appendChild(fieldLabel('Sales tax on materials'));
+  box.appendChild(toggleRow([['included', 'In the price'], ['added', 'Added later']], s.taxMode, async (v) => {
+    if (v === s.taxMode) return;
+    const ok = await confirmPanel('Change what the paper says about tax? This changes the tax line on EVERY '
+      + 'proposal, including ones already sent, the next time one is printed.');
+    if (!ok) { render(); return; }
+    const prev = s.taxMode;
+    s.taxMode = v;
+    settingsSaveAndRender(() => { s.taxMode = prev; });
+  }));
+  box.appendChild(caption('One sentence on the proposal. It does not change a price either way.'));
+
+  // WHERE "CHECK PRICE" GOES. He asked where material prices come from; the
+  // real answer is his supply house's own app, which knows his price and which
+  // nothing public does. So this is a shortcut and nothing more: the part's
+  // name dropped into whatever search he already uses. Optional on the
+  // document (an older backup has no such field), so the row falls back to the
+  // default rather than showing a blank.
+  const priceRow = settingRow(box, 'Supply house search',
+    (co.priceSearchUrl || PRICE_SEARCH_DEFAULT) === PRICE_SEARCH_DEFAULT ? 'Google Shopping' : 'Your own link',
+    () => {
+      settingsPromptText(co.priceSearchUrl || PRICE_SEARCH_DEFAULT, 'Supply house search',
+        PRICE_SEARCH_DEFAULT, priceRow, {
+          required: true,
+          // The one line that has to be in front of him while he is typing it:
+          // a link pasted off his phone is a link with a search already on the
+          // end of it, and {q} is the only thing this app needs him to know.
+          caption: 'Put {q} where the part name goes. Ask Adrian for your supply house\'s link.',
+        }, (text) => {
+          const prev = co.priceSearchUrl;
+          co.priceSearchUrl = text;
+          settingsSaveAndRender(() => {
+            if (prev === undefined) delete co.priceSearchUrl; else co.priceSearchUrl = prev;
+          });
+        });
+    },
+    'Where "Check price" on a part sends you. It opens in another tab.');
+
   return box;
 }
 
@@ -458,7 +524,7 @@ function buildSetCrew() {
 function buildSetCrewRow(box, c) {
   const key = 'crew:' + c.id;
   const line = settingRow(box, c.name || 'Worker', moneyText(c.wageCents) + '/hr',
-    () => settingsToggleMenu(key));
+    () => settingsToggleMenu(key), null, { strip: true });
   if (c.hidden) line.classList.add('set-hidden');
 
   if (!settingsMenuOpen(key)) return;
@@ -643,19 +709,7 @@ function buildSetRates() {
       });
   }, 'How long a new bid says the price holds. New bids only.');
 
-  box.appendChild(fieldLabel('Sales tax on materials'));
-  box.appendChild(toggleRow([['included', 'In the price'], ['added', 'Added later']], s.taxMode, async (v) => {
-    if (v === s.taxMode) return;
-    const ok = await confirmPanel('Change what the paper says about tax? This changes the tax line on EVERY '
-      + 'proposal, including ones already sent, the next time one is printed.');
-    if (!ok) { render(); return; }
-    const prev = s.taxMode;
-    s.taxMode = v;
-    settingsSaveAndRender(() => { s.taxMode = prev; });
-  }));
-  box.appendChild(caption('One sentence on the proposal. It does not change a price either way.'));
-
-  // The card's thirteen explanations, folded. Each row still says what it is
+  // The card's explanations, folded. Each row still says what it is
   // and what it is set to; what it MEANS is one tap away instead of a grey
   // line between every pair of numbers.
   const notes = settingsRateNotes;
@@ -703,9 +757,20 @@ function settingsCushionRow(box, s, jobType, label, captionText) {
 // the tool is picked, so a cost typed today changes what the picker offers
 // tomorrow and leaves every existing bid exactly where it is.
 
+function enterSettingsEquipment() {
+  settingsMenu = null;
+  settingsShowHidden.equipment = false;
+}
+
+function renderSettingsEquipment() {
+  const host = el('settingsEquipmentContent');
+  host.textContent = '';
+  host.appendChild(buildSetEquipment());
+}
+
 function buildSetEquipment() {
   const s = setS();
-  const box = card('Equipment');
+  const box = card('Your tools');
   const hidden = s.equipment.filter((e) => e.hidden);
   const list = s.equipment.filter((e) => !e.hidden || settingsShowHidden.equipment);
 
@@ -731,7 +796,8 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
   const valueText = (e.costCents == null ? 'no cost yet' : moneyText(e.costCents))
     + ' · ' + (rate == null ? 'no rate' : moneyText(rate) + '/day');
 
-  const line = settingRow(box, e.name || 'Tool', valueText, () => settingsToggleMenu(key));
+  const line = settingRow(box, e.name || 'Tool', valueText,
+    () => settingsToggleMenu(key), null, { strip: true });
   if (e.hidden) line.classList.add('set-hidden');
   if (e.overrideDayCents != null) {
     const tag = document.createElement('em');
@@ -742,14 +808,10 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
 
   if (!settingsMenuOpen(key)) return;
 
+  // The money first: what it cost new is the number the day rate is a share
+  // of, and the day rate is the number that reaches a bid. Renaming a tool is
+  // the rarest thing on this list, so it sits under both of them.
   const buttons = [
-    ['Name', '', () => {
-      settingsPromptText(e.name, 'Name', 'Threader', line, { required: true }, (text) => {
-        const prev = e.name;
-        e.name = text;
-        settingsSaveAndRender(() => { e.name = prev; });
-      });
-    }],
     ['Cost new', '', () => {
       promptMoney(e.costCents, {
         label: (e.name || 'Tool') + ', what it cost new',
@@ -779,6 +841,14 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
       settingsSaveAndRender(() => { e.overrideDayCents = prev; });
     }]);
   }
+
+  buttons.push(['Rename', '', () => {
+    settingsPromptText(e.name, 'Name', 'Threader', line, { required: true }, (text) => {
+      const prev = e.name;
+      e.name = text;
+      settingsSaveAndRender(() => { e.name = prev; });
+    });
+  }]);
 
   settingsRemoveActions(box, line, buttons, e, Store.equipmentInUse(state.data, e.id),
     setS().equipment, e.name || 'this tool');
@@ -839,6 +909,22 @@ function settingsAskToolCost(name, again) {
 // the point: the thing he forgets most often belongs at the top. ▲▼ rather
 // than a drag, because a drag on a phone is a gesture he has to already know
 // about, and this list is six items long.
+
+// HOW MANY OF A LIST THE INDEX SHOWS BEFORE IT FOLDS.
+//
+// Both of these lists tripled in v2.1 — nineteen did-you-forget rows and
+// fourteen note phrases — and laid flat they are 2,800px of a 6,500px screen,
+// which is nearly half of Settings spent on two lists he edits twice a year.
+// Six is what the walk shows of the same list, and for the same reason: the
+// ones he forgets most are at the top, and the rest are one tap away.
+const SETTINGS_LIST_FOLD = 6;
+
+function settingsListFoldToggle(box, listName, total) {
+  if (total <= SETTINGS_LIST_FOLD) return;
+  const open = settingsListOpen[listName];
+  box.appendChild(textButton(open ? 'Show fewer' : 'Show all ' + total, 'link-btn',
+    () => { settingsListOpen[listName] = !open; render(); }));
+}
 
 function settingsListRow(box, text, buttons) {
   const line = document.createElement('div');
@@ -976,13 +1062,15 @@ function buildSetForget() {
   if (s.forgetList.length === 0) {
     box.appendChild(emptyNote('Nothing on the list.'));
   } else {
-    s.forgetList.forEach((entry, i) => {
+    const shown = settingsListOpen.forgetList ? s.forgetList.length : SETTINGS_LIST_FOLD;
+    s.forgetList.slice(0, shown).forEach((entry, i) => {
       settingsListRow(box, settingsListText(entry), [
         settingMiniButton('▲', 'Move up', i === 0, () => settingsMoveString('forgetList', i, -1)),
         settingMiniButton('▼', 'Move down', i === s.forgetList.length - 1, () => settingsMoveString('forgetList', i, 1)),
         settingMiniButton('✕', 'Remove', false, () => settingsRemoveString('forgetList', i, 'list')),
       ]);
     });
+    settingsListFoldToggle(box, 'forgetList', s.forgetList.length);
   }
   box.appendChild(textButton('+ Item', 'btn btn-block mt-3',
     () => settingsAddString('forgetList', 'Did you forget', 'Permits', false)));
@@ -998,11 +1086,13 @@ function buildSetNotePhrases() {
   if (s.notePhrases.length === 0) {
     box.appendChild(emptyNote('No phrases saved.'));
   } else {
-    s.notePhrases.forEach((text, i) => {
+    const shown = settingsListOpen.notePhrases ? s.notePhrases.length : SETTINGS_LIST_FOLD;
+    s.notePhrases.slice(0, shown).forEach((text, i) => {
       settingsListRow(box, settingsListText(text), [
         settingMiniButton('✕', 'Remove', false, () => settingsRemoveString('notePhrases', i, 'phrases')),
       ]);
     });
+    settingsListFoldToggle(box, 'notePhrases', s.notePhrases.length);
   }
   box.appendChild(textButton('+ Phrase', 'btn btn-block mt-3',
     () => settingsAddString('notePhrases', 'Note or exclusion', 'Does not include...', false)));
@@ -1024,9 +1114,22 @@ function buildSetNotePhrases() {
 // — DocModel still prints a hidden clause on a bid that NAMES it, so retiring
 // one here never goes back and shortens paper that is already out.
 
+function enterSettingsTerms() {
+  settingsMenu = null;
+  settingsGroupOpen = null;
+  settingsAddGroup = false;
+  settingsShowHidden.clauses = false;
+}
+
+function renderSettingsTerms() {
+  const host = el('settingsTermsContent');
+  host.textContent = '';
+  host.appendChild(buildSetTerms());
+}
+
 function buildSetTerms() {
   const s = setS();
-  const box = card('Terms library');
+  const box = card('Clauses');
 
   if (settingsAddGroup) {
     box.appendChild(fieldLabel('Which group?'));
@@ -1107,7 +1210,9 @@ function buildSetClauseGroup(box, key, label, group) {
   head.appendChild(name);
   const count = document.createElement('span');
   count.className = 'set-group-count';
-  count.textContent = group.length + (group.length === 1 ? ' clause' : ' clauses');
+  // "(12)", not "12 clauses". Five group headers down one screen, each saying
+  // the word clause again, is five words he reads to find one number.
+  count.textContent = '(' + group.length + ')';
   head.appendChild(count);
   box.appendChild(head);
 
@@ -1118,7 +1223,7 @@ function buildSetClauseGroup(box, key, label, group) {
 function buildSetClauseRow(box, c) {
   const key = 'clause:' + c.id;
   const line = settingRow(box, c.title || 'Clause', c.hidden ? 'Hidden' : 'Shown',
-    () => settingsToggleMenu(key));
+    () => settingsToggleMenu(key), null, { strip: true });
   if (c.hidden) line.classList.add('set-hidden');
 
   if (!settingsMenuOpen(key)) return;
@@ -1126,14 +1231,14 @@ function buildSetClauseRow(box, c) {
   const wording = caption(c.text);
   box.appendChild(wording);
   settingsRemoveActions(box, wording, [
-    ['Title', '', () => {
+    ['Edit title', '', () => {
       settingsPromptText(c.title, 'Clause title', 'Payment', line, { required: true }, (text) => {
         const prev = c.title;
         c.title = text;
         settingsSaveAndRender(() => { c.title = prev; });
       });
     }],
-    ['Wording', '', () => {
+    ['Edit wording', '', () => {
       settingsPromptText(c.text, 'Clause wording', '', line, { required: true, multiline: true }, (text) => {
         const prev = c.text;
         c.text = text;
@@ -1171,59 +1276,175 @@ function settingsAddClause(group) {
 }
 
 // ---------------------------------------------------------------------------
-// CATALOG
+// CATALOG — its own screen
 // ---------------------------------------------------------------------------
-// The parts list, one category at a time — sixty parts on one screen is a
-// scroll, six buttons and twelve parts is a list. Order inside a category is
-// Catalog.matches's: most-used first, then alphabetical, so the order comes
-// off his own history rather than off the order the seed list was typed in.
+// Two hundred parts is not a card on a settings page. It is the same problem
+// the walk solved standing in a plant, so it gets the same answer, right down
+// to the shape of it: the search box on top, six tiles under it, and a list
+// once he has picked one of them. Anything he can do to a part is in the strip
+// that opens under its row.
 //
-// Hiding is the delete here too: an item on an old bid points at a catalog id,
-// and Store's validator wants that id to still exist.
+// Hiding is the delete here: an item on an old bid points at a catalog id, and
+// Store's validator wants that id to still exist. Delete only turns up on a
+// part no bid has ever named.
 
-function buildSetCatalog() {
+function enterSettingsCatalog() {
+  settingsMenu = null;
+  settingsCategory = null;
+  settingsCatalogSearch = '';
+  settingsCatalogListEl = null;
+  settingsNewPart = null;
+  settingsShowHidden.catalog = false;
+}
+
+// One step inside this screen before it gives up and goes back to Settings —
+// the same rule the walk's add flow follows, so the back gesture and the Back
+// button both put the tiles back instead of leaving the catalog altogether.
+function settingsCatalogBackStep(peek) {
+  if (settingsNewPart) {
+    if (!peek) { settingsNewPart = null; render(); }
+    return true;
+  }
+  if (settingsCategory || settingsCatalogSearch.trim() !== '') {
+    if (!peek) {
+      settingsCategory = null;
+      settingsCatalogSearch = '';
+      settingsMenu = null;
+      render();
+    }
+    return true;
+  }
+  return false;
+}
+
+function renderSettingsCatalog() {
+  const host = el('settingsCatalogContent');
+  host.textContent = '';
+
+  // One question at a time: while a new part is being named there is nothing
+  // else on the glass to tap.
+  if (settingsNewPart) { host.appendChild(buildSetNewPart()); return; }
+
+  // Above the tiles and searching everything, for the reason it is above them
+  // on the walk: he knows the name of the part, not which of six drawers this
+  // app filed it under. Only the list below is redrawn as he types — rebuilding
+  // the input under a typing thumb drops focus and closes the keyboard.
+  host.appendChild(searchInput({
+    className: 'walk-search',
+    placeholder: 'Search all parts',
+    label: 'Search all parts',
+    value: settingsCatalogSearch,
+    onInput: (value) => {
+      if (settingsCatalogSearch.trim() === '' && value.trim() !== '') navPush();
+      settingsCatalogSearch = value;
+      settingsMenu = null;
+      if (settingsCatalogListEl && settingsCatalogListEl.isConnected) {
+        // A row strip can be open while he starts typing, and this path skips
+        // render() — which is where stripsCleared() normally runs. Left set,
+        // the shell still thinks a strip is on the glass and spends his next
+        // back gesture closing one that is not there.
+        stripsCleared();
+        buildSetCatalogBody(settingsCatalogListEl);
+      } else render();
+    },
+  }));
+
+  settingsCatalogListEl = document.createElement('div');
+  buildSetCatalogBody(settingsCatalogListEl);
+  host.appendChild(settingsCatalogListEl);
+}
+
+// Tiles, or a list, and then the three things he can do to the whole catalog.
+// A search beats a category, the way it does on the walk: typing crosses all
+// six drawers, and clearing it puts the tiles back exactly where they were.
+function buildSetCatalogBody(host) {
+  host.textContent = '';
   const d = state.data;
-  const box = card('Parts catalog');
+  const searching = settingsCatalogSearch.trim() !== '';
 
-  const chips = document.createElement('div');
-  chips.className = 'set-chips';
+  if (!searching && !settingsCategory) {
+    host.appendChild(buildSetCatalogTiles());
+    host.appendChild(buildSetCatalogTools(d.catalog.filter((x) => x.hidden).length));
+    return;
+  }
+
+  const box = card(searching ? 'All parts' : catalogCategoryLabel(settingsCategory));
+  // The visible parts come back in Catalog.matches's order, which is the order
+  // the walk offers them in; the hidden ones are tacked on the end by name,
+  // because a put-away part has no use count worth ranking on.
+  const shown = Catalog.matches(d.catalog, {
+    category: settingsCategory,
+    query: settingsCatalogSearch,
+    includeRentals: true,
+  });
+  const hidden = settingsCatalogHidden(d.catalog, searching);
+  const list = settingsShowHidden.catalog ? shown.concat(hidden) : shown;
+
+  if (list.length === 0) {
+    box.appendChild(emptyNote(searching
+      ? 'Nothing matches that.'
+      : 'Nothing in ' + catalogCategoryLabel(settingsCategory) + '.'));
+  } else {
+    list.forEach((x) => buildSetCatalogRow(box, x, searching));
+  }
+  host.appendChild(box);
+  host.appendChild(buildSetCatalogTools(hidden.length));
+}
+
+// The put-away parts that belong on THIS view, so "Show hidden (3)" counts the
+// three he is looking at rather than the forty in the whole file.
+function settingsCatalogHidden(catalog, searching) {
+  const q = Catalog.normalizeName(settingsCatalogSearch);
+  return catalog
+    .filter((x) => x.hidden && (searching
+      ? Catalog.normalizeName(x.name || '').indexOf(q) !== -1
+      : x.category === settingsCategory))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+// The walk's tiles, in the walk's grid. Same six words in the same two columns
+// in the same order, because the drawer he reaches for in a plant has to be
+// the drawer he reaches for here.
+function buildSetCatalogTiles() {
+  const grid = document.createElement('div');
+  grid.className = 'walk-tiles';
   CATALOG_CATEGORIES.forEach(([key, label]) => {
-    chips.appendChild(chip(label, settingsCategory === key, () => {
+    grid.appendChild(textButton(label, 'walk-tile', () => {
+      navPush();
       settingsCategory = key;
+      settingsCatalogSearch = '';
       settingsMenu = null;
       render();
     }));
   });
-  box.appendChild(chips);
+  return grid;
+}
 
-  // The visible parts come back in Catalog.matches's order, which is the order
-  // the walk offers them in; the hidden ones are tacked on the end by name,
-  // because a put-away part has no use count worth ranking on.
-  const shown = Catalog.matches(d.catalog, { category: settingsCategory, includeRentals: true });
-  const hidden = d.catalog
-    .filter((p) => p.category === settingsCategory && p.hidden)
-    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  const list = settingsShowHidden.catalog ? shown.concat(hidden) : shown;
-
-  if (list.length === 0) {
-    box.appendChild(emptyNote('Nothing in ' + catalogCategoryLabel(settingsCategory) + '.'));
-  } else {
-    list.forEach((p) => buildSetCatalogRow(box, p));
-  }
-
+// Under whatever is on the glass, the three things that are about the catalog
+// rather than about one part in it.
+function buildSetCatalogTools(hiddenCount) {
+  const box = card();
+  box.appendChild(textButton('+ New part', 'btn btn-block', settingsAddPart));
   settingsStandardButton(box, 'Add the standard parts', 'parts',
-    (dd) => Store.addStandardCatalog(dd), d.catalog, (before) => { state.data.catalog = before; },
+    (dd) => Store.addStandardCatalog(dd), state.data.catalog,
+    (before) => { state.data.catalog = before; },
     () => settingsOfferNearDuplicates('parts', state.data.catalog, Store.standardCatalogNames()));
-  settingHiddenToggle(box, 'catalog', hidden.length);
-  box.appendChild(caption('New parts get added from the walk. Hide takes it off the walk. '
+  settingHiddenToggle(box, 'catalog', hiddenCount);
+  box.appendChild(caption('New parts get added from the walk too. Hide takes one off the walk. '
     + 'Delete is only offered when no bid uses it. "Add the standard parts" adds the ones you are '
     + 'missing and leaves everything you have alone.'));
   return box;
 }
 
-function buildSetCatalogRow(box, p) {
+// searching: the row says which drawer it came out of. A search crosses all
+// six on purpose, and two identical-looking names out of two categories are
+// otherwise the same row written twice.
+function buildSetCatalogRow(box, p, searching) {
   const key = 'part:' + p.id;
-  const line = settingRow(box, p.name || 'Part', p.unit || '—', () => settingsToggleMenu(key));
+  const unit = p.unit || '—';
+  const line = settingRow(box, p.name || 'Part',
+    searching ? catalogCategoryLabel(p.category) + ' · ' + unit : unit,
+    () => settingsToggleMenu(key), null, { strip: true });
   if (p.hidden) line.classList.add('set-hidden');
 
   if (!settingsMenuOpen(key)) return;
@@ -1232,11 +1453,11 @@ function buildSetCatalogRow(box, p) {
   // they are part of the same answer to "what about this part?".
   const units = document.createElement('div');
   units.className = 'set-chips';
-  CATALOG_UNITS.forEach((unit) => {
-    units.appendChild(chip(unit, p.unit === unit, () => {
-      if (p.unit === unit) return;
+  CATALOG_UNITS.forEach((u) => {
+    units.appendChild(chip(u, p.unit === u, () => {
+      if (p.unit === u) return;
       const prev = p.unit;
-      p.unit = unit;
+      p.unit = u;
       settingsSaveAndRender(() => { p.unit = prev; });
     }));
   });
@@ -1251,7 +1472,78 @@ function buildSetCatalogRow(box, p) {
         settingsSaveAndRender(() => { p.name = prev; });
       });
     }],
+    // Neither an edit nor a delete, so neither a button in the grid nor the
+    // muted line at the bottom: a navy link of its own, which opens the search
+    // in another tab and leaves this screen exactly where it was.
+    ['Check price', 'link', () => openPriceSearch(setS(), p.name)],
   ], p, Store.catalogInUse(state.data, p.id), state.data.catalog, p.name || 'this part', units);
+}
+
+// + NEW PART: the name, then the drawer, then how it is counted. Three panels
+// rather than one, because each answer is a different KIND of answer and a
+// phone has room for one question at a time. Nothing is written until the unit
+// is picked, so backing out at any step leaves nothing behind.
+function settingsAddPart() {
+  promptText('', {
+    label: 'New part',
+    placeholder: '3/4" EMT',
+    done: (name) => {
+      if (!name) { showBanner('A new part needs a name'); return; }
+      navPush();
+      // The drawer he is standing in is OFFERED as the answer, not taken as
+      // one: he opens Fittings, finds the coupling missing and adds it, but he
+      // might just as well be adding the box it goes on.
+      settingsNewPart = { name: Catalog.straighten(name), category: null, from: settingsCategory };
+      render();
+    },
+  });
+}
+
+function buildSetNewPart() {
+  const np = settingsNewPart;
+
+  if (!np.category) {
+    const box = card('Where does ' + np.name + ' go?');
+    const chips = document.createElement('div');
+    chips.className = 'set-chips';
+    CATALOG_CATEGORIES.forEach(([key, label]) => {
+      chips.appendChild(chip(label, key === np.from, () => {
+        np.category = key;
+        render();
+      }));
+    });
+    box.appendChild(chips);
+    box.appendChild(textButton('Cancel', 'btn btn-block', () => { settingsNewPart = null; render(); }));
+    return box;
+  }
+
+  const box = card('How is ' + np.name + ' counted?');
+  const nav = document.createElement('div');
+  nav.className = 'bid-nav';
+  CATALOG_UNITS.forEach((u) => {
+    nav.appendChild(textButton(u, 'btn btn-block', () => settingsCreatePart(u)));
+  });
+  box.appendChild(nav);
+  box.appendChild(textButton('Cancel', 'btn btn-block mt-3', () => { settingsNewPart = null; render(); }));
+  return box;
+}
+
+function settingsCreatePart(unit) {
+  const { name, category } = settingsNewPart;
+  const part = Store.addCatalogItem(state.data, { category, name, unit });
+  if (!part) { showBanner('A new part needs a name'); settingsNewPart = null; render(); return; }
+  if (!persistOr(() => {
+    const i = state.data.catalog.indexOf(part);
+    if (i !== -1) state.data.catalog.splice(i, 1);
+  })) { render(); return; }
+  // He lands in the drawer he just filed it in, with the search cleared, so
+  // the part he typed is on the glass in front of him.
+  settingsNewPart = null;
+  settingsCategory = category;
+  settingsCatalogSearch = '';
+  settingsMenu = null;
+  showBanner('Added ' + part.name, 'ok');
+  render();
 }
 
 // ---------------------------------------------------------------------------
@@ -1303,7 +1595,10 @@ function buildSetLock() {
   box.appendChild(textButton('Change PIN', 'btn btn-block mt-3', startPinChange));
 
   if (state.data.pin !== null) {
-    box.appendChild(textButton('Forget this PIN', 'btn btn-danger-outline btn-block mt-3', async () => {
+    // Last on the card and muted, like every other way of taking something
+    // away in this app. It used to be an outlined red button directly under
+    // Change PIN, which is one thumb-width from the button he actually wanted.
+    box.appendChild(textButton('Forget this PIN', 'link-btn link-btn-quiet', async () => {
       const ok = await confirmPanel('Forget this PIN? The next time you open the app it will ask you '
         + 'to pick a new one.', { ok: 'Forget', danger: true });
       if (!ok) { render(); return; }
@@ -1314,6 +1609,40 @@ function buildSetLock() {
   }
 
   box.appendChild(caption('Four digits. There is no way to look it up, so pick one you will not lose.'));
+  return box;
+}
+
+// ---------------------------------------------------------------------------
+// LIBRARIES
+// ---------------------------------------------------------------------------
+// The three lists that got big. Two hundred parts, thirty tools and
+// twenty-seven clauses used to be three cards on this screen, which is what
+// turned Settings into a scroll he had to hunt down — the jump strip at the
+// top was a patch over exactly that, and it is gone with them.
+//
+// Three rows, three screens. The count is on the row because it is the answer
+// to the only question he asks before tapping one: is anything in there.
+
+function settingsCountText(n, one, many) {
+  return n + ' ' + (n === 1 ? one : many);
+}
+
+function buildSetLibraries() {
+  const s = setS();
+  const box = card('Libraries');
+
+  box.appendChild(row('Parts catalog',
+    settingsCountText(state.data.catalog.filter((p) => !p.hidden).length, 'part', 'parts'),
+    () => show('settings-catalog')));
+  box.appendChild(row('Equipment',
+    settingsCountText(s.equipment.filter((e) => !e.hidden).length, 'tool', 'tools'),
+    () => show('settings-equipment')));
+  box.appendChild(row('Terms library',
+    settingsCountText(s.clauses.filter((c) => !c.hidden).length, 'clause', 'clauses'),
+    () => show('settings-terms')));
+
+  box.appendChild(caption('The parts you count on a walk, the tools you own, and the terms that go '
+    + 'on the back of a proposal.'));
   return box;
 }
 
@@ -1936,7 +2265,10 @@ function buildSetBackup() {
     if (f) settingsRestoreFrom(f);
   });
   box.appendChild(picker);
-  box.appendChild(textButton('Restore from backup', 'btn btn-danger-outline btn-block mt-3', () => picker.click()));
+  // Muted, and not red: it is the rarest thing on this card and the only one
+  // that replaces what is on the phone, so it reads as the small door in the
+  // corner rather than as the alarm. The confirm it opens carries the colour.
+  box.appendChild(textButton('Restore from backup', 'link-btn link-btn-quiet', () => picker.click()));
 
   // One caption on this card is the date at the top of it - the answer to the
   // only question he opens it with. The rest of the explaining folds.
@@ -2008,73 +2340,27 @@ function settingsSaveAndRender(revert) {
 // ---------------------------------------------------------------------------
 
 // Card order is how often he touches it, not how the file is organized. Crew,
-// rates and equipment change with the week; the company address and the PIN
-// were typed once and are not worth a scroll past every time. The sections in
-// the file itself stay in their old order so the diff stays readable.
+// rates and the three libraries change with the week; the company address and
+// the PIN were typed once and are not worth a scroll past every time. The
+// sections in the file itself stay in their old order so the diff stays
+// readable.
 //
-// The chip is what the jump strip calls that card, and a card with none is one
-// the strip does not name — the note phrases ride under Lists with the
-// did-you-forget rows, and Reports is a door to another screen rather than a
-// place he is looking for. Ten chips is already a full strip.
+// The jump strip that used to sit over this list is gone. It was an index over
+// an index, and it only ever existed because the parts catalog, the equipment
+// and the terms library were three long cards buried in here. They are three
+// rows and three screens now, so there is nothing left to jump past.
 const SETTINGS_CARDS = [
-  ['set-crew', 'Crew', () => buildSetCrew()],
-  ['set-rates', 'Rates', () => buildSetRates()],
-  // The parts catalog is the card he came here for — it is the one the strip
-  // was built for in the first place — and eighth in a sideways-scrolling row
-  // is off the right edge on a 375px phone, which is the same "scroll and
-  // hunt" the strip was meant to end. Third, where his thumb already is.
-  ['set-catalog', 'Catalog', () => buildSetCatalog()],
-  ['set-equipment', 'Equipment', () => buildSetEquipment()],
-  ['set-counter', 'Numbers', () => buildSetCounter()],
-  ['set-forget', 'Lists', () => buildSetForget()],
-  ['set-notes', null, () => buildSetNotePhrases()],
-  ['set-terms', 'Terms', () => buildSetTerms()],
-  ['set-company', 'Company', () => buildSetCompany()],
-  ['set-lock', 'PIN', () => buildSetLock()],
-  ['set-reports', null, () => buildSetReports()],
-  ['set-backup', 'Backup', () => buildSetBackup()],
+  ['set-crew', () => buildSetCrew()],
+  ['set-rates', () => buildSetRates()],
+  ['set-libraries', () => buildSetLibraries()],
+  ['set-counter', () => buildSetCounter()],
+  ['set-forget', () => buildSetForget()],
+  ['set-notes', () => buildSetNotePhrases()],
+  ['set-company', () => buildSetCompany()],
+  ['set-lock', () => buildSetLock()],
+  ['set-reports', () => buildSetReports()],
+  ['set-backup', () => buildSetBackup()],
 ];
-
-// Nine screens of settings with no index: he scrolled for the parts catalog
-// every time. The strip is one horizontal row of chips at the top, and each
-// one takes him to its card. The cards carry scroll-margin-top in the CSS so
-// the sticky header does not land on top of the title he just jumped to.
-function buildSetJump() {
-  // The strip scrolls sideways, and a row of chips that ends flush with the
-  // screen edge looks like a row that ENDS. The fade is a CSS overlay on the
-  // wrapper — the chips run under it and the last one is visibly cut, which is
-  // the only thing that says there is more of it to the right.
-  const outer = document.createElement('div');
-  outer.className = 'set-jump-wrap';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'set-jump';
-  wrap.setAttribute('aria-label', 'Jump to a section');
-  SETTINGS_CARDS.forEach(([id, label]) => {
-    if (!label) return;
-    wrap.appendChild(chip(label, false, () => {
-      const target = el(id);
-      if (!target) return;
-      try { target.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
-      catch (e) { target.scrollIntoView(); }   // no options object in an old browser
-    }));
-  });
-  outer.appendChild(wrap);
-
-  // The fade is the affordance: a chip visibly cut off says there is more of
-  // this strip to the right. On a wide phone the strip fits, nothing is cut
-  // off, and the fade was greying out the last chip for no reason. Measured
-  // after the frame this render is built in, because a strip that is not laid
-  // out yet has no widths to compare.
-  const measure = () => {
-    try { outer.classList.toggle('set-jump-over', wrap.scrollWidth > wrap.clientWidth + 1); }
-    catch (e) { /* no layout in this environment */ }
-  };
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measure);
-  else measure();
-
-  return outer;
-}
 
 // "CE Bids · v1 · built Sep 5, 2026". The version is the cache the phone is
 // actually being served by (APP_VERSION, held to sw.js's CACHE by
@@ -2090,17 +2376,14 @@ function renderSettings() {
   const host = el('settingsContent');
   host.textContent = '';
 
-  // The cards are built first and appended after the strip, so the strip can
-  // be at the top of the screen while the ids it points at come from the one
-  // list that decides both.
-  const cards = SETTINGS_CARDS.map(([id, label, build]) => {
+  SETTINGS_CARDS.forEach(([id, build]) => {
     const node = build();
     node.id = id;
-    return node;
+    host.appendChild(node);
   });
-  host.appendChild(buildSetJump());
-  cards.forEach((node) => host.appendChild(node));
 
+  // Still the last line on the index, and still the only way he can tell from
+  // his phone which build is serving him.
   const version = caption(settingsVersionText());
   version.className = 'caption app-version';
   host.appendChild(version);
@@ -2109,4 +2392,23 @@ function renderSettings() {
 registerScreen('settings', {
   id: 'screen-settings', title: 'Settings', back: null, tab: 'settings',
   enter: enterSettings, render: renderSettings,
+});
+
+// The three libraries. Each one is a screen in its own right — its own history
+// entry, its own Back to Settings, the Settings tab still lit underneath — so
+// the phone's back gesture and the button at the top do the same thing, and
+// coming back lands on the index rather than on a card halfway down it.
+registerScreen('settings-catalog', {
+  id: 'screen-settings-catalog', title: 'Parts catalog', back: 'settings', tab: 'settings',
+  enter: enterSettingsCatalog, backStep: settingsCatalogBackStep, render: renderSettingsCatalog,
+});
+
+registerScreen('settings-equipment', {
+  id: 'screen-settings-equipment', title: 'Equipment', back: 'settings', tab: 'settings',
+  enter: enterSettingsEquipment, render: renderSettingsEquipment,
+});
+
+registerScreen('settings-terms', {
+  id: 'screen-settings-terms', title: 'Terms library', back: 'settings', tab: 'settings',
+  enter: enterSettingsTerms, render: renderSettingsTerms,
 });
