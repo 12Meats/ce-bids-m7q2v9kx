@@ -362,7 +362,14 @@
       settings: {
         company: { name: 'Cantu Electric LLC', person: 'Andy Cantu', phone: '(480) 329-5548', email: 'cantuelectric@cox.net',
           address: '15708 E Chandler Heights Rd, Gilbert, AZ 85298', roc: 'AZ ROC #276507', tagline: 'Licensed, bonded, and insured',
-          signName: 'Andy Cantu', plainStyle: false },
+          signName: 'Andy Cantu', plainStyle: false,
+          // Where "Check price" goes. A template with {q} in it, because his
+          // supply house's own search is the one that knows HIS price; Google
+          // Shopping is only the answer for a phone that has not been told
+          // anything better. OPTIONAL on the document: an older backup has no
+          // such field and ui.js falls back to the same default, so nothing
+          // has to be migrated.
+          priceSearchUrl: 'https://www.google.com/search?tbm=shop&q={q}' },
         // hidden supports soft delete: Settings can hide a crew member/piece of
         // equipment/clause instead of splicing it, so old bids that reference
         // its id by reference stay valid forever.
@@ -504,6 +511,11 @@
         if (!isStr(co[k])) return null;
       }
       if (!isBool(co.plainStyle)) return null;
+      // Optional, so absent is fine and anything that is there has to be a
+      // string. Nothing validates the URL itself: a template he pasted off his
+      // own phone is his business, and a bad one opens a bad tab rather than
+      // refusing to save the whole document.
+      if (co.priceSearchUrl !== undefined && !isStr(co.priceSearchUrl)) return null;
 
       if (!isArr(s.crew)) return null;
       const crewIds = new Set();

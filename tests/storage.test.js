@@ -165,6 +165,33 @@ test('newBid: takes the next number, increments the counter, creates the custome
 // before the field still restores, and never printed, so nothing downstream
 // has to strip it. The validator's job here is only to refuse a shape that
 // would break a reader, not to require the field.
+// The supply house search is the newest field on the document and the least
+// important one on it: it decides where a link goes, and nothing else. So it
+// is optional both ways round — a backup written before v2.1 has no such
+// field, and a phone that has one must not be able to refuse the whole file
+// over it.
+test('validateImport: the supply house search is optional, and a string when present', () => {
+  const d = S.emptyData();
+  assert.strictEqual(d.settings.company.priceSearchUrl, 'https://www.google.com/search?tbm=shop&q={q}');
+  assert.ok(S.validateImport(JSON.stringify(d)));
+
+  const gone = JSON.parse(JSON.stringify(d));
+  delete gone.settings.company.priceSearchUrl;
+  assert.ok(S.validateImport(JSON.stringify(gone)), 'a v2 backup has no such field');
+
+  const own = JSON.parse(JSON.stringify(d));
+  own.settings.company.priceSearchUrl = 'https://supply.example.com/search?q={q}';
+  assert.ok(S.validateImport(JSON.stringify(own)));
+
+  const empty = JSON.parse(JSON.stringify(d));
+  empty.settings.company.priceSearchUrl = '';
+  assert.ok(S.validateImport(JSON.stringify(empty)));
+
+  const bad = JSON.parse(JSON.stringify(d));
+  bad.settings.company.priceSearchUrl = 42;
+  assert.strictEqual(S.validateImport(JSON.stringify(bad)), null);
+});
+
 test('validateImport: area notes are optional, and a string when present', () => {
   const { d } = buildFullData();
   assert.ok(S.validateImport(JSON.stringify(d)));               // absent

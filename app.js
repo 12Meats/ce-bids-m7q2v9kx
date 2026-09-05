@@ -168,7 +168,7 @@ function clearBanner(includePersistent) {
 // wired once in boot(). Only one may be open at a time: a second request while
 // a panel is up is dropped, which is what a fast double-tap on iOS produces.
 
-const keypadCtx = { open: false, buffer: null, done: null };
+const keypadCtx = { open: false, buffer: null, done: null, captionAction: null };
 // field: whichever of the two text controls this prompt is using — the
 // single-line input or the multi-line textarea. Everything after promptText
 // reads the field through the context rather than by id, so Done, the chips
@@ -204,7 +204,8 @@ function closeAnyPanel() {
 
 // --- Number keypad ---------------------------------------------------------
 
-// promptNumber(current, { label, caption, allowDecimal, maxChars, maxDecimals, wasText, done })
+// promptNumber(current, { label, caption, captionAction, allowDecimal, maxChars,
+//               maxDecimals, wasText, done })
 // current: the existing value (Number) or null — shown as "was 12" but never
 // preloaded into the buffer: retyping beats editing on a phone. wasText
 // overrides that line for callers that format their own (see promptMoney).
@@ -230,6 +231,20 @@ function promptNumber(current, opts) {
   const cap = el('keypadCaption');
   cap.textContent = opts.caption || '';
   cap.hidden = !opts.caption;
+
+  // captionAction: { label, onTap } — one link under that sentence, for the
+  // one panel that has somewhere to send him. It does NOT close the keypad:
+  // the search opens in another tab and the half-typed number is still here
+  // when he comes back. Stored on the context rather than bound to the button,
+  // because the button is wired once at boot and the panel is opened a
+  // thousand times.
+  const act = opts.captionAction && opts.captionAction.label ? opts.captionAction : null;
+  keypadCtx.captionAction = act ? act.onTap : null;
+  const actBtn = el('keypadCaptionAction');
+  if (actBtn) {
+    actBtn.textContent = act ? act.label : '';
+    actBtn.hidden = !act;
+  }
 
   // The decimal key only exists for callers that allow one; otherwise it stays
   // blanked so 0 and backspace never shift under the thumb.
@@ -272,6 +287,9 @@ function closeKeypad() {
   keypadCtx.open = false;
   keypadCtx.buffer = null;
   keypadCtx.done = null;
+  keypadCtx.captionAction = null;
+  const actBtn = el('keypadCaptionAction');
+  if (actBtn) { actBtn.hidden = true; actBtn.textContent = ''; }
   syncPanelClass();
 }
 
@@ -289,7 +307,7 @@ function keypadClear() {
   if (done) done(null);
 }
 
-// promptMoney(cents, { label, caption, done }) — the ONE money entry point. Every later
+// promptMoney(cents, { label, caption, captionAction, done }) — the ONE money entry point. Every later
 // screen that takes dollars goes through this, so the cents<->dollars
 // conversion and its rounding live in exactly one place: the keypad speaks
 // dollars, the data model only ever sees integer cents.
@@ -301,6 +319,7 @@ function promptMoney(cents, opts) {
   promptNumber(has ? cents / 100 : null, {
     label: opts.label,
     caption: opts.caption,
+    captionAction: opts.captionAction,
     allowDecimal: true,
     maxDecimals: 2, // cents are the smallest thing money has
     wasText: has ? 'was ' + BidMath.fmt(cents) : 'was not set',
@@ -914,6 +933,16 @@ function wirePanels() {
     else if (btn.dataset.dot !== undefined) keypadPress('.');
     else if (btn.dataset.digit !== undefined) keypadPress(btn.dataset.digit);
   });
+  // The optional link under a keypad's caption. Wired once; what it does is
+  // whatever the panel that is open put on the context, and it deliberately
+  // leaves the panel standing.
+  const capAct = el('keypadCaptionAction');
+  if (capAct) {
+    capAct.addEventListener('click', () => {
+      const act = keypadCtx.captionAction;
+      if (act) act();
+    });
+  }
   el('keypadDone').addEventListener('click', keypadDone);
   el('keypadClear').addEventListener('click', keypadClear);
   el('keypadCancel').addEventListener('click', closeKeypad);
