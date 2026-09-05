@@ -66,6 +66,7 @@ let walkSheet = null;            // { kind: 'rentEquip' | 'equip', from: 'add' |
 let walkForgetRow = null;        // the forget-list row a placeholder flow is answering
 let walkForgetPick = null;       // the forget-list row showing its "Which area?" chips
 let walkForgetOpen = false;      // the answered rows, unfolded from their one line
+let walkForgetAll = false;       // the questions past the sixth, unfolded from "Show all N"
 let walkHighlightItem = null;    // the item flashed for a second after it was added
 let walkPhotoOpenId = null;      // the photo showing full-size
 let walkPhotoUrls = [];          // object URLs handed out by the last render
@@ -93,6 +94,7 @@ function walkClearTransient() {
   walkForgetRow = null;
   walkForgetPick = null;
   walkForgetOpen = false;
+  walkForgetAll = false;
   walkHighlightItem = null;
   walkPhotoOpenId = null;
 }
@@ -1442,6 +1444,18 @@ function buildForgetRow(box, bid, name, answered) {
 //
 // The fold is a button, and its own label says so. Tapping it opens the rows,
 // each still tappable, so undoing an answer is two taps rather than hidden.
+//
+// SIX QUESTIONS, NOT NINETEEN. The list grew to nineteen rows and each row is
+// a label over two 48 px buttons, so a fresh bid opened onto about nineteen
+// hundred pixels of checklist sitting between him and the rest of the walk —
+// which is a wall, and a wall is skipped. The list is already in the order he
+// forgets things in (Settings says so on the card), so the first six are the
+// six that earn the room: lift, temp power, shutdowns, permits, core drilling,
+// disposal. The rest are one tap away and answering one brings the next
+// question up into the six, so working straight down the list never needs the
+// button at all.
+const WALK_FORGET_FOLD = 6;
+
 function buildForgetCard(bid) {
   // The rows carry a kind now ({ name, kind }), and a row he typed in Settings
   // is still a plain string. Everything on this screen works in NAMES, because
@@ -1457,7 +1471,18 @@ function buildForgetCard(bid) {
   const open = list.filter((name) => answered.indexOf(name) === -1);
 
   if (open.length === 0 && answered.length) box.appendChild(emptyNote('All answered.'));
-  open.forEach((name) => buildForgetRow(box, bid, name, false));
+  const asking = walkForgetAll ? open : open.slice(0, WALK_FORGET_FOLD);
+  asking.forEach((name) => buildForgetRow(box, bid, name, false));
+
+  // The label counts the questions, not the list: nineteen on a fresh bid,
+  // fewer once he has answered some, and gone once what is left fits.
+  if (open.length > WALK_FORGET_FOLD) {
+    box.appendChild(textButton(
+      walkForgetAll ? 'Show fewer' : 'Show all ' + open.length,
+      'link-btn',
+      () => { walkForgetAll = !walkForgetAll; walkForgetPick = null; render(); }
+    ));
+  }
 
   if (answered.length === 0) return box;
 
