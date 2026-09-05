@@ -151,6 +151,10 @@
   const JOB_TYPE = ['service', 'project'];
   const LOST_REASON = ['price', 'timing', 'other', 'silence'];
   const CLAUSE_GROUP = ['always', 'trench', 'site', 'hazmat', 'subs'];
+  // The two answers a did-you-forget row can be in. A row with no key at all
+  // is the third state — unanswered — and that is why the field is a map and
+  // not a pair of arrays.
+  const FORGET_ANSWER = ['no', 'added'];
   const CATALOG_CATEGORY = ['conduit', 'wire', 'boxes', 'lighting', 'gear', 'rentals'];
   const TAX_MODE = ['included', 'added'];
 
@@ -323,6 +327,18 @@
         }
         if (!isObj(b.pricing) || !isFiniteNum(b.pricing.marginPct) || !isIntGte0(b.pricing.rateCents)) return null;
         if (!isFiniteGte0(b.pricing.cushionPct) || !isFiniteGte0(b.pricing.markupPct)) return null;
+        // OPTIONAL on purpose, so no version bump and no migration: a backup
+        // written before the did-you-forget answers were saved has no such key
+        // and must still restore, with every row simply reading as unanswered.
+        // The keys are the row names out of settings.forgetList, which he can
+        // rename in Settings — so a key that matches no current row is not an
+        // error, it is an answer to a question he no longer asks.
+        if (b.forgetAnswers !== undefined && b.forgetAnswers !== null) {
+          if (!isObj(b.forgetAnswers)) return null;
+          for (const k of Object.keys(b.forgetAnswers)) {
+            if (!isIn(b.forgetAnswers[k], FORGET_ANSWER)) return null;
+          }
+        }
         if (b.scope !== null && !strArr(b.scope)) return null;
         if (!strArr(b.notes)) return null;
         // null means he has not been asked yet — the proposal screen seeds the
@@ -431,6 +447,12 @@
       // notice and take off, and would bill their wage until he did.
       labor: { crewIds: s.crew.filter((c) => !c.hidden).slice(0, 2).map((c) => c.id), days: 0, tasks: null },
       rentals: [], equipment: [],
+      // What he has already answered on the did-you-forget checklist, by row
+      // name: 'no' (not on this job) or 'added' (it is on the bid now). A row
+      // that is not a key here has not been answered. These used to live in a
+      // Set that died with the screen, so seven checkmarks turned back into
+      // seven questions the next time he opened the bid.
+      forgetAnswers: {},
       // No stored priceCents here: the sell price is always derived from the
       // (rounded) rate below, never persisted as its own independent number.
       //

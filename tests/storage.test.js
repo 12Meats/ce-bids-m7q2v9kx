@@ -234,6 +234,45 @@ test('newTool: refuses an empty name or a cost that is not real money, and pushe
   }
   assert.strictEqual(d.settings.equipment.length, before);
 });
+// ---------------------------------------------------------------------------
+// The did-you-forget answers
+// ---------------------------------------------------------------------------
+
+test('newBid starts with no did-you-forget answers, and the field validates', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'x', jobType: 'service' });
+  assert.deepStrictEqual(b.forgetAnswers, {});
+  d.bids.push(b);
+  assert.strictEqual(S.check(d), true);
+});
+
+test('forgetAnswers accepts no/added, refuses anything else, and is optional', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'x', jobType: 'service' });
+  d.bids.push(b);
+
+  b.forgetAnswers = { Permits: 'no', 'Lift rental': 'added' };
+  assert.strictEqual(S.check(d), true);
+
+  // A key for a row he has since renamed in Settings is an answer to a
+  // question he no longer asks, not a broken document.
+  b.forgetAnswers = { 'A row that no longer exists': 'no' };
+  assert.strictEqual(S.check(d), true);
+
+  for (const bad of ['yes', true, 1, null, {}, ['no']]) {
+    b.forgetAnswers = { Permits: bad };
+    assert.strictEqual(S.check(d), false, 'accepted ' + JSON.stringify(bad));
+  }
+  b.forgetAnswers = [];
+  assert.strictEqual(S.check(d), false);
+
+  // Absent is the shape every backup written before this field has.
+  delete b.forgetAnswers;
+  assert.strictEqual(S.check(d), true);
+  b.forgetAnswers = null;
+  assert.strictEqual(S.check(d), true);
+});
+
 test('check: mirrors validateImport as a boolean', () => {
   const d = S.emptyData();
   assert.strictEqual(S.check(d), true);

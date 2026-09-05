@@ -38,7 +38,6 @@
 // VIEW STATE
 // ---------------------------------------------------------------------------
 
-const WALK_GENERAL_AREA = 'General';
 const WALK_MISC_LABEL = 'Supports, anchors, and hardware';
 const WALK_HIGHLIGHT_MS = 1000;
 const WALK_MAX_EDGE = 1600;      // px on the long edge of a stored photo
@@ -60,7 +59,7 @@ let walkAddPending = null;       // { part, qty } waiting on the same-price answ
 let walkItemMenu = null;         // the item object showing its action row
 let walkSheet = null;            // { kind: 'rentEquip' | 'equip', from: 'add' | 'forget' }
 let walkForgetRow = null;        // the forget-list row a placeholder flow is answering
-let walkForgetAnswered = new Set();  // answered this session only, never persisted
+let walkForgetPick = null;       // the forget-list row showing its "Which area?" chips
 let walkHighlightItem = null;    // the item flashed for a second after it was added
 let walkPhotoOpenId = null;      // the photo showing full-size
 let walkPhotoUrls = [];          // object URLs handed out by the last render
@@ -72,7 +71,6 @@ let walkPhotoQueue = [];         // the ones behind it, in the order they were t
 function walkResetView() {
   walkView = 'areas';
   walkAreaId = null;
-  walkForgetAnswered = new Set();
   walkClearTransient();
 }
 
@@ -87,6 +85,7 @@ function walkClearTransient() {
   walkItemMenu = null;
   walkSheet = null;
   walkForgetRow = null;
+  walkForgetPick = null;
   walkHighlightItem = null;
   walkPhotoOpenId = null;
 }
@@ -989,6 +988,38 @@ function walkCloseSheet() {
   render();
 }
 
+// ---------------------------------------------------------------------------
+// The did-you-forget answers, on the bid
+// ---------------------------------------------------------------------------
+// bid.forgetAnswers is an optional map of row name -> 'no' | 'added'. A row
+// with no key is unanswered. The field is optional because a backup written
+// before it existed has to restore, so every read goes through here rather
+// than touching bid.forgetAnswers directly.
+
+function walkForgetAnswerOf(bid, name) {
+  const a = bid.forgetAnswers;
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return undefined;
+  return a[name];
+}
+
+// Writes an answer and hands back the undo, WITHOUT saving: the caller folds
+// this into the one persistOr that also carries whatever was added to the bid,
+// so an answer of 'added' and the line it is about reach the disk together or
+// not at all.
+function walkForgetMark(bid, name, value) {
+  const hadField = !!bid.forgetAnswers && typeof bid.forgetAnswers === 'object' && !Array.isArray(bid.forgetAnswers);
+  if (!hadField) bid.forgetAnswers = {};
+  const map = bid.forgetAnswers;
+  const had = Object.prototype.hasOwnProperty.call(map, name);
+  const prev = map[name];
+  map[name] = value;
+  return () => {
+    if (!hadField) { delete bid.forgetAnswers; return; }
+    if (had) map[name] = prev;
+    else delete map[name];
+  };
+}
+
 // from and forgetRow travel as arguments rather than as module state, because
 // promptText's Cancel calls nothing at all: state set on the way in would have
 // no way to be cleared on the way out, and would still be sitting there the
@@ -997,9 +1028,14 @@ function walkAddRental(bid, prefill, from, forgetRow) {
   promptRentalName(state.data.catalog, prefill, (name) => {
     const line = { name, days: 1, cents: 0, markup: false };
     bid.rentals.push(line);
+    // The checklist row is answered by the same save that carries the line.
+    // Cancel out of the name panel and this never runs, which is the point:
+    // a row is only 'added' once something really was.
+    const undoAnswer = forgetRow ? walkForgetMark(bid, forgetRow, 'added') : null;
     if (!persistOr(() => {
       const i = bid.rentals.indexOf(line);
       if (i !== -1) bid.rentals.splice(i, 1);
+      if (undoAnswer) undoAnswer();
     })) { render(); return; }
     walkAfterPlaceholder(from, forgetRow);
   });
@@ -1035,17 +1071,19 @@ function walkAddEquipment(bid, equip, from, forgetRow) {
 function walkPushEquipment(bid, equip, dayCents, from, forgetRow) {
   const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents };
   bid.equipment.push(line);
+  const undoAnswer = forgetRow ? walkForgetMark(bid, forgetRow, 'added') : null;
   if (!persistOr(() => {
     const i = bid.equipment.indexOf(line);
     if (i !== -1) bid.equipment.splice(i, 1);
+    if (undoAnswer) undoAnswer();
   })) { render(); return; }
   walkAfterPlaceholder(from, forgetRow,
     'Added at ' + moneyText(dayCents) + ' a day — set the days on the Costs & price screen.');
 }
 
 function walkAfterPlaceholder(from, forgetRow, message) {
-  if (forgetRow) walkForgetAnswered.add(forgetRow);
   walkForgetRow = null;
+  walkForgetPick = null;
   walkSheet = null;
   // Coming out of the add-item flow, the area he was working in is where he
   // belongs — the rental line itself does not live in an area.
@@ -1062,8 +1100,12 @@ function walkAfterPlaceholder(from, forgetRow, message) {
 // FORGET LIST
 // ---------------------------------------------------------------------------
 // The things that are invisible on a walk and expensive on a job. The answers
-// are deliberately not saved: it is a checklist for this walk, and a bid opened
-// again next week deserves to be asked again.
+// live on the bid (bid.forgetAnswers), not in a Set that dies with the screen:
+// he answers seven rows standing in a plant, puts the phone away, and opening
+// the bid again to find seven questions waiting is how the checklist stops
+// meaning anything. Every answer is undoable — the ✓ is a button that puts the
+// question back — because "No" said by a thumb is not a decision he should
+// have to live with.
 
 function buildForgetCard(bid) {
   const list = state.data.settings.forgetList || [];
@@ -1079,20 +1121,21 @@ function buildForgetCard(bid) {
     label.textContent = name;
     line.appendChild(label);
 
-    if (walkForgetAnswered.has(name)) {
-      const tick = document.createElement('span');
-      tick.className = 'walk-forget-tick';
-      // A bare checkmark glyph reads as punctuation, or as nothing at all, to a
-      // screen reader; as an image with a name it reads as the answer it is.
-      tick.setAttribute('role', 'img');
-      tick.setAttribute('aria-label', 'Answered');
-      tick.textContent = '✓';
+    const answer = walkForgetAnswerOf(bid, name);
+    if (answer === 'no' || answer === 'added') {
+      // A real button, not a glyph: the answer is a thing he can change, and
+      // the only way he finds that out is if it takes a tap.
+      const tick = textButton('✓ Answered', 'btn walk-forget-tick', () => walkForgetUnanswer(bid, name));
+      tick.setAttribute('aria-label', 'Answered · tap to ask again');
+      tick.title = 'Answered · tap to ask again';
       line.appendChild(tick);
     } else {
       const acts = document.createElement('div');
       acts.className = 'walk-forget-actions';
       acts.appendChild(textButton('No', 'btn', () => {
-        walkForgetAnswered.add(name);
+        const undo = walkForgetMark(bid, name, 'no');
+        persistOr(undo);
+        walkForgetPick = null;
         render();
       }));
       acts.appendChild(textButton('Add it', 'btn btn-primary', () => walkForgetAdd(bid, name)));
@@ -1100,8 +1143,48 @@ function buildForgetCard(bid) {
     }
 
     box.appendChild(line);
+
+    // "Which area?" — only up while this row is asking it.
+    if (walkForgetPick === name) box.appendChild(buildForgetAreaPicker(bid, name));
   });
   return box;
+}
+
+// The chips he picks an area with when the bid has more than one. Attached
+// under the row that asked, so the question and the answer are in one place.
+function buildForgetAreaPicker(bid, name) {
+  const wrap = document.createElement('div');
+  wrap.className = 'walk-forget-areas';
+  wrap.appendChild(fieldLabel('Which area?'));
+
+  const chips = document.createElement('div');
+  chips.className = 'walk-forget-chips';
+  (bid.areas || []).forEach((area) => {
+    chips.appendChild(chip(area.name || 'Area', false, () => walkForgetAddToArea(bid, name, area)));
+  });
+  wrap.appendChild(chips);
+
+  const nav = document.createElement('div');
+  nav.className = 'bid-nav';
+  nav.appendChild(textButton('Cancel', 'btn btn-block', () => {
+    // Backing out leaves the row unanswered, which is the truth: he has not
+    // said no to permits, he has said not now.
+    walkForgetPick = null;
+    render();
+  }));
+  wrap.appendChild(nav);
+  return wrap;
+}
+
+function walkForgetUnanswer(bid, name) {
+  const map = bid.forgetAnswers;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) { render(); return; }
+  if (!Object.prototype.hasOwnProperty.call(map, name)) { render(); return; }
+  const prev = map[name];
+  delete map[name];
+  persistOr(() => { map[name] = prev; });
+  walkForgetPick = null;
+  render();
 }
 
 function walkForgetAdd(bid, name) {
@@ -1118,45 +1201,55 @@ function walkForgetAdd(bid, name) {
   // rentals: "Forklift", "Lift plan" and "Lift gate" would all open the rental
   // prompt. Both ways of being wrong are cheap and visible — he is looking at a
   // name field with the row's own words already in it, and Cancel costs one
-  // tap. A row renamed far enough to miss both rules ("Scaffolding") makes
-  // Add it write a $0 General line instead, which stays on the bid until it is
-  // priced. Neither outcome can quietly lose money: the failure is always
-  // something he can see.
+  // tap, leaving the row unanswered.
   if (key.indexOf('rental') !== -1 || key.indexOf('lift') !== -1) {
     walkSheet = null;
     walkForgetRow = null;
+    walkForgetPick = null;
     walkAddRental(bid, name, 'forget', name);
     return;
   }
   if (key.indexOf('equipment') !== -1) {
     walkForgetRow = name;
+    walkForgetPick = null;
     walkSheet = { kind: 'equip', from: 'forget' };
     render();
     return;
   }
 
-  // Everything else becomes a zero-cost line in an area called General, so it
-  // is visible on the bid — and on the Price screen — until it has a number.
-  let area = bid.areas.find((a) => (a.name || '').trim().toLowerCase() === WALK_GENERAL_AREA.toLowerCase());
-  const created = !area;
-  if (!area) {
-    area = { id: Store.uid(), name: WALK_GENERAL_AREA, items: [], photoIds: [] };
-    bid.areas.push(area);
+  // Everything else becomes a zero-cost line in one of HIS areas. It used to
+  // invent an area called "General", which put a room on the bid that he never
+  // walked and that the proposal then printed. The bid's own areas are the only
+  // places work belongs:
+  //
+  //   one area   — it goes there, no question asked
+  //   several    — he says which, on chips under the row
+  //   none       — there is nowhere to put it yet, so say so and add nothing
+  const areas = bid.areas || [];
+  if (areas.length === 0) {
+    showBanner('Add an area first, then tap Add it.');
+    walkForgetPick = null;
+    render();
+    return;
   }
+  if (areas.length === 1) { walkForgetAddToArea(bid, name, areas[0]); return; }
+  walkForgetPick = name;
+  render();
+}
+
+function walkForgetAddToArea(bid, name, area) {
   const item = { catalogId: null, name, unit: 'lot', qty: 1, costCents: 0, priceCents: null };
   area.items.push(item);
+  const undoAnswer = walkForgetMark(bid, name, 'added');
 
   if (!persistOr(() => {
     const i = area.items.indexOf(item);
     if (i !== -1) area.items.splice(i, 1);
-    if (created) {
-      const a = bid.areas.indexOf(area);
-      if (a !== -1) bid.areas.splice(a, 1);
-    }
+    undoAnswer();
   })) { render(); return; }
 
-  walkForgetAnswered.add(name);
-  showBanner(name + ' added to General at $0 — price it on the walk', 'ok');
+  walkForgetPick = null;
+  showBanner(name + ' added to ' + (area.name || 'the area') + '. Tap it to put a price on it.', 'ok');
   render();
 }
 

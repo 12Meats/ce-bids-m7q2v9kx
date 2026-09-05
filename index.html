@@ -778,7 +778,23 @@
     /* Two buttons on one line still get a full-size target: he is answering
        seven of these in a row with a work glove half off. */
     .walk-forget-actions .btn { min-height: 56px; padding: 0 16px; font-size: 0.95rem; }
-    .walk-forget-tick { padding-right: 8px; font-size: 1.3rem; font-weight: 800; color: var(--color-confirm); }
+    /* Answered, and still a control: tapping it puts the question back. */
+    .walk-forget-tick {
+      min-height: 56px;
+      padding: 0 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--color-confirm);
+    }
+    /* "Which area?" hangs under the row that asked it, indented and tinted so
+       it reads as part of that row and not as the next one. */
+    .walk-forget-areas {
+      padding: var(--space-2) 0 var(--space-2) var(--space-2);
+      margin-bottom: var(--space-2);
+      border-left: 3px solid var(--color-border);
+      background: var(--color-bg);
+    }
+    .walk-forget-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
     /* ---------- Labor ---------- */
     /* One line — crew chips and a day count — or the same pair once per task.
