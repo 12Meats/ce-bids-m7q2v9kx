@@ -54,7 +54,7 @@ function buildNudges() {
   const stale = bidsSentNoAnswer();
   if (stale.length) {
     const band = nudgeBand(
-      `${stale.length} bid${stale.length === 1 ? '' : 's'} sent, no answer — tap to ${bidsFilterSent ? 'show all' : 'review'}`,
+      `${stale.length} bid${stale.length === 1 ? '' : 's'} sent, no answer. Tap to ${bidsFilterSent ? 'show all' : 'review'}`,
       'warn',
       () => { bidsFilterSent = !bidsFilterSent; render(); }
     );
@@ -225,12 +225,19 @@ function bidRow(bid) {
   // second button (⋯), and a button inside a button is not a thing.
   const main = document.createElement('button');
   main.type = 'button';
-  main.className = 'bid-main';
+  // .tap and a chevron, the same two things every other door in the app wears.
+  // This is the most-tapped row in the file and it was the one row wearing its
+  // own press colour and no › at all — a list of bids that did not look like a
+  // list of things you could open.
+  main.className = 'bid-main tap tap-chevron';
+
+  const text = document.createElement('div');
+  text.className = 'bid-main-text';
 
   const line1 = document.createElement('div');
   line1.className = 'bid-line1';
   line1.textContent = bidCustomerName(bid, state.data) + (bid.title ? ' · ' + bid.title : '');
-  main.appendChild(line1);
+  text.appendChild(line1);
 
   const line2 = document.createElement('div');
   line2.className = 'bid-line2';
@@ -257,7 +264,9 @@ function bidRow(bid) {
   num.className = 'bid-number';
   num.textContent = '#' + bid.number;
   line2.appendChild(num);
-  main.appendChild(line2);
+  text.appendChild(line2);
+  main.appendChild(text);
+  main.appendChild(chevron());
 
   // Long press opens the same menu the ⋯ button does. The button exists
   // because a hidden gesture is a feature nobody finds; the gesture exists

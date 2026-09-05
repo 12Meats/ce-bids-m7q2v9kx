@@ -496,7 +496,7 @@ function buildSetCrewRow(box, c) {
 // area, so the only feedback he can see is the one line above the digits.
 function settingsEditWage(c, again) {
   promptMoney(c.wageCents, {
-    label: (c.name || 'Worker') + ' — paid an hour' + (again ? '. Enter more than $0' : ''),
+    label: (c.name || 'Worker') + ', paid an hour' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null) return;
       if (!(cents > 0)) {
@@ -534,7 +534,7 @@ function settingsAddCrew() {
 // it is open is a banner nobody ever sees.
 function settingsAskWage(name, again) {
   promptMoney(null, {
-    label: name + ' — paid an hour' + (again ? '. Enter more than $0' : ''),
+    label: name + ', paid an hour' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null || !(cents > 0)) {
         settingsAskWage(name, true);
@@ -760,7 +760,7 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
     }],
     ['Cost new', '', () => {
       promptMoney(e.costCents, {
-        label: (e.name || 'Tool') + ' — what it cost new',
+        label: (e.name || 'Tool') + ', what it cost new',
         done: (cents) => {
           const prev = e.costCents;
           e.costCents = cents;   // Clear means "I don't know", which is a real answer
@@ -818,7 +818,7 @@ function settingsAddTool() {
 // there.)
 function settingsAskToolCost(name, again) {
   promptMoney(null, {
-    label: name + ' — what it cost new' + (again ? '. Enter more than $0' : ''),
+    label: name + ', what it cost new' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null || !(cents > 0)) {
         settingsAskToolCost(name, true);
@@ -1497,7 +1497,7 @@ async function settingsSendBackup() {
   if (result === 'cancelled') { dropQueue(); render(); return; }
   if (result === 'unsupported') {
     dropQueue();
-    showBanner("Couldn't open the share sheet — nothing was sent", 'danger');
+    showBanner("Couldn't open the share sheet. Nothing was sent", 'danger');
     render();
     return;
   }
@@ -1682,7 +1682,7 @@ function settingsRestoreFrom(file) {
       // app comes back the way it comes back every morning: off the file, at
       // the lock screen, asking for the PIN that is in the backup.
       if (!Store.save(data)) {
-        showBanner("Couldn't save the backup — nothing changed", 'danger');
+        showBanner("Couldn't save the backup. Nothing changed", 'danger');
         render();
         return;
       }
@@ -1796,6 +1796,9 @@ function buildSetBackup() {
       settingsSaveAndRender(() => { s.backupEmail = prev; });
     });
   }, null);
+  // The address goes under the label, not beside it: it is the longest value in
+  // Settings and the only one that pushed its own label onto two lines.
+  emailRow.classList.add('row-stack');
 
   // --- Photos, on their own
   buildSetBackupPhotos(box);

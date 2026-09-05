@@ -183,6 +183,22 @@
       color: var(--color-confirm);
     }
     .banner-text { flex: 1; }
+    /* A banner that names a place is a way to get there. Same words, same
+       colour, now a real 48px target with the underline that says so. */
+    .banner-go {
+      min-height: 48px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: 700;
+      color: inherit;
+      text-align: left;
+      text-decoration: underline;
+      text-underline-offset: 4px;
+    }
+    .banner-go:active { opacity: 0.6; }
     .banner-dismiss {
       min-width: 48px;
       min-height: 48px;
@@ -507,6 +523,15 @@
     .row:last-child { border-bottom: none; }
     .row-label { color: var(--color-text-muted); }
     .row-value { font-weight: 700; text-align: right; }
+    /* A value too long to sit beside its label: "Send it to" and a real work
+       email came to more than the row was wide, and the label wrapped to two
+       words over one. The label takes the first line to itself and the value
+       takes the second, left-aligned and breaking wherever it has to. */
+    .row.row-stack { flex-wrap: wrap; align-items: baseline; row-gap: 4px; }
+    .row.row-stack .row-label { flex: 1 1 100%; }
+    /* basis 0, not auto: an address wider than the row would otherwise set the
+       line's width and push the › onto a third line of its own. */
+    .row.row-stack .row-value { flex: 1 1 0; min-width: 0; text-align: left; overflow-wrap: anywhere; }
 
     /* ---------- Tap affordance ---------- */
     /* One rule for the whole app, applied by the ui.js builders: a thing that
@@ -544,8 +569,10 @@
        colour so it is never mistaken for a navy one that opens a keypad. */
     .row.flat { cursor: default; }
     /* The one number a screen exists to produce, when it is a row rather than
-       a block. Exactly one row per screen wears this. */
-    .row-big .row-value { font-size: var(--font-xl); font-weight: 800; }
+       a block — the same .big-number the walk and the proposal put in a block.
+       One class, one size, one weight, wherever the number lands. Exactly one
+       per screen wears it. */
+    .big-number .row-value { font-size: var(--font-xl); font-weight: 800; }
     /* A value that opens a keypad, on the two rows that are not .row. */
     .tap-value .walk-row-value,
     .tap-value .price-line-value { color: var(--color-accent); }
@@ -645,8 +672,20 @@
       white-space: nowrap;
     }
     .stepstrip-step:active { background: #e2e8f0; }
+    /* Done is navy and carries a tick. Everything he has not reached is the
+       muted grey the rest of the app uses for a fact he cannot change. */
     .stepstrip-done { color: var(--color-accent); }
-    .stepstrip-now { color: var(--color-accent); font-weight: 800; }
+    /* Where he is standing. Navy on navy-and-grey was the whole problem: bold
+       navy text next to done navy text is two shades of the same answer, and on
+       a 375px phone with the strip scrolled it is no answer at all. A filled
+       pill is not a shade, it is a shape. */
+    .stepstrip-now {
+      background: var(--color-accent);
+      color: #fff;
+      font-weight: 800;
+      padding: 0 12px;
+    }
+    .stepstrip-now:active { background: var(--color-accent); }
     .stepstrip-dot { flex: 0 0 auto; color: var(--color-border); }
 
     /* ---------- What's this? ---------- */
@@ -664,7 +703,11 @@
     .whats-this .caption { margin-top: 0; }
 
     /* ---------- The one number ---------- */
-    .big-number { margin: var(--space-1) 0 var(--space-2); }
+    /* 28px, 800, left-aligned, everywhere. The walk, labor, the price screen,
+       the proposal and the job each produce exactly one number, and they used
+       to produce it in three different classes — .labor-big centered it, and
+       .row-big and .big-number-value said the same two declarations twice. */
+    .big-number { margin: var(--space-1) 0 var(--space-2); text-align: left; }
     .big-number-value { font-size: var(--font-xl); font-weight: 800; line-height: 1.15; }
     .big-number-sub { margin-top: 2px; font-size: 0.9rem; color: var(--color-text-muted); }
 
@@ -747,10 +790,16 @@
     /* The card holds a second button, so it is a container and the tap target
        is the button filling it. A button inside a button is not a thing. */
     .bid-main {
+      display: flex;
+      align-items: center;
+      gap: 2px;
       flex: 1;
       min-width: 0;
       min-height: 72px;
-      padding: var(--space-2) var(--space-3);
+      /* The › is the row's right edge now, so it takes the padding's place
+         rather than being added on top of it: this line is four facts wide
+         already and a fifth column of whitespace is what wraps it. */
+      padding: var(--space-2) var(--space-1) var(--space-2) var(--space-3);
       border: none;
       border-radius: 12px 0 0 12px;
       background: transparent;
@@ -758,7 +807,9 @@
       color: var(--color-text);
       text-align: left;
     }
-    .bid-main:active { background: #eef2f7; }
+    /* The two lines of words, with the › beside them rather than under them. */
+    .bid-main-text { flex: 1; min-width: 0; }
+    .bid-main .chev { margin-left: 0; }
     /* A long press on this row opens the app's own menu. Without these, iOS
        answers the same gesture with its native callout and a text selection
        over the customer name, and the owner gets two menus fighting. */
@@ -868,6 +919,23 @@
       color: var(--color-accent);
       text-align: left;
     }
+    /* Rename, Change, Edit details: the same three words in three different
+       shapes, all of them a stretch of navy text with nothing round it. One
+       look now — sized to its own words, outlined so it reads as a control,
+       and 48px whatever the line it sits on is doing. */
+    .link-btn.link-btn-inline {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: auto;
+      min-height: 48px;
+      margin-top: 0;
+      padding: 0 14px;
+      border: 1.5px solid var(--color-border);
+      border-radius: 10px;
+      font-size: 0.95rem;
+    }
+    .link-btn.link-btn-inline:active { background: #e2e8f0; }
 
     .bid-nav {
       display: flex;
@@ -999,10 +1067,11 @@
     }
     .walk-forget:last-child { border-bottom: none; }
     .walk-forget-label { flex: 1; min-width: 0; }
-    .walk-forget-actions { display: flex; gap: var(--space-1); }
-    /* Two buttons on one line still get a full-size target: he is answering
-       seven of these in a row with a work glove half off. */
-    .walk-forget-actions .btn { min-height: 56px; padding: 0 16px; font-size: 0.95rem; }
+    /* The buttons are .attached-strip-btns, shared with every inline menu in
+       the app. The one thing they need here is not to grow: on a row that is
+       already carrying a label, two buttons that stretch push the words off. */
+    .walk-forget-acts { flex: 0 0 auto; }
+    .walk-forget-acts .btn { min-height: 56px; padding: 0 16px; font-size: 0.95rem; }
     /* Answered, and still a control: tapping it puts the question back. */
     .walk-forget-tick {
       min-height: 56px;
@@ -1038,11 +1107,6 @@
     /* The one way out of a state that is blocking every save on the bid — a
        full-size target, not a 44px afterthought. */
     .labor-warn-actions .btn { min-height: 56px; padding: 0 18px; }
-
-    /* The one number this screen exists to produce, in the biggest type on it
-       and above the controls that change it. */
-    .labor-big { text-align: center; }
-    .labor-big-line { font-size: var(--font-xl); font-weight: 800; line-height: 1.15; }
 
     /* Hours per day is a SETTINGS value that happens to be reachable here. It
        used to be the only chevron on the screen, which made the one thing that

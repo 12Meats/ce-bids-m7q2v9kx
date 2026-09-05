@@ -107,8 +107,18 @@ function enterWalk(arg) {
   if (arg !== undefined) {
     const t = navTarget(arg);
     if (t.bidId) state.bidId = t.bidId;
+    // navTarget answers null for a plain id, so naming a bid clears the change
+    // order rather than leaving it standing over the top of it.
     walkCoId = t.changeOrderId;
   }
+  // The belt to that brace. With no argument this screen keeps whatever it had,
+  // which is right for a Back off a tab and wrong the moment the bid underneath
+  // has moved: a change order id from the last bid resolves to nothing on this
+  // one, and the screen opens on "That change order isn't here anymore." A
+  // change order that is not on the bid we are standing in is not a change
+  // order we are editing.
+  if (walkCoId && !walkChangeOrder(walkBid())) walkCoId = null;
+
   const target = state.bidId + '|' + (walkCoId || '');
   if (walkForTargetId !== target) walkResetView();
   else walkClearTransient();
@@ -251,7 +261,8 @@ function renderWalkAreas(bid, edit, host) {
   // where they are already priced — charging them a second time on the change
   // order is the one mistake a change order must never make.
   if (co) {
-    pinnedBar(host, 'Next: Labor', () => show('labor', { bidId: bid.id, changeOrderId: co.id }));
+    pinnedBar(host, 'Next: Labor', () => show('labor', { bidId: bid.id, changeOrderId: co.id }),
+      { disabled: areas.length === 0 });
     return;
   }
 
@@ -289,7 +300,13 @@ function renderWalkAreas(bid, edit, host) {
   const forget = buildForgetCard(bid);
   if (forget) host.appendChild(forget);
 
-  pinnedBar(host, 'Next: Labor', () => show('labor', bid.id));
+  // Greyed, not gone, on a walk with no rooms on it yet. A filled navy button
+  // saying "Next" over an empty screen is the app telling him to move on from
+  // work he has not started, and it is the loudest thing on the glass — louder
+  // than "Tap + Area and name the first room", which is the only thing here
+  // worth doing. Disabled, the empty-state line is the only call to action, and
+  // one filled button per view is finally true.
+  pinnedBar(host, 'Next: Labor', () => show('labor', bid.id), { disabled: areas.length === 0 });
 }
 
 function walkAddArea(edit) {
@@ -329,7 +346,7 @@ function renderWalkArea(bid, edit, area, host) {
   // Rename underneath, where it is a small deliberate act rather than
   // something a thumb finds by aiming at the title.
   const head = screenHead(area.name || 'Area', null, { center: true });
-  head.appendChild(textButton('Rename', 'link-btn screen-head-action', () => {
+  head.appendChild(textButton('Rename', 'link-btn link-btn-inline screen-head-action', () => {
     promptText(area.name, {
       label: 'Area name',
       placeholder: 'Where you are standing',
@@ -353,6 +370,8 @@ function renderWalkArea(bid, edit, area, host) {
     // unpriced — a "Did you forget?" row lands here at $0 and has to say so
     // until he puts a number on it.
     const markup = BidMath.resolveMarkup(bid, state.data.settings);
+    // One sentence per card, then a mark. See unpricedWarns in ui.js.
+    const warn = unpricedWarns();
     items.forEach((it) => {
       const line = walkRow(
         it.name,
@@ -362,7 +381,7 @@ function renderWalkArea(bid, edit, area, host) {
       );
       if (walkHighlightItem === it) line.classList.add('walk-row-new');
       box.appendChild(line);
-      if (!(BidMath.itemPrice(it, markup).cents > 0)) box.appendChild(unpricedWarn());
+      if (!(BidMath.itemPrice(it, markup).cents > 0)) box.appendChild(warn());
       // Inside this card, under the row that was tapped, indented - not
       // appended after the whole card, where the answer to "what about this
       // line?" used to appear under a heading belonging to something else.
@@ -409,7 +428,11 @@ function renderWalkArea(bid, edit, area, host) {
 
   // Done, not "+ Item": the pinned bar is the way OUT of the room, and the way
   // further in is the button in the flow above it.
-  pinnedBar(host, 'Done', () => { walkView = 'areas'; walkItemMenu = null; render(); });
+  // Same rule as the areas list: nothing counted in this room yet, so there is
+  // nothing to be done with, and "Tap + Item" is the only thing to do. The
+  // header's Back still leaves the room.
+  pinnedBar(host, 'Done', () => { walkView = 'areas'; walkItemMenu = null; render(); },
+    { disabled: items.length === 0 });
 }
 
 async function walkDeleteArea(edit, area) {
@@ -743,7 +766,7 @@ function walkAskCost(bid, area, part, qty) {
       // line goes on at zero and shows on the bid until it has been priced.
       const zero = cents === null;
       if (walkCommitItem(bid, area, part, qty, zero ? 0 : cents) && zero) {
-        showBanner('Added at $0 — put a price on it when you know it');
+        showBanner('Added at $0. Put a price on it when you know it');
       }
     },
   });
@@ -1187,7 +1210,7 @@ function walkPushEquipment(bid, equip, dayCents, from, forgetRow) {
     if (undoAnswer) undoAnswer();
   })) { render(); return; }
   walkAfterPlaceholder(from, forgetRow,
-    'Added at ' + moneyText(dayCents) + ' a day — set the days on the Costs & price screen.');
+    'Added at ' + moneyText(dayCents) + ' a day. Set the days on the Costs & price screen.');
 }
 
 function walkAfterPlaceholder(from, forgetRow, message) {
@@ -1201,7 +1224,7 @@ function walkAfterPlaceholder(from, forgetRow, message) {
     walkAddCat = null;
     walkAddSearch = '';
   }
-  showBanner(message || 'Added — price it on the Costs & price screen.', 'ok');
+  showBanner(message || 'Added. Price it on the Costs & price screen.', 'ok');
   render();
 }
 
@@ -1235,15 +1258,22 @@ function buildForgetRow(box, bid, name, answered) {
     tick.title = 'Answered · tap to ask again';
     line.appendChild(tick);
   } else {
+    // The same two-button shape every inline menu in this app wears — the
+    // attached strip's own class, so these rows and the "Which area?" strip
+    // that opens under them are visibly one thing rather than two.
+    //
+    // Both outlined. The pinned "Next: Labor" is the one filled navy button on
+    // this screen, and a checklist of seven rows with a filled button on every
+    // one of them is seven primary actions, which is none.
     const acts = document.createElement('div');
-    acts.className = 'walk-forget-actions';
-    acts.appendChild(textButton('No', 'btn', () => {
+    acts.className = 'attached-strip-btns walk-forget-acts';
+    acts.appendChild(textButton('No', 'btn btn-outline', () => {
       const undo = walkForgetMark(bid, name, 'no');
       persistOr(undo);
       walkForgetPick = null;
       render();
     }));
-    acts.appendChild(textButton('Add it', 'btn btn-primary', () => walkForgetAdd(bid, name)));
+    acts.appendChild(textButton('Add it', 'btn btn-outline', () => walkForgetAdd(bid, name)));
     line.appendChild(acts);
   }
 

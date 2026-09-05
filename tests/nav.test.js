@@ -100,6 +100,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), sandbox, { f
 const {
   registerScreen, show, goBack, onPopState, anyPanelOpen,
   promptNumber, promptText, confirmPanel, keypadPress, keypadDone, textDone, closeAnyPanel,
+  attachedStrip, closeAnyStrip,
 } = sandbox;
 
 // A function declaration lands on the context's global object; a top-level
@@ -259,4 +260,54 @@ test('a replace restamps the entry it is standing on', () => {
   show('bids', undefined, { replace: true });
   assert.strictEqual(history.entries[history.entries.length - 1].ceb, navDepth(),
     'the entry carries the depth we are actually at, not the one it was pushed with');
+});
+
+// ---------------------------------------------------------------------------
+// A back gesture with an attached strip open
+// ---------------------------------------------------------------------------
+//
+// The same rule the panels get, for the smaller question. A strip is the menu
+// that opens under a row he tapped, and a swipe answering it by leaving the
+// screen entirely is one step too many: he opens the ⋯ on a bid, swipes back to
+// close it, and lands somewhere else with the menu simply gone.
+
+test('the back gesture closes an open strip and navigates nothing', () => {
+  const before = standInTheWalk();
+  let closed = 0;
+  attachedStrip(null, [{ label: 'Delete', onTap: () => {} }], { cancel: () => { closed += 1; } });
+
+  onPopState({ state: { ceb: 2 } });
+
+  assert.strictEqual(closed, 1, 'the strip was cancelled, exactly once');
+  assert.strictEqual(state.screen, before.screen, 'the screen underneath did not move');
+  assert.strictEqual(history.pushes, before.pushes + 1, 'the entry the swipe spent is put back');
+
+  // And the NEXT swipe, with nothing left open, goes back for real.
+  onPopState({ state: { ceb: 2 } });
+  assert.strictEqual(state.screen, 'bid');
+});
+
+test('a panel open over a strip is the thing the gesture answers first', () => {
+  standInTheWalk();
+  let closed = 0;
+  attachedStrip(null, [{ label: 'Rename', onTap: () => {} }], { cancel: () => { closed += 1; } });
+  promptText('', { label: 'Area name', done: () => {} });
+
+  onPopState({ state: { ceb: 2 } });
+  assert.strictEqual(anyPanelOpen(), false, 'the panel went');
+  assert.strictEqual(closed, 0, 'the strip is still open behind it');
+  assert.strictEqual(state.screen, 'walk');
+
+  onPopState({ state: { ceb: 2 } });
+  assert.strictEqual(closed, 1, 'the second gesture closes the strip');
+  assert.strictEqual(state.screen, 'walk');
+});
+
+test('a strip with no Cancel is not something the gesture can close', () => {
+  standInTheWalk();
+  // Not every strip has a way out of its own: some are a list of buttons and
+  // nothing else. Tracking one would leave a back gesture spending itself on
+  // nothing at all.
+  attachedStrip(null, [{ label: 'Days', onTap: () => {} }], {});
+  assert.strictEqual(closeAnyStrip(), false);
 });

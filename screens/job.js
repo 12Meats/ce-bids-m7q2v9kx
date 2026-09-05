@@ -145,7 +145,7 @@ function jobLogHours(bid, weekISO) {
         return;
       }
       if (v > JOB_MAX_WEEK_HOURS) {
-        showBanner('That is more than ' + JOB_MAX_WEEK_HOURS + ' hours in a week — check the number');
+        showBanner('That is more than ' + JOB_MAX_WEEK_HOURS + ' hours in a week. Check the number');
         render();
         return;
       }
@@ -296,7 +296,7 @@ function jobAddSurprise(bid, label) {
 }
 
 async function jobDeleteSurprise(bid, item) {
-  const ok = await confirmPanel('Delete ' + moneyText(item.cents) + ' — ' + (item.note || 'this surprise') + '?',
+  const ok = await confirmPanel('Delete ' + moneyText(item.cents) + ': ' + (item.note || 'this surprise') + '?',
     { ok: 'Delete', danger: true });
   if (!ok) { render(); return; }
   const job = bid.job;
@@ -456,7 +456,7 @@ function buildActualCard(actuals) {
   // The one number this screen exists to answer: how the hours are running
   // against the hours he sold. Everything else on the card steps down to it.
   const hours = row('Hours', numText(actuals.actualHours) + ' / ' + numText(actuals.bidHours));
-  hours.classList.add('row-big');
+  hours.classList.add('big-number');
   box.appendChild(hours);
 
   // "$400 of -$150" is not a sentence. The cushion is bid hours minus real

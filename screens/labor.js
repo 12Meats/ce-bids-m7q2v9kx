@@ -200,7 +200,7 @@ function laborDaysRow(label, holder, promptLabel) {
         if (v > LABOR_MAX_DAYS) {
           // Nothing was written, so there is nothing to re-render: the row he
           // tapped is still on the glass, and it is the thing that is wrong.
-          showBanner('That is more than a year — check the number of days');
+          showBanner('That is more than a year. Check the number of days');
           shake(line);
           return;
         }
@@ -244,17 +244,16 @@ function buildReadout(bid, real) {
 // number itself, which is still the answer to the same question.
 function buildLaborBigNumber(edit, real) {
   const box = card();
-  box.classList.add('labor-big');
-
-  const big = document.createElement('div');
-  big.className = 'labor-big-line';
   const labor = edit.labor;
-  big.textContent = (labor.tasks === null)
-    ? crewDaysText((labor.crewIds || []).length, labor.days, real.hours)
-    : laborPlural(real.hours, 'hr', 'hrs');
-  box.appendChild(big);
-
-  if (labor.tasks !== null) box.appendChild(caption('Across ' + laborPlural(labor.tasks.length, 'task', 'tasks') + '.'));
+  // The shared bigNumber, not a third copy of the same two declarations: the
+  // walk, the price screen, the proposal and the job all say their one number
+  // in this class, at this size, on this side of the card.
+  box.appendChild(bigNumber(
+    (labor.tasks === null)
+      ? crewDaysText((labor.crewIds || []).length, labor.days, real.hours)
+      : laborPlural(real.hours, 'hr', 'hrs'),
+    labor.tasks !== null ? 'Across ' + laborPlural(labor.tasks.length, 'task', 'tasks') + '.' : null
+  ));
   return box;
 }
 
@@ -279,7 +278,7 @@ function buildHoursPerDayRow() {
     + '. Changes every bid, not just this one.';
   line.appendChild(text);
 
-  line.appendChild(textButton('Change', 'link-btn labor-hpd-change', async () => {
+  line.appendChild(textButton('Change', 'link-btn link-btn-inline labor-hpd-change', async () => {
     const ok = await confirmPanel(
       'Change hours per day? This re-figures the hours and price on EVERY bid, including ones already sent.'
     );
@@ -316,7 +315,7 @@ function buildHoursPerDayRow() {
 // never drift apart.
 function laborTaskHoursText(task) {
   const crew = (task.crewIds || []).length;
-  if (crew === 0) return '0 hours — nobody on this task yet';
+  if (crew === 0) return '0 hours, nobody on this task yet';
   return numText(BidMath.lineHours(task, laborHoursPerDay())) + ' hours ('
     + laborPlural(crew, 'guy', 'guys') + ' × ' + laborPlural(task.days, 'day', 'days') + ')';
 }
@@ -436,7 +435,7 @@ async function laborMergeBack(bid, edit) {
   // the task and both ways out of it.
   if (!merged.ok) {
     showBanner((merged.taskName || 'A task')
-      + ' has nobody on it — put a crew on it or delete it before combining');
+      + ' has nobody on it. Put a crew on it or delete it before combining');
     return;
   }
 

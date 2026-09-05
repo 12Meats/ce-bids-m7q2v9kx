@@ -366,6 +366,11 @@
         // number he can see on the glass. A widening of the old rule, so every
         // file written before it still loads and no migration is needed.
         if (!isFiniteNum(b.pricing.cushionPct) || !isFiniteGte0(b.pricing.markupPct)) return null;
+        // OPTIONAL, like forgetAnswers below: "he has moved a handle on this
+        // bid", written by the price screen and read only by the step strip.
+        // Every file written before it exists has no such key and must still
+        // load, so absent is legal and only a non-boolean is an error.
+        if (b.pricing.touched !== undefined && !isBool(b.pricing.touched)) return null;
         // OPTIONAL on purpose, so no version bump and no migration: a backup
         // written before the did-you-forget answers were saved has no such key
         // and must still restore, with every row simply reading as unanswered.

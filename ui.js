@@ -122,7 +122,10 @@ function card(title) {
 function tapClasses(onTap, opts) {
   const o = opts || {};
   if (!onTap) return ' flat';
-  return ' tap' + (o.keypad ? ' tap-value' : ' tap-chevron');
+  // keypad and strip are the same answer for two reasons: neither one opens a
+  // screen, so neither one gets the ›, and both change the value sitting on the
+  // row, so the value is the thing that looks tappable.
+  return ' tap' + (o.keypad || o.strip ? ' tap-value' : ' tap-chevron');
 }
 
 // The › itself. A span, not a pseudo-element, so it sits in the flex row after
@@ -140,8 +143,9 @@ function chevron() {
 // without one it is inert text and wears .flat.
 //
 // opts.keypad: this row opens a number panel, so the value goes navy and there
-// is no chevron — a chevron promises another screen. Anything else that taps
-// gets the chevron.
+// is no chevron: a chevron says this opens a screen. opts.strip is the same
+// promise for a row that opens an attached strip under itself rather than a
+// panel. Anything else that taps gets the chevron.
 function row(label, value, onTap, opts) {
   const node = document.createElement(onTap ? 'button' : 'div');
   node.className = 'row' + (onTap ? ' row-tap' : '') + tapClasses(onTap, opts);
@@ -161,7 +165,7 @@ function row(label, value, onTap, opts) {
 
   node.appendChild(l);
   node.appendChild(v);
-  if (onTap && !(opts && opts.keypad)) node.appendChild(chevron());
+  if (onTap && !(opts && (opts.keypad || opts.strip))) node.appendChild(chevron());
   return node;
 }
 
@@ -220,6 +224,30 @@ function tapCard(opts) {
 // opts.content: any element to sit above the buttons (a row of chips).
 // opts.cancel: a function — renders the secondary Cancel. opts.cancelLabel
 // renames it ("Close" in the bid ⋯ menu).
+// The strip currently on the glass, as the function that closes it — which is
+// exactly opts.cancel, the thing its own Cancel button is wired to.
+//
+// It exists so the back gesture has something to spend on a strip. A menu
+// hanging under a row is a question, the same as a keypad is, and a swipe
+// answering it by leaving the screen entirely is one step too many: he opens
+// the ⋯ on a bid, swipes back to close it, and lands on the home screen.
+//
+// Cleared at the top of every render (stripsCleared) and set again by whichever
+// strip that render draws, so it can never point at a strip that is no longer
+// on screen.
+let currentStrip = null;
+
+function stripsCleared() { currentStrip = null; }
+
+// Close the open strip, if there is one. True when there was.
+function closeAnyStrip() {
+  if (!currentStrip) return false;
+  const cancel = currentStrip;
+  currentStrip = null;
+  cancel();
+  return true;
+}
+
 function attachedStrip(parentRowEl, buttons, opts) {
   const o = opts || {};
   const wrap = document.createElement('div');
@@ -242,7 +270,13 @@ function attachedStrip(parentRowEl, buttons, opts) {
   }
 
   if (typeof o.cancel === 'function') {
-    wrap.appendChild(textButton(o.cancelLabel || 'Cancel', 'link-btn attached-strip-cancel', o.cancel));
+    // Whatever was tracked before is replaced: two strips are never open at
+    // once, and the second one drawn is the one on the glass.
+    currentStrip = o.cancel;
+    wrap.appendChild(textButton(o.cancelLabel || 'Cancel', 'link-btn attached-strip-cancel', () => {
+      currentStrip = null;
+      o.cancel();
+    }));
   }
 
   // Inserted for the caller when the row is already in the document; handed
@@ -285,9 +319,14 @@ function pinnedBar(host, label, onTap, opts) {
 // Four screens that lead one to the next had no way to say where he was or to
 // jump — the only route between them was Back, Back, Back and in again.
 //
-// A step is "done" when it has produced the thing it exists to produce, which
-// is deliberately generous: the strip is a map, not a checklist he has to
-// satisfy. Nothing here is used in any arithmetic.
+// A step is "done" when HE has done something on it. That is the only reading
+// worth having: the first version called Price done on a brand new bid, because
+// a bid seeded with the shop's default rate already solves to a price above
+// zero, and a checkmark he did not earn is worse than no checkmark at all — it
+// tells him a screen is finished that he has never opened.
+//
+// So each one asks for a mark he left: an item counted, a crew and days set, a
+// handle moved, a proposal sent. Nothing here is used in any arithmetic.
 
 const BID_STEPS = [
   ['walk', 'Walk'],
@@ -298,19 +337,35 @@ const BID_STEPS = [
 
 function bidStepDone(bid, settings, key) {
   if (!bid) return false;
+  // An area with something counted in it. An empty area is a room he named and
+  // walked out of; rentals and equipment are the price screen's rows, and a
+  // checkmark on Walk for a line he added there is a lie about where he has
+  // been.
   if (key === 'walk') {
-    return (bid.areas || []).some((a) => (a.items || []).length > 0)
-      || (bid.rentals || []).length > 0
-      || (bid.equipment || []).length > 0;
+    return (bid.areas || []).some((a) => (a.items || []).length > 0);
   }
+  // Crew and days, which is what bid hours above zero means: neither one alone
+  // makes an hour.
   if (key === 'labor') {
     try { return BidMath.costStack(bid, settings).bidHours > 0; } catch (e) { return false; }
   }
+  // A handle he moved. bid.pricing.touched is set by the price screen the first
+  // time one of the three handles, the markup or the cushion is changed. It is
+  // OPTIONAL — a bid written before this existed simply has no such key, which
+  // reads as untouched, which is the honest answer for a bid nobody has priced
+  // since. The fallback under it catches those: pricing that no longer matches
+  // the shop's defaults was moved by hand at some point.
   if (key === 'price') {
-    try {
-      const stack = BidMath.costStack(bid, settings);
-      return BidMath.solve(stack, 'rate', (bid.pricing && bid.pricing.rateCents) || 0).priceCents > 0;
-    } catch (e) { return false; }
+    const pr = bid.pricing || {};
+    if (pr.touched === true) return true;
+    const s = settings || {};
+    const seedCushion = s.cushionPct && typeof s.cushionPct === 'object'
+      ? s.cushionPct[bid.jobType]
+      : undefined;
+    return (s.rateCents !== undefined && pr.rateCents !== s.rateCents)
+      || (s.marginPct !== undefined && pr.marginPct !== s.marginPct)
+      || (s.markupPct !== undefined && pr.markupPct !== s.markupPct)
+      || (seedCushion !== undefined && pr.cushionPct !== seedCushion);
   }
   if (key === 'proposal') return !!bid.sentAt;
   return false;
@@ -1014,8 +1069,25 @@ function areaTallyText(area) {
 // a $0 override is not.
 
 const UNPRICED_WARN_TEXT = 'No price on this yet. Tap it to put a price on it.';
+// The same warning, said the second time. A card with six unpriced items in it
+// printed the same fourteen words six times, which is not six warnings, it is a
+// wall of amber he stops reading. The first one teaches; the rest only have to
+// mark.
+const UNPRICED_WARN_SHORT = 'No price yet';
 
 function unpricedWarn() { return inlineWarn(UNPRICED_WARN_TEXT); }
+
+// unpricedWarns() -> a warn-maker for ONE card. The first line it is asked for
+// gets the sentence, every line after it in that card gets the short form.
+// A fresh one per card, so the sentence appears once wherever he is looking.
+function unpricedWarns() {
+  let first = true;
+  return () => {
+    const node = inlineWarn(first ? UNPRICED_WARN_TEXT : UNPRICED_WARN_SHORT);
+    first = false;
+    return node;
+  };
+}
 
 // Every line on this bid that would print at nothing, in the order he would
 // find them: areas top to bottom, then rentals, then equipment, then change
@@ -1054,7 +1126,7 @@ function unpricedLines(bid, settings) {
     if (BidMath.changeOrderIsEmpty(co)) return;
     const cents = BidMath.changeOrderPrice(co, bid, settings);
     coCents += cents;
-    if (!(cents > 0)) out.push({ kind: 'changeOrder', name: co.name || 'this change order' });
+    if (!(cents > 0)) out.push({ kind: 'changeOrder', name: co.name || 'this change order', id: co.id });
   });
 
   // The whole bid, last. Everything above is a line he can tap; this is the
@@ -1088,4 +1160,22 @@ function unpricedLines(bid, settings) {
 function unpricedBlockText(lines) {
   if (lines[0].kind === 'total') return 'This bid totals $0.00. Put a price on it first.';
   return 'Put a price on "' + lines[0].name + '" first.';
+}
+
+// Where that line actually is, as a show() call: { screen, arg }.
+//
+// The banner names the line and then left him standing on the proposal screen
+// to go find it. It is one tap from being the fastest route on the bid, and the
+// mapping is the only thing that was missing — an item is counted on the walk,
+// a rental and a piece of equipment are priced on the price screen, a change
+// order is scoped in its own walk inside the job, and the whole-bid total is
+// the price screen's handles.
+function unpricedTarget(line, bid) {
+  const bidId = bid && bid.id;
+  if (!line) return null;
+  if (line.kind === 'item') return { screen: 'walk', arg: bidId };
+  if (line.kind === 'changeOrder' && line.id) {
+    return { screen: 'walk', arg: { bidId, changeOrderId: line.id } };
+  }
+  return { screen: 'price', arg: bidId };
 }

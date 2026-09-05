@@ -545,7 +545,11 @@ function proposalClauseGroup(bid, title, list) {
   // "19 of 19" is a fraction to work out; "19 on" is the answer. And the
   // control says what it does rather than what state it names: "None" read as
   // a label for the group rather than as a button that empties it.
-  n.textContent = on + ' on ·';
+  //
+  // The separator belongs BETWEEN the count and the button, which is where it
+  // now is: "Always · 19 on · Turn all off". Hung off the end of the count it
+  // was a dot with nothing after it whenever the line wrapped.
+  n.textContent = '· ' + on + ' on ·';
   head.appendChild(n);
   const allOn = on === list.length;
   head.appendChild(textButton(allOn ? 'Turn all off' : 'Turn all on', 'link-btn', () => {
@@ -846,7 +850,13 @@ async function proposalAfterShare(bid, opts) {
 function proposalBlockedByUnpriced(bid) {
   const lines = unpricedLines(bid, state.data.settings);
   if (lines.length === 0) return false;
-  showBanner(unpricedBlockText(lines), 'danger');
+  // Naming the line and leaving him here to find it was half a sentence. The
+  // banner is the route now: one tap and he is standing on the screen that
+  // holds it. unpricedTarget owns the mapping, so this screen still knows
+  // nothing about how the others are laid out.
+  const to = unpricedTarget(lines[0], bid);
+  showBanner(unpricedBlockText(lines), 'danger',
+    to ? { onTap: () => show(to.screen, to.arg) } : undefined);
   return true;
 }
 
@@ -1112,7 +1122,7 @@ function renderProposal() {
   // The exception to "controls first": a bid that cannot be priced has no
   // document to share, and that has to be said before the Share button rather
   // than under it.
-  if (!doc) host.appendChild(inlineWarn("This bid can't be priced yet — check the Costs & price screen."));
+  if (!doc) host.appendChild(inlineWarn("This bid can't be priced yet. Check the Costs & price screen."));
   host.appendChild(buildShare(bid, doc));
 
   host.appendChild(buildNotes(bid));

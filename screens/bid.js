@@ -335,7 +335,11 @@ function startTheWalk() {
 
   bidDraft = null;
   state.bidId = bid.id;
-  show('walk');
+  // WITH the id. A bare show('walk') means "keep whatever you had", and what
+  // he had one Back tap after a change order is that change order — so the
+  // first walk of a brand new bid opened onto "That change order isn't here
+  // anymore." Every navigation into walk/labor names the thing it means.
+  show('walk', bid.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -410,27 +414,23 @@ function renderBidScreen(bid, host) {
   meta.appendChild(date);
   box.appendChild(meta);
 
-  box.appendChild(textButton('Edit details', 'link-btn', () => {
+  box.appendChild(textButton('Edit details', 'link-btn link-btn-inline', () => {
     bidHeaderOpen = true;
     render();
   }));
   host.appendChild(box);
 
   // --- Where the work happens ---
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  // Every one of these carries the bid id. Walk and Labor also edit change
-  // orders now, and a plain show('walk') means "keep what you had" — which,
-  // one Back tap after a change order, would be the change order.
-  nav.appendChild(textButton('Walk', 'btn btn-block', () => show('walk', bid.id)));
-  nav.appendChild(textButton('Labor', 'btn btn-block', () => show('labor', bid.id)));
-  nav.appendChild(textButton('Costs & price', 'btn btn-block', () => show('price', bid.id)));
-  nav.appendChild(textButton('Proposal', 'btn btn-block', () => show('proposal', bid.id)));
-  // Job tracking only means something once there's a job to track.
+  // The four steps used to be four big buttons here as well as four names in
+  // the strip at the top: the same nav twice, the second copy pushing the
+  // status cards off the screen. The strip is the nav now. What is left is the
+  // one door the strip does not have — the job, and only once there is one.
   if (bid.status === 'won' || bid.status === 'complete') {
+    const nav = document.createElement('div');
+    nav.className = 'bid-nav';
     nav.appendChild(textButton('Job', 'btn btn-block', () => show('job', bid.id)));
+    host.appendChild(nav);
   }
-  host.appendChild(nav);
 
   // --- Won / lost ---
   // Only once it's out the door. A draft becomes 'sent' on the Proposal

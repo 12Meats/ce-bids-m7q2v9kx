@@ -88,6 +88,10 @@ const BANNER_MAX = 3;
 // kind: 'warn' (default) | 'danger' | 'ok'.
 // opts.persistent: stays until clearBanner(true) — no dismiss X, no timeout.
 // Used for conditions that are still true (storage unreadable), not events.
+// opts.onTap: the banner names a place, so the banner goes there. The text
+// becomes a button, the dismiss X stays its own control beside it, and the
+// banner clears itself on the way — the screen it lands on is the answer, and a
+// warning still sitting over it is a warning about the thing he is now fixing.
 // Re-showing identical text replaces the existing banner rather than stacking.
 function showBanner(text, kind, opts) {
   opts = opts || {};
@@ -103,10 +107,22 @@ function showBanner(text, kind, opts) {
   banner.dataset.text = text;
   if (opts.persistent) banner.dataset.persistent = '1';
 
-  const span = document.createElement('span');
-  span.className = 'banner-text';
-  span.textContent = text;
-  banner.appendChild(span);
+  if (typeof opts.onTap === 'function') {
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'banner-text banner-go';
+    go.textContent = text;
+    go.addEventListener('click', () => {
+      banner.remove();
+      opts.onTap();
+    });
+    banner.appendChild(go);
+  } else {
+    const span = document.createElement('span');
+    span.className = 'banner-text';
+    span.textContent = text;
+    banner.appendChild(span);
+  }
 
   if (!opts.persistent) {
     const dismiss = document.createElement('button');
@@ -180,7 +196,10 @@ function closeAnyPanel() {
   if (keypadCtx.open) { closeKeypad(); return true; }
   if (textCtx.open) { closeText(); return true; }
   if (confirmCtx.open) { closeConfirm(false); return true; }
-  return false;
+  // An attached strip is a question too — smaller, drawn in the flow rather
+  // than over it, and just as much a thing a back gesture should answer before
+  // it answers "leave this screen". See currentStrip in ui.js.
+  return closeAnyStrip();
 }
 
 // --- Number keypad ---------------------------------------------------------
@@ -527,11 +546,11 @@ function handlePinComplete() {
       pinBuffer = [];
       updateDots();
       shake(el('pinDots'));
-      setPinMessage("PINs didn't match — start over");
+      setPinMessage("PINs didn't match. Start over");
       // On the first run the message line IS the screen; mid-change the banner
       // says it too, because the screen he came from is the one he is thinking
       // about and the message under the dots is easy to walk past.
-      if (pinChanging) showBanner("PINs didn't match — start over");
+      if (pinChanging) showBanner("PINs didn't match. Start over");
       setTimeout(() => {
         firstPinDigits = null;
         pinBusy = false;
@@ -552,7 +571,7 @@ function handlePinComplete() {
   pinBuffer = [];
   updateDots();
   shake(el('pinDots'));
-  setPinMessage('Wrong PIN — try again');
+  setPinMessage('Wrong PIN. Try again');
   if (pinWrongTries >= PIN_HINT_AFTER) {
     const hint = el('pinHint');
     hint.textContent = PIN_HINT_TEXT;
@@ -733,6 +752,10 @@ function renderTopBar() {
 // Renders whatever screen is current. Call directly to refresh in place.
 function render() {
   const cfg = SCREENS[state.screen];
+  // Every strip on the glass is about to be rebuilt or not rebuilt by the
+  // screen below, so what was tracked a moment ago is not news. Whichever strip
+  // this render draws registers itself again on the way past.
+  stripsCleared();
   renderTopBar();
   if (cfg && cfg.render) cfg.render();
 }
@@ -746,7 +769,7 @@ function render() {
 // the done() callback first, then persist.
 function persist() {
   if (!Store.save(state.data)) {
-    showBanner("Couldn't save — nothing changed", 'danger');
+    showBanner("Couldn't save. Nothing changed", 'danger');
     return false;
   }
   return true;
@@ -826,7 +849,9 @@ function onPopState(e) {
   // whatever screen the swipe landed on, and Done would then write into the
   // bid he had just left. So cancel it, put the entry the swipe spent back,
   // and stay exactly where he is — one gesture, one thing dismissed.
-  if (anyPanelOpen()) { closeAnyPanel(); navPush(); return; }
+  // One gesture, one thing dismissed: a panel if there is one, otherwise a
+  // strip. closeAnyPanel answers for both and says whether it found anything.
+  if (closeAnyPanel()) { navPush(); return; }
   // On the PIN screen there is nothing to go back to and everything to lose.
   if (!state.unlocked) { navPush(); return; }
   navSuppress = true;
@@ -921,7 +946,7 @@ function requestPersistentStorage() {
 function boot() {
   requestPersistentStorage();
   if (Store.loadProblem() === 'corrupt') {
-    showBanner('Storage was unreadable — restore from a backup in Settings', 'danger', { persistent: true });
+    showBanner('Storage was unreadable. Restore from a backup in Settings', 'danger', { persistent: true });
   }
   wirePinKeypad();
   wirePanels();

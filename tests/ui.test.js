@@ -33,6 +33,7 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
+  unpricedTarget, navTarget, bidStepDone,
   crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -400,4 +401,134 @@ test('an item line says its count in a plural and its price once', () => {
   assert.equal(itemCountText(120, 'ft', 340), '120 ft at $3.40');
   assert.equal(itemCountText(3, 'ea', 950), '3 ea at $9.50');
   assert.equal(itemCountText(0.5, 'day', 50000), '0.5 days at $500.00');
+});
+
+// ---------------------------------------------------------------------------
+// The step strip
+// ---------------------------------------------------------------------------
+//
+// A checkmark he did not earn is worse than no checkmark: it tells him a screen
+// is finished that he has never opened. The bug it is here for is Price, which
+// was "done" on a brand new bid because a bid is SEEDED with the shop's rate
+// and already solves to a price above zero.
+
+function freshBid() {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Lights', jobType: 'service', dateISO: '2026-09-01' });
+  d.bids.push(b);
+  return { d, b };
+}
+
+test('a brand new bid has nothing done on it', () => {
+  const { d, b } = freshBid();
+  ['walk', 'labor', 'price', 'proposal'].forEach((k) => {
+    assert.strictEqual(bidStepDone(b, d.settings, k), false, k + ' is not done on a new bid');
+  });
+});
+
+test('the walk is done once a room has something counted in it', () => {
+  const { d, b } = freshBid();
+  // A room he named and walked out of is not a walk he has done.
+  b.areas.push({ id: 'a1', name: 'Warehouse', items: [], photoIds: [] });
+  assert.strictEqual(bidStepDone(b, d.settings, 'walk'), false);
+  b.areas[0].items.push({ catalogId: null, name: 'LED high bay', unit: 'ea', qty: 4, costCents: 31800, priceCents: null });
+  assert.strictEqual(bidStepDone(b, d.settings, 'walk'), true);
+});
+
+test('a rental priced on another screen does not tick the walk', () => {
+  const { d, b } = freshBid();
+  b.rentals.push({ name: 'Scissor lift', days: 2, cents: 25000, markup: true });
+  assert.strictEqual(bidStepDone(b, d.settings, 'walk'), false);
+});
+
+test('labor is done only when a crew AND days are on it', () => {
+  const { d, b } = freshBid();
+  // A new bid arrives with a crew on it and no days: nobody is working yet.
+  assert.ok(b.labor.crewIds.length > 0, 'the seed put a crew on it');
+  assert.strictEqual(bidStepDone(b, d.settings, 'labor'), false, 'a crew with no days is no hours');
+  b.labor.days = 2;
+  assert.strictEqual(bidStepDone(b, d.settings, 'labor'), true);
+  // And the other half of the same rule.
+  b.labor.crewIds = [];
+  assert.strictEqual(bidStepDone(b, d.settings, 'labor'), false, 'days with nobody on them are no hours');
+});
+
+test('price is done when he has moved a handle, not when the bid has a price', () => {
+  const { d, b } = freshBid();
+  b.areas.push({ id: 'a1', name: 'Warehouse', items: [
+    { catalogId: null, name: 'LED high bay', unit: 'ea', qty: 4, costCents: 31800, priceCents: null } ], photoIds: [] });
+  b.labor.days = 2;
+  b.labor.crewIds = [d.settings.crew[0].id];
+  // A real price, off the shop's seeded rate. He has still never opened the
+  // screen, and the strip must not say he has.
+  assert.strictEqual(bidStepDone(b, d.settings, 'price'), false);
+  b.pricing.touched = true;
+  assert.strictEqual(bidStepDone(b, d.settings, 'price'), true);
+});
+
+test('a bid saved before the flag existed reads off its own pricing', () => {
+  const { d, b } = freshBid();
+  assert.strictEqual(b.pricing.touched, undefined, 'the flag is absent until he prices something');
+  assert.strictEqual(bidStepDone(b, d.settings, 'price'), false);
+  // Pricing that no longer matches the shop's defaults was moved by hand.
+  b.pricing.rateCents = d.settings.rateCents + 500;
+  assert.strictEqual(bidStepDone(b, d.settings, 'price'), true);
+});
+
+test('the proposal is done when it has been sent, and not before', () => {
+  const { d, b } = freshBid();
+  assert.strictEqual(bidStepDone(b, d.settings, 'proposal'), false);
+  b.sentAt = 1757000000000;
+  assert.strictEqual(bidStepDone(b, d.settings, 'proposal'), true);
+});
+
+test('a bid with pricing.touched still loads', () => {
+  const { d, b } = freshBid();
+  b.pricing.touched = true;
+  assert.ok(S.check(d), 'the optional flag survives a load');
+  // And a bid that has never had it still loads, which is every bid on his
+  // phone today.
+  delete b.pricing.touched;
+  assert.ok(S.check(d), 'absent is legal');
+});
+
+// ---------------------------------------------------------------------------
+// navTarget: the argument every navigation into the walk carries
+// ---------------------------------------------------------------------------
+//
+// The bug: startTheWalk called show('walk') with no argument, which means "keep
+// whatever you had". One Back tap after a change order, what he had was that
+// change order, and a brand new bid's first walk opened onto "That change order
+// isn't here anymore." A plain bid id has to clear the change order, not leave
+// it standing.
+
+test('a plain bid id names the bid and NO change order', () => {
+  assert.deepEqual(navTarget('bid-1'), { bidId: 'bid-1', changeOrderId: null });
+});
+
+test('an object names both, and a missing half is null rather than kept', () => {
+  assert.deepEqual(navTarget({ bidId: 'bid-1', changeOrderId: 'co-9' }),
+    { bidId: 'bid-1', changeOrderId: 'co-9' });
+  assert.deepEqual(navTarget({ bidId: 'bid-1' }), { bidId: 'bid-1', changeOrderId: null });
+});
+
+test('nothing at all names nothing at all', () => {
+  assert.deepEqual(navTarget(undefined), { bidId: null, changeOrderId: null });
+  assert.deepEqual(navTarget(''), { bidId: null, changeOrderId: null });
+});
+
+// ---------------------------------------------------------------------------
+// Where the blocked banner goes
+// ---------------------------------------------------------------------------
+
+test('the blocked banner points at the screen that holds the line', () => {
+  const b = { id: 'bid-1' };
+  assert.deepEqual(unpricedTarget({ kind: 'item', name: 'LED' }, b), { screen: 'walk', arg: 'bid-1' });
+  assert.deepEqual(unpricedTarget({ kind: 'rental', name: 'Lift' }, b), { screen: 'price', arg: 'bid-1' });
+  assert.deepEqual(unpricedTarget({ kind: 'equipment', name: 'Bender' }, b), { screen: 'price', arg: 'bid-1' });
+  // The whole-bid gate: the handles are on the price screen.
+  assert.deepEqual(unpricedTarget({ kind: 'total', name: '' }, b), { screen: 'price', arg: 'bid-1' });
+  // A change order is scoped in its own walk, inside the job.
+  assert.deepEqual(unpricedTarget({ kind: 'changeOrder', name: 'CO 1', id: 'co-9' }, b),
+    { screen: 'walk', arg: { bidId: 'bid-1', changeOrderId: 'co-9' } });
 });

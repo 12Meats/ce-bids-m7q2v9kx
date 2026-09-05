@@ -107,6 +107,21 @@ function priceSave(revert) {
   return persistOr(revert);
 }
 
+// The mark he leaves on this screen. The step strip needs to know whether he
+// has ever priced this bid, and no number on it can answer that: a bid is
+// SEEDED with the shop's rate, markup and cushion, so every one of them already
+// reads as a decision before he has opened the screen once.
+//
+// Optional by design — a bid saved before this flag existed has no such key and
+// reads as untouched, which is true of every bid nobody has priced since. Set
+// once and never cleared; the undo hands back whatever was there, which on the
+// first move is undefined.
+function priceTouch(bid) {
+  const prev = bid.pricing.touched;
+  bid.pricing.touched = true;
+  return () => { bid.pricing.touched = prev; };
+}
+
 // The question every Settings value on this screen has to ask. EVERY time, not
 // once a session: the second change of the day reaches exactly as far as the
 // first one did.
@@ -190,7 +205,7 @@ function pricePromptDays(current, label, node, apply) {
       if (v === null) return;
       if (!(v > 0)) { refuse('A day count has to be more than zero'); return; }
       if (v > PRICE_MAX_DAYS) {
-        refuse('That is more than a year — check the number of days');
+        refuse('That is more than a year. Check the number of days');
         return;
       }
       apply(v);
@@ -283,7 +298,8 @@ function buildRentals(bid, markup) {
   if (list.length === 0) {
     box.appendChild(emptyNote('No rentals on this bid.'));
   } else {
-    list.forEach((x) => box.appendChild(buildRentalLine(bid, x, markup)));
+    const warn = unpricedWarns();
+    list.forEach((x) => box.appendChild(buildRentalLine(bid, x, markup, warn)));
   }
 
   box.appendChild(textButton('+ Rental', 'btn btn-block mt-3', () => priceAddRental(bid)));
@@ -309,7 +325,7 @@ function rentalTotalCaption(days) {
 // things depending on which row his thumb landed on. Now it reads and works
 // exactly like the equipment line above it: facts underneath, controls in the
 // strip.
-function buildRentalLine(bid, x, markup) {
+function buildRentalLine(bid, x, markup, warn) {
   const line = priceLine(x.name || 'Rental', moneyText(x.cents) + ' total', () => {
     priceMenu = priceMenu === x ? null : x;
     render();
@@ -324,7 +340,7 @@ function buildRentalLine(bid, x, markup) {
   const prints = BidMath.rentalPrice(x, markup);
   if (prints !== x.cents && priceMenu !== x) line.appendChild(caption('Prints at ' + moneyText(prints)));
 
-  if (!(prints > 0)) line.appendChild(unpricedWarn());
+  if (!(prints > 0)) line.appendChild(warn ? warn() : unpricedWarn());
 
   if (priceMenu === x) {
     // Days, the money, the markup and the way off the bid — everything this
@@ -423,7 +439,8 @@ function buildEquipment(bid) {
   if (list.length === 0) {
     box.appendChild(emptyNote('None of your own equipment on this bid.'));
   } else {
-    list.forEach((x) => box.appendChild(buildEquipmentLine(bid, x)));
+    const warn = unpricedWarns();
+    list.forEach((x) => box.appendChild(buildEquipmentLine(bid, x, warn)));
   }
 
   // The picker used to REPLACE this whole card, so tapping + Equipment made
@@ -465,7 +482,7 @@ function buildEquipment(bid) {
 // fact that it should not be on the bid at all. So the whole line opens a strip
 // with those three, and the chips underneath go back to being what they say
 // they are — facts, not half-controls.
-function buildEquipmentLine(bid, x) {
+function buildEquipmentLine(bid, x, warn) {
   const line = priceLine(x.name || 'Equipment', moneyText(BidMath.equipmentLine(x)), () => {
     priceMenu = priceMenu === x ? null : x;
     render();
@@ -482,7 +499,7 @@ function buildEquipmentLine(bid, x) {
   // The same amber a $0 rental gets. The chip above says how to fix it; this
   // says what is wrong, in the words every other unpriced line on this bid
   // uses, so one glance down the screen finds all of them.
-  if (!(BidMath.equipmentLine(x) > 0)) line.appendChild(unpricedWarn());
+  if (!(BidMath.equipmentLine(x) > 0)) line.appendChild(warn ? warn() : unpricedWarn());
 
   if (priceMenu === x) {
     line.appendChild(priceActions([
@@ -725,7 +742,7 @@ function priceBidHours(bid, stack, node) {
     done: (v) => {
       if (v === null) return;
       if (!(stack.realHours > 0)) {
-        showBanner('Add labor first — there are no hours to put a number on');
+        showBanner('Add labor first. There are no hours to put a number on');
         shake(node);
         return;
       }
@@ -735,8 +752,9 @@ function priceBidHours(bid, stack, node) {
         return;
       }
       const prev = bid.pricing.cushionPct;
+      const untouch = priceTouch(bid);
       bid.pricing.cushionPct = BidMath.cushionForBidHours(stack.realHours, v);
-      priceSave(() => { bid.pricing.cushionPct = prev; });
+      priceSave(() => { bid.pricing.cushionPct = prev; untouch(); });
       render();
     },
   });
@@ -762,8 +780,9 @@ function buildCostStack(bid, stack, markup) {
   const mk = row('Materials markup ' + pctText(markup), '→ ' + moneyText(stack.materialPrice), () => {
     pricePromptPct(markup, 'Material markup %, this bid', mk, (v) => {
       const prev = bid.pricing.markupPct;
+      const untouch = priceTouch(bid);
       bid.pricing.markupPct = v;
-      priceSave(() => { bid.pricing.markupPct = prev; });
+      priceSave(() => { bid.pricing.markupPct = prev; untouch(); });
       render();
     });
   }, { keypad: true });
@@ -856,11 +875,14 @@ function buildCostStack(bid, stack, markup) {
   // second one back-solves through BidMath.cushionForBidHours and can go
   // negative — see the red line below.
   const cushionPct = bid.pricing.cushionPct != null ? bid.pricing.cushionPct : 0;
+  // A strip row, not a chevron row: the › beside it promised a screen and what
+  // it opens is two buttons under itself. Navy dotted, the way every other
+  // value on this card that he can change is drawn.
   const cushion = row('Hours cushion ' + pctText(cushionPct),
     numText(stack.bidHours) + ' bid hrs', () => {
       priceHoursMenu = !priceHoursMenu;
       render();
-    });
+    }, { strip: true });
   box.appendChild(cushion);
 
   if (priceHoursMenu) {
@@ -869,8 +891,9 @@ function buildCostStack(bid, stack, markup) {
       { label: 'Cushion for this bid', onTap: () => {
         pricePromptPct(cushionPct, 'Hours cushion %, this bid', cushion, (v) => {
           const prev = bid.pricing.cushionPct;
+          const untouch = priceTouch(bid);
           bid.pricing.cushionPct = v;
-          priceSave(() => { bid.pricing.cushionPct = prev; });
+          priceSave(() => { bid.pricing.cushionPct = prev; untouch(); });
           render();
         });
       } },
@@ -943,6 +966,7 @@ function priceApply(bid, handle, value) {
 
   const prevRate = bid.pricing.rateCents;
   const prevMargin = bid.pricing.marginPct;
+  const untouch = priceTouch(bid);
   bid.pricing.rateCents = out.rateCents;
   // bid.pricing.marginPct is a SNAPSHOT of the margin at this handle move, not
   // a live figure: any cost-side edit afterwards (a rental, overhead, another
@@ -952,7 +976,9 @@ function priceApply(bid, handle, value) {
   // and never read this field.
   bid.pricing.marginPct = out.marginPct;
 
-  if (!persistOr(() => { bid.pricing.rateCents = prevRate; bid.pricing.marginPct = prevMargin; })) {
+  if (!persistOr(() => {
+    bid.pricing.rateCents = prevRate; bid.pricing.marginPct = prevMargin; untouch();
+  })) {
     priceWhy = null;
     render();
     return;
@@ -989,7 +1015,7 @@ function buildHandles(bid, stack, solved) {
         if (v === null) return;
         // solve() clamps at 99.9% rather than dividing by zero. Say so, then
         // show what it made of it — the number on screen is always solve's.
-        if (v >= PRICE_MAX_PCT) showBanner('Margin has to be under 100% — using 99.9%');
+        if (v >= PRICE_MAX_PCT) showBanner('Margin has to be under 100%. Using 99.9%');
         priceApply(bid, 'margin', v);
       },
     });
@@ -1024,12 +1050,12 @@ function buildHandles(bid, stack, solved) {
       done: (cents) => { if (cents !== null) priceApply(bid, 'price', cents); },
     });
   }, { keypad: true });
-  price.classList.add('row-big');
+  price.classList.add('big-number');
   if (off) price.classList.add('price-row-off');
   box.appendChild(price);
 
   if (off) {
-    box.appendChild(caption('Add labor first — the handles need hours to work with.'));
+    box.appendChild(caption('Add labor first. The handles need hours to work with.'));
   } else if (priceWhy && priceWhy.kind === 'floored') {
     const note = inlineWarn('Your materials, rentals, and equipment alone come to '
       + moneyText(priceWhy.fixedPrice)
@@ -1080,7 +1106,7 @@ function buildReadouts(bid, stack, solved, markup) {
   box.classList.add('price-readout');
 
   if (BidMath.belowFloor(solved.rateCents, s.floorCents)) {
-    box.appendChild(priceNote('Implied labor rate ' + moneyText(solved.rateCents) + '/hr — below your '
+    box.appendChild(priceNote('Implied labor rate ' + moneyText(solved.rateCents) + '/hr, below your '
       + moneyText(s.floorCents) + ' floor.', true));
   } else {
     box.appendChild(priceNote('Implied labor rate ' + moneyText(solved.rateCents) + '/hr, at or above your '
