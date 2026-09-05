@@ -278,8 +278,13 @@ function renderWalkAreas(bid, edit, host) {
   // where they are already priced — charging them a second time on the change
   // order is the one mistake a change order must never make.
   if (co) {
-    pinnedBar(host, 'Next: Labor', () => show('labor', { bidId: bid.id, changeOrderId: co.id }),
-      { disabled: areas.length === 0 });
+    // Never disabled, unlike the bid's own walk below. Half the change orders
+    // he writes are pure labor — "they want the panel moved eight feet" — with
+    // not one part on them, and a greyed Next on that walk is a dead end with
+    // no other way out of the screen. The empty-bid reasoning does not carry
+    // over: the bid already exists, this is an addition to it, and Labor is
+    // where the addition gets its money.
+    pinnedBar(host, 'Next: Labor', () => show('labor', { bidId: bid.id, changeOrderId: co.id }));
     return;
   }
 
