@@ -1308,8 +1308,12 @@ function renderPrice() {
   if (stack.unknownCrewIds.length) {
     host.appendChild(inlineWarn('Crew member no longer in Settings: ' + stack.unknownCrewIds.join(', ')
       + '. Nothing on this bid will save until this is fixed on the Labor screen.'));
+    // mb-2 because a card follows: a block button with nothing under it sits
+    // shoulder to shoulder with the next card and reads as that card's own
+    // button, which is the last thing "Go to Labor" should look like when the
+    // card under it is Rentals.
     const fix = document.createElement('div');
-    fix.className = 'bid-nav';
+    fix.className = 'bid-nav mb-2';
     fix.appendChild(textButton('Go to Labor', 'btn btn-block', () => show('labor', bid.id)));
     host.appendChild(fix);
   }

@@ -102,6 +102,19 @@ function card(title) {
   return box;
 }
 
+// A heading that belongs to the CARDS UNDER IT rather than to one card. The
+// walk's areas are one card each, which left the most important group on the
+// screen with nothing naming it: a bid with a single area read as the job
+// itself rather than as one area of it. Same size, weight and colour as a
+// card's own title, sitting on the page instead of inside a box, so the
+// heading and the cards under it are visibly one section.
+function groupHeading(text) {
+  const h = document.createElement('h3');
+  h.className = 'card-title group-heading';
+  h.textContent = text;
+  return h;
+}
+
 // ---------------------------------------------------------------------------
 // TAP AFFORDANCE
 // ---------------------------------------------------------------------------
@@ -169,10 +182,17 @@ function row(label, value, onTap, opts) {
   return node;
 }
 
-// tapCard({ title, sub, value, onTap }) -> a whole card that is one button.
-// The areas on the walk are the reason: they were rows inside a shared card,
-// which made the most important list in the app read as a paragraph. A card
-// with a border and a › reads as a door, which is what it is.
+// tapCard({ title, sub, note, tag, value, onTap }) -> a whole card that is one
+// button. The areas on the walk are the reason: they were rows inside a shared
+// card, which made the most important list in the app read as a paragraph. A
+// card with a border and a › reads as a door, which is what it is.
+//
+// tag: a small muted word over the title, saying what KIND of thing this card
+// is. One area on a walk read as the job itself until a second one turned up
+// beside it; "Area" over the name answers that on the first one.
+// note: a second muted line under the sub, for a preview of something written
+// rather than counted. Kept to one line by the caller, which is what decides
+// how much of a paragraph belongs on a list.
 function tapCard(opts) {
   const o = opts || {};
   const btn = document.createElement('button');
@@ -181,6 +201,12 @@ function tapCard(opts) {
 
   const text = document.createElement('div');
   text.className = 'card-tap-text';
+  if (o.tag) {
+    const g = document.createElement('div');
+    g.className = 'card-tap-tag';
+    g.textContent = o.tag;
+    text.appendChild(g);
+  }
   const t = document.createElement('div');
   t.className = 'card-tap-title';
   t.textContent = o.title || '';
@@ -190,6 +216,12 @@ function tapCard(opts) {
     s.className = 'card-tap-sub';
     s.textContent = o.sub;
     text.appendChild(s);
+  }
+  if (o.note) {
+    const nt = document.createElement('div');
+    nt.className = 'card-tap-note';
+    nt.textContent = o.note;
+    text.appendChild(nt);
   }
   btn.appendChild(text);
 
@@ -1073,6 +1105,25 @@ function bidPriceText(bid, data) {
     }
     return '—';
   }
+}
+
+// areaNoteLine(notes) -> one line of a walk note, or ''.
+//
+// area.notes is optional and is whatever he dictated standing in the room: a
+// paragraph, three lines, or nothing. Two places show a glance at it — the
+// area card on the walk and the Notes row inside the area — and neither has
+// room for a paragraph, so both take the first line and cut it at 60
+// characters. Absent, blank, or all whitespace all come back as '', which
+// every caller reads as "no note yet".
+//
+// It NEVER reaches the customer's paper. docmodel.js does not read the field
+// at all: these are his notes about a room, not a description of the work.
+const AREA_NOTE_PREVIEW_MAX = 60;
+function areaNoteLine(notes, max) {
+  const first = String(notes == null ? '' : notes).split(/\r?\n/)[0].trim();
+  if (!first) return '';
+  const cap = (typeof max === 'number' && max > 1) ? max : AREA_NOTE_PREVIEW_MAX;
+  return first.length <= cap ? first : first.slice(0, cap - 1).replace(/\s+$/, '') + '…';
 }
 
 // areaTallyText(area) -> "3 items · $412.00"

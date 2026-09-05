@@ -499,6 +499,11 @@
       color: var(--color-text-muted);
       margin-bottom: var(--space-2);
     }
+    /* The same heading, sitting on the page over a GROUP of cards rather than
+       inside one — the walk's areas, which are a card each. Tighter underneath
+       than a card's own title, so the heading and the cards read as one
+       section instead of as a stray line above them. */
+    .group-heading { margin: 0 0 var(--space-1); }
 
     /* A row is the whole tap target — no small pencil icons to aim at. */
     .row {
@@ -587,8 +592,29 @@
       color: var(--color-text);
     }
     .card-tap-text { flex: 1; min-width: 0; }
+    /* What KIND of card this is, over the name he gave it. Small and muted:
+       it is a label on the thing, not a second title competing with it. */
+    .card-tap-tag {
+      margin-bottom: 2px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-text-muted);
+    }
     .card-tap-title { font-weight: 700; overflow-wrap: anywhere; }
     .card-tap-sub { margin-top: 2px; font-size: 0.9rem; color: var(--color-text-muted); }
+    /* A preview of something written rather than counted. One line, always:
+       the caller has already cut it to 60 characters, and this stops a single
+       long word from finding the second line anyway. */
+    .card-tap-note {
+      margin-top: 2px;
+      font-size: 0.9rem;
+      color: var(--color-text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .card-tap-value { flex: 0 0 auto; font-weight: 700; white-space: nowrap; }
 
     /* ---------- Attached strips ---------- */
@@ -955,6 +981,13 @@
        rental-or-equipment sheet. Both sit above the tab bar at z-index 90 and
        below the shell's panels at 100, so a keypad opened from a sheet still
        covers it. */
+    /* The areas section: a heading, a card per area, and "+ Area" as its last
+       row. The button used to be appended straight to the page, where it had
+       no margin of its own and sat shoulder to shoulder with the misc card
+       under it — it read as that card's button. Grouped, the standard 12px
+       card gap goes under the whole section instead. */
+    .walk-areas { margin-bottom: var(--space-2); }
+
     /* A two-line version of .row: a name and its money on the first line, the
        counts underneath. The whole block is the tap target. */
     .walk-row {
@@ -1433,6 +1466,8 @@
     .prop-pdf-when { min-width: 0; overflow-wrap: anywhere; }
 
     .mt-3 { margin-top: var(--space-3); }
+    /* The standard card gap, for a block button that has a card under it. */
+    .mb-2 { margin-bottom: var(--space-2); }
 
     /* ---------- Settings ---------- */
     /* An override is a fact about the row, not a second value, so it rides

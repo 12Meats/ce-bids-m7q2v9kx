@@ -242,8 +242,19 @@ function renderWalkAreas(bid, edit, host) {
     walkPlural(areas.length, 'area', 'areas') + ' · at cost, not the price'
   ));
 
+  // ONE SECTION, not a heading and then some loose cards and then a button
+  // touching the next card. The heading names what the cards under it are, the
+  // count says how many, and "+ Area" is the last row of the same group — so
+  // the 12px that used to be missing between it and "Supports, anchors and
+  // hardware" now sits under the whole section, where a card gap belongs.
+  const section = document.createElement('div');
+  section.className = 'walk-areas';
+  // "Areas" alone reads as a label for an empty list; "Areas · 3" is a fact
+  // about the walk. A count of nothing is not worth printing.
+  section.appendChild(groupHeading(areas.length ? 'Areas · ' + areas.length : 'Areas'));
+
   if (areas.length === 0) {
-    const box = card('Areas');
+    const box = card();
     // On a change order the empty state must not read as an instruction. Half
     // of them are pure labor ("they want the panel moved eight feet") and have
     // no parts to count at all, so this says both ways out: count something, or
@@ -251,7 +262,7 @@ function renderWalkAreas(bid, edit, host) {
     box.appendChild(emptyNote(co
       ? 'Tap + Area if there are parts to count. A change order can be labor only, so Next: Labor is fine with nothing here.'
       : 'Tap + Area and name the first room.'));
-    host.appendChild(box);
+    section.appendChild(box);
   } else {
     // One card per area, not rows inside a shared one: this is the list he
     // taps into forty times a walk, and it has to read as a row of doors.
@@ -260,9 +271,17 @@ function renderWalkAreas(bid, edit, host) {
       // so a "0 photos" count would be a fact about nothing.
       const counts = walkPlural((area.items || []).length, 'item', 'items')
         + (co ? '' : ' · ' + walkPlural((area.photoIds || []).length, 'photo', 'photos'));
-      host.appendChild(tapCard({
+      section.appendChild(tapCard({
+        // The tag is what makes one area read as one area OF the job rather
+        // than as the job: the name on the card is his ("Cheese vat room"),
+        // and nothing else on the screen said what kind of thing it was.
+        tag: 'Area',
         title: area.name || 'Area',
         sub: counts,
+        // What he wrote himself while standing in the room, one line of it. It
+        // never reaches the customer's paper, so this card is the only place
+        // it can remind him it is there.
+        note: areaNoteLine(area.notes),
         value: BidMath.fmt(walkAreaCost(area)),
         onTap: () => {
           // A step deeper, so it gets a history entry: the phone's back gesture
@@ -283,8 +302,9 @@ function renderWalkAreas(bid, edit, host) {
   // and is therefore the one filled navy button on the screen: a change order
   // can be labor only, so "+ Area" there is a real second choice, not the way
   // forward. Two filled blocks would be two ways forward, which is one too many.
-  host.appendChild(textButton('+ Area', 'btn ' + (co ? 'btn-outline' : 'btn-primary') + ' btn-block',
+  section.appendChild(textButton('+ Area', 'btn ' + (co ? 'btn-outline' : 'btn-primary') + ' btn-block',
     () => walkAddArea(edit)));
+  host.appendChild(section);
 
   // A change order is areas and labor and nothing else. The misc line, the
   // did-you-forget list and the rental placeholders all belong to the bid,
