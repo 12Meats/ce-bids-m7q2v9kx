@@ -12,10 +12,12 @@
 //   add    — picking a part: six category tiles, then a list (searchable
 //            across every category), then quantity and cost
 //
-// The area and add views are views, not screens: the shell's Back button
-// always means "leave the walk", and a local Back inside the screen walks the
-// three views. Two navigations that look the same but land somewhere different
-// is exactly the confusion this app is trying not to have.
+// The area and add views are views, not screens — but there is only ONE Back
+// on the glass now. The header's button walks them one step at a time through
+// backStep() and only leaves the walk from the top, and each step deeper is a
+// history entry, so the phone's back gesture does exactly the same thing. Two
+// Back buttons 40 px apart with different destinations is what this screen had
+// before, and it is exactly the confusion this app is trying not to have.
 //
 // Money on this screen is COST — what the material costs him, not what it
 // sells for. The sell price is the Price screen's job, and mixing the two on
@@ -39,6 +41,10 @@
 // ---------------------------------------------------------------------------
 
 const WALK_MISC_LABEL = 'Supports, anchors, and hardware';
+// What a rental row on the walk says, and what the banner says the moment one
+// is added. One sentence, one destination, said the same way twice — the
+// banner used to point at a screen and the area then showed nothing.
+const WALK_RENTAL_SUB = 'rental · priced on Costs & price';
 const WALK_HIGHLIGHT_MS = 1000;
 const WALK_MAX_EDGE = 1600;      // px on the long edge of a stored photo
 const WALK_JPEG_QUALITY = 0.85;
@@ -133,6 +139,15 @@ function walkAreaCost(area) { return BidMath.materialCost({ areas: [area] }); }
 
 function walkPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
+// The rentals added from THIS area's add flow. rental.areaId is optional and
+// new: a rental from an older bid (or one named on the Costs & price screen,
+// where there is no area) has none, and shows only where it always has — on
+// the price screen. Nothing here writes to it except walkAddRental.
+function walkAreaRentals(bid, area) {
+  if (!area) return [];
+  return (bid.rentals || []).filter((x) => x && x.areaId === area.id);
+}
+
 function walkCatalogPart(it) {
   return it.catalogId ? (state.data.catalog.find((p) => p.id === it.catalogId) || null) : null;
 }
@@ -170,12 +185,6 @@ function walkRow(name, sub, value, onTap) {
   return node;
 }
 
-// The local Back — the one that moves between this screen's own views. The
-// shell's Back button, which leaves the walk entirely, is separate on purpose.
-function walkBackLink(label, onTap) {
-  return textButton('‹ ' + label, 'link-btn', onTap);
-}
-
 // ---------------------------------------------------------------------------
 // AREA LIST
 // ---------------------------------------------------------------------------
@@ -207,6 +216,9 @@ function renderWalkAreas(bid, edit, host) {
       const counts = walkPlural((area.items || []).length, 'item', 'items')
         + (co ? '' : ' · ' + walkPlural((area.photoIds || []).length, 'photo', 'photos'));
       box.appendChild(walkRow(area.name || 'Area', counts, BidMath.fmt(walkAreaCost(area)), () => {
+        // A step deeper, so it gets a history entry: the phone's back gesture
+        // and this screen's own Back are one action now (see app.js navPush).
+        navPush();
         walkView = 'area';
         walkAreaId = area.id;
         walkItemMenu = null;
@@ -284,6 +296,7 @@ function walkAddArea(edit) {
       })) { render(); return; }
       // He named the room because he is standing in it and about to count
       // things in it, so the new area opens rather than joining a list.
+      navPush();
       walkView = 'area';
       walkAreaId = area.id;
       walkItemMenu = null;
@@ -298,12 +311,9 @@ function walkAddArea(edit) {
 
 function renderWalkArea(bid, edit, area, host) {
   const co = edit === bid ? null : edit;
-  host.appendChild(walkBackLink('All areas', () => {
-    walkView = 'areas';
-    walkItemMenu = null;
-    render();
-  }));
-
+  // No inline Back any more: the header's Back button goes exactly one step
+  // now, so two "‹ Back" buttons 40 px apart with different destinations is a
+  // confusion this screen no longer has.
   const box = card();
   box.appendChild(row('Area', area.name || 'Area', () => {
     promptText(area.name, {
@@ -341,6 +351,14 @@ function renderWalkArea(bid, edit, area, host) {
     });
     box.appendChild(walkRow('Area cost', null, BidMath.fmt(walkAreaCost(area)), null));
   }
+
+  // A lift he added standing in this room used to vanish: rentals are not
+  // material lines and live on the bid, so the area he added it from showed
+  // nothing at all and a banner sent him to a screen he was not on. It shows
+  // here, as what it is — a line somebody else prices.
+  walkAreaRentals(bid, area).forEach((x) => {
+    box.appendChild(walkRow(x.name || 'Rental', WALK_RENTAL_SUB, null, null));
+  });
   host.appendChild(box);
 
   // Photos are a walk thing: he is standing in the room with the phone up. A
@@ -350,6 +368,7 @@ function renderWalkArea(bid, edit, area, host) {
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
   nav.appendChild(textButton('+ Add item', 'btn btn-primary btn-block', () => {
+    navPush();
     walkView = 'add';
     walkAddCat = null;
     walkAddSearch = '';
@@ -458,14 +477,6 @@ function buildItemActions(area, it) {
 
 function renderWalkAdd(bid, edit, area, host) {
   const co = edit === bid ? null : edit;
-  // Back walks the flow backwards one step at a time: price answer or unit
-  // picker -> the list -> the tiles -> the area.
-  host.appendChild(walkBackLink('Back', () => {
-    if (walkAddPending || walkAddNew) { walkAddPending = null; walkAddNew = null; }
-    else if (walkAddCat) { walkAddCat = null; walkAddSearch = ''; }
-    else walkView = 'area';
-    render();
-  }));
 
   const head = document.createElement('div');
   head.className = 'walk-head';
@@ -477,28 +488,71 @@ function renderWalkAdd(bid, edit, area, host) {
 
   if (walkAddPending) { host.appendChild(buildPriceAnswer(bid, area)); return; }
   if (walkAddNew) { host.appendChild(buildUnitPicker(bid, area)); return; }
-  if (!walkAddCat) { host.appendChild(buildCategoryTiles(!!co)); return; }
 
-  // --- The catalog list, with the escape hatch on top ---
-  const search = document.createElement('input');
-  search.type = 'text';
-  search.className = 'walk-search';
-  search.placeholder = 'Search all parts';
-  search.setAttribute('aria-label', 'Search all parts');
-  search.autocomplete = 'off';
-  search.value = walkAddSearch;
-  // Redraws only the list: rebuilding the input under a typing thumb would
-  // drop focus and close the keyboard mid-word.
-  search.addEventListener('input', () => {
-    walkAddSearch = search.value;
-    if (walkAddListEl && walkAddListEl.isConnected) buildCatalogList(bid, area, walkAddListEl);
-    else render();
-  });
-  host.appendChild(search);
+  // What he has counted in this room so far, and what it costs him. He adds
+  // eight things in a row without leaving this screen, so the running total is
+  // the only way he can tell that any of it landed.
+  host.appendChild(walkTallyStrip(area));
 
-  walkAddListEl = card();
-  buildCatalogList(bid, area, walkAddListEl);
+  // The search is ABOVE the tiles and searches everything: knowing the name of
+  // the part is not the same as knowing which of six drawers this app filed it
+  // under, and he knows the name. Redraws only the list below it — rebuilding
+  // the input under a typing thumb would drop focus and close the keyboard.
+  host.appendChild(searchInput({
+    className: 'walk-search',
+    placeholder: 'Search all parts',
+    label: 'Search all parts',
+    value: walkAddSearch,
+    onInput: (value) => {
+      // The first character is the step from the tiles into a list; the rest
+      // are typing. One entry, so one Back puts the tiles back.
+      if (walkAddSearch.trim() === '' && value.trim() !== '') navPush();
+      walkAddSearch = value;
+      if (walkAddListEl && walkAddListEl.isConnected) buildWalkAddBody(bid, area, walkAddListEl, !!co);
+      else render();
+    },
+  }));
+
+  walkAddListEl = document.createElement('div');
+  buildWalkAddBody(bid, area, walkAddListEl, !!co);
   host.appendChild(walkAddListEl);
+
+  // The way out of the add flow that is not Back: he is done counting in this
+  // room, rather than one step up the list.
+  const nav = document.createElement('div');
+  nav.className = 'bid-nav';
+  nav.appendChild(textButton('Done', 'btn btn-primary btn-block', () => {
+    walkView = 'area';
+    walkAddCat = null;
+    walkAddSearch = '';
+    render();
+  }));
+  host.appendChild(nav);
+}
+
+// Tiles, or a list. A search beats a category — typing crosses all six drawers,
+// which is what Catalog.matches does with a query — and clearing it puts the
+// tiles back exactly where they were.
+function buildWalkAddBody(bid, area, host, onChangeOrder) {
+  host.textContent = '';
+  if (walkAddSearch.trim() === '' && !walkAddCat) {
+    host.appendChild(buildCategoryTiles(onChangeOrder));
+    return;
+  }
+  const box = card();
+  buildCatalogList(bid, area, box);
+  host.appendChild(box);
+}
+
+// "3 items · $412.00" — the area's own running total, at cost. The arithmetic
+// is areaTallyText in ui.js, where it is pure and tested; this only decides
+// whether it flashes, which it does for a second after something is added.
+function walkTallyStrip(area) {
+  const strip = document.createElement('div');
+  strip.className = 'walk-tally';
+  strip.textContent = areaTallyText(area);
+  if (walkHighlightItem) strip.classList.add('walk-row-new');
+  return strip;
 }
 
 // onChangeOrder drops the rentals tile: a rental line lives on the bid's own
@@ -511,6 +565,7 @@ function buildCategoryTiles(onChangeOrder) {
       // Rentals and owned equipment are not material lines — they are priced
       // per day on the Costs & price screen (Task 9). All this tile does is
       // get the line onto the bid before he forgets it exists.
+      navPush();
       if (key === 'rentals') {
         walkForgetRow = null;
         walkSheet = { kind: 'rentEquip', from: 'add' };
@@ -682,10 +737,10 @@ function walkCommitItem(bid, area, part, qty, costCents) {
     return false;
   }
 
+  // He stays in the list he was looking at. Eight items used to be eight round
+  // trips out to the area and back in through the tiles; the running strip at
+  // the top is what says the last one landed, and Done is the way out.
   walkAddPending = null;
-  walkAddCat = null;
-  walkAddSearch = '';
-  walkView = 'area';
   walkHighlightItem = item;
   render();
   setTimeout(() => {
@@ -745,7 +800,7 @@ function walkThumb(id, token, n, total) {
   const img = document.createElement('img');
   img.alt = '';
   btn.appendChild(img);
-  btn.addEventListener('click', () => { walkPhotoOpenId = id; render(); });
+  btn.addEventListener('click', () => { navPush(); walkPhotoOpenId = id; render(); });
   // A photo that isn't there any more (evicted by iOS, IndexedDB blocked)
   // leaves an empty tile rather than taking the screen down with it.
   Photos.get(id).then((blob) => {
@@ -1041,8 +1096,13 @@ function walkForgetMark(bid, name, value) {
 // no way to be cleared on the way out, and would still be sitting there the
 // next time something read it.
 function walkAddRental(bid, prefill, from, forgetRow) {
+  // Which room he was standing in when he said he needed a lift. Optional and
+  // display-only: the area list uses it to show the line he just added instead
+  // of swallowing it. A rental named anywhere else simply has none.
+  const areaId = (from === 'add' && walkAreaId) ? walkAreaId : null;
   promptRentalName(state.data.catalog, prefill, (name) => {
     const line = { name, days: 1, cents: 0, markup: false };
+    if (areaId) line.areaId = areaId;
     bid.rentals.push(line);
     // The checklist row is answered by the same save that carries the line.
     // Cancel out of the name panel and this never runs, which is the point:
@@ -1053,7 +1113,7 @@ function walkAddRental(bid, prefill, from, forgetRow) {
       if (i !== -1) bid.rentals.splice(i, 1);
       if (undoAnswer) undoAnswer();
     })) { render(); return; }
-    walkAfterPlaceholder(from, forgetRow);
+    walkAfterPlaceholder(from, forgetRow, name + ' · ' + WALK_RENTAL_SUB + '.');
   });
 }
 
@@ -1288,7 +1348,10 @@ function walkForgetAddToArea(bid, name, area) {
   })) { render(); return; }
 
   walkForgetPick = null;
-  showBanner(name + ' added to ' + (area.name || 'the area') + '. Tap it to put a price on it.', 'ok');
+  // His words, from the wording table: the area is the one he just picked (or
+  // the only one there is), so naming it again is noise in front of the thing
+  // he has to do.
+  showBanner(name + ' added. Tap it to put a price on it.', 'ok');
   render();
 }
 
@@ -1335,6 +1398,38 @@ function renderWalk() {
   if (walkPhotoOpenId && area) host.appendChild(buildPhotoView(area, walkPhotoOpenId));
 }
 
+// ONE step back, which on this screen is one of six: an open photo, a sheet,
+// the price answer or the unit picker, the category list, the tiles, the area.
+// Only when all of those are behind him does Back leave the walk — the header
+// used to throw him straight out to the bid hub from four levels in, which is
+// why the screen grew a second Back button of its own.
+//
+// peek: answer without moving. The shell asks before it draws the button, so
+// it can say "‹ Bid" only where Back really goes to the bid.
+function walkBackStep(peek) {
+  if (walkPhotoOpenId) { if (!peek) { walkPhotoOpenId = null; render(); } return true; }
+  if (walkSheet) { if (!peek) walkCloseSheet(); return true; }
+  if (walkView === 'add') {
+    if (walkAddPending || walkAddNew) {
+      if (!peek) { walkAddPending = null; walkAddNew = null; render(); }
+      return true;
+    }
+    // A search and a category are the same step out of the tiles, and both go
+    // back to them rather than all the way out of the add flow.
+    if (walkAddCat || walkAddSearch.trim() !== '') {
+      if (!peek) { walkAddCat = null; walkAddSearch = ''; render(); }
+      return true;
+    }
+    if (!peek) { walkView = 'area'; render(); }
+    return true;
+  }
+  if (walkView === 'area') {
+    if (!peek) { walkView = 'areas'; walkItemMenu = null; render(); }
+    return true;
+  }
+  return false;
+}
+
 // leave(): the last render before a navigation never gets a next render to
 // take its object URLs back, so the shell asks for them on the way out. The
 // token is bumped FIRST, which is what cancels the thumbnail fills still in
@@ -1355,5 +1450,6 @@ registerScreen('walk', {
     return co ? 'Change order: ' + (co.name || 'Change order') : 'Walkthrough';
   },
   back: () => (walkCoId ? 'job' : 'bid'),
+  backStep: walkBackStep,
   enter: enterWalk, leave: walkLeave, render: renderWalk,
 });

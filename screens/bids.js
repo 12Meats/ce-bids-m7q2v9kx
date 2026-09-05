@@ -292,17 +292,16 @@ function renderBids() {
   // Search only shows up once the list is long enough that scanning it stops
   // working. Below that it is one more control in the way of the real one.
   if (state.data.bids.length > BIDS_SEARCH_AFTER) {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'bids-search';
-    input.placeholder = 'Search customer or title';
-    input.setAttribute('aria-label', 'Search bids');
-    input.autocomplete = 'off';
-    input.value = bidsSearch;
-    // Redraws only the list, never the whole screen: re-rendering the input
-    // under a typing thumb would drop focus and close the keyboard.
-    input.addEventListener('input', () => { bidsSearch = input.value; bidsRefreshList(); });
-    host.appendChild(input);
+    // The same field as the walk's, from ui.js: same keyboard settings, same
+    // clear-X. Redraws only the list, never the whole screen — re-rendering
+    // the input under a typing thumb would drop focus and close the keyboard.
+    host.appendChild(searchInput({
+      className: 'bids-search',
+      placeholder: 'Search customer or title',
+      label: 'Search bids',
+      value: bidsSearch,
+      onInput: (value) => { bidsSearch = value; bidsRefreshList(); },
+    }));
   } else if (bidsSearch) {
     bidsSearch = '';
   }

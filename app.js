@@ -49,6 +49,13 @@ const state = { data: Store.load(), screen: 'pin', bidId: null, unlocked: false 
 //   do — passes undefined, which a screen should read as "coming back, keep
 //   what's on the glass".
 //
+//   backStep(peek): optional; a screen with views of its own (the walk) uses
+//   it to take ONE step inside itself instead of leaving. Return true if a
+//   step was taken (and re-render), false if there is nothing left inside and
+//   Back should go to cfg.back. Called with peek === true it must answer the
+//   same question WITHOUT moving: that is the shell asking what to write on
+//   the Back button.
+//
 //   leave(): optional; called on the screen being left, before the switch. For
 //   the resources a renderer hands out and a re-render would normally take
 //   back — object URLs, timers — because the last render before a navigation
@@ -445,7 +452,9 @@ function initPinScreen() {
 
 function unlock() {
   state.unlocked = true;
-  show('bids');
+  // Replaces rather than pushes: the home screen is where the app starts, and
+  // a back gesture from it must not be able to reach the lock screen.
+  show('bids', undefined, { replace: true });
 }
 
 function handlePinComplete() {
@@ -564,13 +573,53 @@ function handleBackspace() {
 // NAV
 // ---------------------------------------------------------------------------
 
+// --- History ---------------------------------------------------------------
+//
+// One edge swipe used to leave the app: a blank page, the PIN screen, and the
+// four taps back to where he was. The app pushes nothing on its own, so the
+// phone's back gesture had only the page it was launched from to go to.
+//
+// So every step DEEPER pushes an entry — every show() that is not the PIN
+// screen and not a tab, plus the walk's own views through navPush() — and
+// popstate spends one by running the app's own Back for whatever screen is up.
+// Back and the swipe are then the same action, which is the point: two
+// different backs on one phone is how he ends up somewhere he did not ask for.
+//
+// Three rules keep the two sides in step:
+//   - the entry carries its own depth, so the counter re-reads itself off
+//     whatever the browser hands back rather than trusting a running total;
+//   - nothing pushes while a popstate is being handled (goBack() calls show(),
+//     and a push in there would make the stack grow as he walks out of it);
+//   - a screen with nothing behind it re-anchors instead of letting the swipe
+//     through, because leaving the app is never the answer to a back gesture.
+let navDepth = 0;
+let navSuppress = false;
+
+function navPush() {
+  if (navSuppress) return;
+  navDepth += 1;
+  try { history.pushState({ ceb: navDepth }, ''); } catch (e) { /* no history here */ }
+}
+
+function navReplace() {
+  try { history.replaceState({ ceb: navDepth }, ''); } catch (e) { /* no history here */ }
+}
+
 // The single navigation entry point: switches sections, updates the top bar
 // and tab bar, then renders the destination. Accepts either a screen key
 // ('bids') or its section id ('screen-bids').
-function show(screenId, arg) {
+//
+// opts.replace: no history entry. The tab bar uses it — the two tabs are two
+// ways of standing at the top, not a way in and a way further in — and so does
+// every navigation that is itself a Back.
+function show(screenId, arg, opts) {
   const key = SCREENS[screenId] ? screenId : String(screenId).replace(/^screen-/, '');
   const cfg = SCREENS[key];
   if (!cfg) return;
+
+  // The PIN screen is never a history entry: a swipe must not be able to land
+  // on it, and coming back from it must not re-ask for the PIN.
+  if (key !== 'pin' && !(opts && opts.replace)) navPush();
 
   // The screen being left gets to put its resources back first. Nothing that
   // happens in here may navigate, so a throwing leave() is contained rather
@@ -602,8 +651,6 @@ function show(screenId, arg) {
   if (cfg.enter) cfg.enter(arg);
 
   if (!onPin) {
-    el('topbarTitle').textContent = screenTitle(cfg);
-    el('backBtn').hidden = !screenBack(cfg);
     document.querySelectorAll('#tabbar .tab').forEach((btn) => {
       btn.classList.toggle('tab-active', btn.dataset.tab === cfg.tab);
     });
@@ -612,9 +659,23 @@ function show(screenId, arg) {
   render();
 }
 
+// The title and the Back button, redrawn with the screen rather than only on
+// arrival: a screen with views of its own (the walk) changes what Back means
+// without a navigation, and a button that still says "‹ Bid" while Back goes
+// one step up the list is a button that lies.
+function renderTopBar() {
+  const cfg = SCREENS[state.screen];
+  if (!cfg || state.screen === 'pin') return;
+  el('topbarTitle').textContent = screenTitle(cfg);
+  const back = el('backBtn');
+  back.hidden = !screenBack(cfg);
+  back.textContent = '‹ ' + screenBackLabel(cfg);
+}
+
 // Renders whatever screen is current. Call directly to refresh in place.
 function render() {
   const cfg = SCREENS[state.screen];
+  renderTopBar();
   if (cfg && cfg.render) cfg.render();
 }
 
@@ -650,10 +711,62 @@ function persistOr(revert) {
 function screenTitle(cfg) { return (typeof cfg.title === 'function' ? cfg.title() : cfg.title) || ''; }
 function screenBack(cfg) { return typeof cfg.back === 'function' ? cfg.back() : cfg.back; }
 
+// What the Back button SAYS. A screen with views of its own answers "Back",
+// because one step is one step; anything else names where it lands, so "‹ Bid"
+// on the price screen is a promise the button keeps. Only a destination with a
+// fixed title gets named — a title that is a function is a title that depends
+// on state the button is about to leave.
+function screenBackLabel(cfg) {
+  if (cfg && cfg.backStep && cfg.backStep(true)) return 'Back';
+  const back = cfg && screenBack(cfg);
+  const dest = back && SCREENS[back];
+  return (dest && typeof dest.title === 'string' && dest.title) ? dest.title : 'Back';
+}
+
+// ONE step back, whatever that means where he is standing: a screen with its
+// own views (the walk: item list -> area -> areas) walks those first and only
+// then leaves. Returns false when there is nothing behind this screen at all,
+// which is what tells the history handler to stay put rather than let the
+// swipe out of the app.
+//
+// Nothing in here pushes: going back is never a step deeper, and a push here
+// would mean the stack grew every time he tried to leave it.
 function goBack() {
   const cfg = SCREENS[state.screen];
-  const back = cfg && screenBack(cfg);
-  if (back) show(back);
+  const wasSuppressed = navSuppress;
+  navSuppress = true;
+  try {
+    if (cfg && cfg.backStep && cfg.backStep()) return true;
+    const back = cfg && screenBack(cfg);
+    if (back) { show(back); return true; }
+    return false;
+  } finally {
+    navSuppress = wasSuppressed;
+  }
+}
+
+// The Back button spends a history entry rather than navigating behind the
+// browser's back, so the button and the swipe stay one action. With no entry
+// of ours to spend (a fresh launch straight onto a screen), it just goes.
+function backTapped() {
+  if (navDepth > 0) { try { history.back(); return; } catch (e) { /* fall through */ } }
+  goBack();
+}
+
+// The phone's back gesture, and the browser's back button. The entry we land
+// on carries the depth it was pushed at, so the counter corrects itself here
+// rather than drifting.
+function onPopState(e) {
+  const depth = e && e.state && typeof e.state.ceb === 'number' ? e.state.ceb : 0;
+  navDepth = depth;
+  // On the PIN screen there is nothing to go back to and everything to lose.
+  if (!state.unlocked) { navPush(); return; }
+  navSuppress = true;
+  let moved = false;
+  try { moved = goBack(); } finally { navSuppress = false; }
+  // Home, with nothing behind it: put an entry back so the NEXT swipe has
+  // something of ours to spend and the app stays on the glass.
+  if (!moved) navPush();
 }
 
 // ---------------------------------------------------------------------------
@@ -706,12 +819,16 @@ function wirePanels() {
 }
 
 function wireNav() {
-  el('backBtn').addEventListener('click', goBack);
+  el('backBtn').addEventListener('click', backTapped);
   el('tabbar').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab');
     if (!btn || !state.unlocked) return;
-    show(btn.dataset.tab);
+    // A tab REPLACES: the two tabs are two places to stand, not a way in and a
+    // way further in, and a swipe should not have to walk back through every
+    // time he has flipped between them.
+    show(btn.dataset.tab, undefined, { replace: true });
   });
+  window.addEventListener('popstate', onPopState);
 }
 
 // Ask the browser to keep this origin's data even when the phone is short of
@@ -735,6 +852,10 @@ function boot() {
   wirePanels();
   wireNav();
   initPinScreen();
+  // The entry the app launched on becomes ours, rather than a stranger the
+  // first back gesture would fall through to.
+  navDepth = 0;
+  navReplace();
   show('pin');
 }
 

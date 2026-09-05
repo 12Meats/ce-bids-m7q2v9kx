@@ -43,6 +43,47 @@ function shake(node) {
   node.addEventListener('animationend', () => node.classList.remove('shake'), { once: true });
 }
 
+// revealAfterRender(node) -> node
+//
+// Scrolls a thing that has just appeared far enough up to be READ. A card
+// appended at the bottom of a screen renders below the fold on a small phone:
+// on an iPhone SE the Lost reason question landed at y=660 in a 667-point
+// window, under the tab bar, and tapping "Lost" looked like nothing had
+// happened at all.
+//
+// The tab bar is fixed over the last 64 points of the window, so
+// scrollIntoView({ block: 'nearest' }) alone would stop with the answer behind
+// it. This scrolls to clear the bar and leaves the element where it already is
+// if it is comfortably on screen — a prompt that jumps the page while he is
+// reading it is its own kind of wrong. Runs after the frame the caller just
+// built, because an element that is not laid out yet has no position to read.
+//
+// Returns the node, so a caller can append and reveal in one line.
+const REVEAL_MARGIN = 12;
+
+function revealAfterRender(node) {
+  if (!node || typeof node.getBoundingClientRect !== 'function') return node;
+  const run = () => {
+    try {
+      const bar = el('tabbar');
+      const barH = (bar && !bar.hidden) ? bar.getBoundingClientRect().height : 0;
+      const rect = node.getBoundingClientRect();
+      const bottomLimit = window.innerHeight - barH - REVEAL_MARGIN;
+      if (rect.bottom > bottomLimit) {
+        // Never past its own top: a card taller than the space left should
+        // show its beginning, not its end.
+        const by = Math.min(rect.bottom - bottomLimit, Math.max(0, rect.top - REVEAL_MARGIN));
+        if (by > 0) window.scrollBy({ top: by, behavior: 'smooth' });
+      } else if (rect.top < REVEAL_MARGIN) {
+        node.scrollIntoView({ block: 'nearest' });
+      }
+    } catch (e) { /* no layout in this environment */ }
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+  else run();
+  return node;
+}
+
 // ---------------------------------------------------------------------------
 // Builders
 // ---------------------------------------------------------------------------
@@ -96,6 +137,67 @@ function textButton(label, cls, onTap) {
   btn.textContent = label;
   if (onTap) btn.addEventListener('click', onTap);
   return btn;
+}
+
+// searchInput({ placeholder, label, value, onInput }) -> the search field, the
+// same one on the walk and on the home screen.
+//
+// Everything about it is there because of an iPhone. Autocorrect turns 3/4
+// into a word it likes better; autocapitalize puts a capital on EMT; the
+// spellcheck underline makes a part number look like a mistake; the Return key
+// says "go" when it should say "search". None of that is visible on a desktop,
+// and all of it is in his way in a plant. They are set as ATTRIBUTES, not
+// properties, because autocorrect and autocapitalize are not standard DOM
+// properties — a tests/inputs.test.js assertion reads them back the same way
+// the browser does.
+//
+// The clear-X is inside the field and only there when there is something to
+// clear. It clears, refocuses (the keyboard stays up: he is mid-thought, not
+// done), and tells the caller — one tap instead of nine backspaces.
+//
+// Returns the wrapper, with the input hung off it as .input so a caller can
+// read the value or focus it without a querySelector for a class name.
+function searchInput(opts) {
+  const o = opts || {};
+  const wrap = document.createElement('div');
+  wrap.className = 'search-wrap' + (o.className ? ' ' + o.className : '');
+
+  const input = document.createElement('input');
+  const attrs = {
+    type: 'text',
+    placeholder: o.placeholder || 'Search',
+    'aria-label': o.label || o.placeholder || 'Search',
+    autocomplete: 'off',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+    spellcheck: 'false',
+    enterkeyhint: 'search',
+    inputmode: 'search',
+  };
+  Object.keys(attrs).forEach((k) => input.setAttribute(k, attrs[k]));
+  input.className = 'search-input';
+  input.value = o.value || '';
+
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'search-clear';
+  clear.setAttribute('aria-label', 'Clear search');
+  clear.textContent = '✕';
+  clear.hidden = input.value === '';
+
+  const fire = () => { if (typeof o.onInput === 'function') o.onInput(input.value); };
+  input.addEventListener('input', () => { clear.hidden = input.value === ''; fire(); });
+  clear.addEventListener('click', () => {
+    input.value = '';
+    clear.hidden = true;
+    fire();
+    try { input.focus(); } catch (e) { /* no focus in a test DOM */ }
+  });
+
+  wrap.appendChild(input);
+  wrap.appendChild(clear);
+  wrap.input = input;
+  return wrap;
 }
 
 // emptyNote(text) -> the muted line that stands in for a list with nothing in
@@ -527,6 +629,19 @@ function bidPriceText(bid, data) {
   }
 }
 
+// areaTallyText(area) -> "3 items · $412.00"
+//
+// What he has counted in this room so far, at cost. It sits at the top of the
+// add-item list, where it is the only proof an add landed now that adding one
+// no longer throws him back to the area. The money goes through
+// BidMath.materialCost, the same primitive the area footer and the Price
+// screen use, so the running total and the area cost can never disagree.
+function areaTallyText(area) {
+  const items = (area && area.items) || [];
+  const n = items.length;
+  return n + ' ' + (n === 1 ? 'item' : 'items') + ' · ' + BidMath.fmt(BidMath.materialCost({ areas: [area || {}] }));
+}
+
 // ---------------------------------------------------------------------------
 // UNPRICED LINES
 // ---------------------------------------------------------------------------
@@ -584,20 +699,20 @@ function unpricedLines(bid, settings) {
     if (!(cents > 0)) out.push({ kind: 'changeOrder', name: co.name || 'this change order' });
   });
 
-  // Labor is the one line he cannot tap, so it is not in any loop above — and
-  // it was the one line that could reach a customer at $0.00. An empty bid with
-  // no hours on it priced out at nothing and shared clean, because every check
-  // here was a check on a line that existed.
+  // The whole bid, last. Everything above is a line he can tap; this is the
+  // number at the bottom of the page, and it was the one thing that could reach
+  // a customer at $0.00 with nothing on screen saying so.
   //
-  // The gate is the WHOLE bid, not the labor row: parts-only bids are real, and
-  // a service call that is a breaker and no days must still share. So this
-  // fires only when there are no hours AND nothing else is priced either —
-  // which is exactly the bid whose total is $0.00. It goes last so a named
-  // unpriced line still wins the banner: "Labor" sends him nowhere, a name
-  // sends him to the line.
+  // It is the BUILT TOTAL, not the labor row. Parts-only bids are real — a
+  // breaker handed over with no days logged has a price and must still share —
+  // so the gate is only ever "this page adds up to nothing". Hours at a $0 rate
+  // is the case the first version of this check missed: it asked whether there
+  // were hours, and a bid with three days on it at no rate an hour has hours
+  // and still totals zero.
   const stack = BidMath.costStack(bid, settings);
-  if (stack.bidHours === 0 && stack.fixedPrice + coCents === 0) {
-    out.push({ kind: 'labor', name: 'Labor' });
+  const rate = (bid.pricing && bid.pricing.rateCents) || 0;
+  if (BidMath.solve(stack, 'rate', rate).priceCents + coCents <= 0) {
+    out.push({ kind: 'total', name: 'Labor' });
   }
   return out;
 }
@@ -605,6 +720,11 @@ function unpricedLines(bid, settings) {
 // The banner that stands between an unpriced line and a PDF. Names the first
 // one: a count ("3 lines have no price") sends him hunting, a name sends him
 // to the line.
+//
+// The whole-bid gate is the exception, because there is no line to name and
+// "put a price on Labor" points at a row that does not exist. It says the
+// number instead, which is the fact he needs.
 function unpricedBlockText(lines) {
+  if (lines[0].kind === 'total') return 'This bid totals $0.00. Put a price on it first.';
   return 'Put a price on "' + lines[0].name + '" first.';
 }

@@ -236,13 +236,32 @@ test('a fully priced bid has no unpriced lines', () => {
 
 // Labor has no row to tap, so it was the one line that could reach a customer
 // at $0.00: a bid with nothing on it priced out at nothing and shared clean.
-test('a bid with no hours and nothing priced is blocked, naming Labor', () => {
+test('a bid that adds up to nothing is blocked, and the banner says the number', () => {
   const { d, b } = pricedBid();
   b.areas = []; b.labor.days = 0; b.labor.tasks = null;
   const lines = unpricedLines(b, d.settings);
-  assert.deepEqual(lines.map((l) => l.name), ['Labor']);
-  assert.equal(lines[0].kind, 'labor');
-  assert.equal(unpricedBlockText(lines), 'Put a price on "Labor" first.');
+  assert.deepEqual(lines.map((l) => l.kind), ['total']);
+  assert.equal(unpricedBlockText(lines), 'This bid totals $0.00. Put a price on it first.');
+});
+
+// Hours at no rate an hour. The first version of this gate asked whether there
+// were HOURS, so three days of work at $0.00 an hour walked straight past it
+// and shared a proposal with a total of nothing on the bottom of the page.
+test('hours at a $0 rate still total nothing, and are still blocked', () => {
+  const { d, b } = pricedBid();
+  b.areas = [];
+  b.labor.days = 3;
+  b.pricing.rateCents = 0;
+  const stack = B.costStack(b, d.settings);
+  assert.ok(stack.bidHours > 0);                                  // there ARE hours
+  assert.equal(B.solve(stack, 'rate', 0).priceCents, 0);          // and the page says $0.00
+  const lines = unpricedLines(b, d.settings);
+  assert.deepEqual(lines.map((l) => l.kind), ['total']);
+  assert.equal(unpricedBlockText(lines), 'This bid totals $0.00. Put a price on it first.');
+
+  // A rate on it and the same bid shares.
+  b.pricing.rateCents = 8500;
+  assert.deepEqual(unpricedLines(b, d.settings), []);
 });
 
 // Parts-only bids are real: a breaker handed over with no days logged has a
@@ -264,7 +283,7 @@ test('an unpriced named line outranks the Labor gate in the banner', () => {
   b.areas[0].items = [{ catalogId: null, name: 'Permits', unit: 'lot', qty: 1, costCents: 0, priceCents: null }];
   b.labor.days = 0; b.labor.tasks = null;
   const lines = unpricedLines(b, d.settings);
-  assert.deepEqual(lines.map((l) => l.name), ['Permits', 'Labor']);
+  assert.deepEqual(lines.map((l) => l.kind), ['item', 'total']);
   assert.equal(unpricedBlockText(lines), 'Put a price on "Permits" first.');
 });
 

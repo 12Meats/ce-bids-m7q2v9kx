@@ -61,6 +61,7 @@ const PROPOSAL_MAX_VALIDITY = 365;   // a year on one line: a limit on the typo
 const PROPOSAL_PDF_KEEP = 10;        // previous PDFs listed for one bid
 
 let proposalClausesOpen = false;  // the clause library, expanded
+let proposalRevealClauses = false; // one render long, after the tap that opened them
 let proposalTermsOn = false;      // a service bid that wants terms anyway
 let proposalBusy = false;         // a PDF is being built / the sheet is open
 let proposalPdfs = null;          // [{ id, at }] newest first; null = still loading
@@ -142,15 +143,36 @@ function proposalSeedClauses(bid) {
 // One row of the document: what it is on the left, what it costs on the right.
 // The quantity and the unit price ride with the description rather than in
 // their own columns — four columns at 390px is four columns of nothing.
+//
+// They ride UNDER it, in the muted second line, and that is the whole fix for
+// what an iPhone SE did with them. Run together on one line, "3/4\" EMT ·
+// 240 ft · $1.12" wrapped, and the unit price landed alone on the second line
+// directly beneath the row's total — two dollar amounts stacked, one of them
+// small, reading as the same number printed twice. On its own line it is
+// plainly the detail: what one of them costs, under what they are. The PAPER
+// is unaffected; it has four real columns at fixed widths (docgen.js).
 function proposalPreviewLine(desc, qtyText, unitCents, cents) {
   const line = document.createElement('div');
   line.className = 'prop-line';
-  const bits = [desc];
-  if (qtyText) bits.push(qtyText);
-  if (unitCents !== null && unitCents !== undefined) bits.push(moneyText(unitCents));
+
   const d = document.createElement('span');
   d.className = 'prop-line-desc';
-  d.textContent = bits.join(' · ');
+  const name = document.createElement('span');
+  name.className = 'prop-line-name';
+  name.textContent = desc;
+  d.appendChild(name);
+
+  // "240 ft at $1.12", the way he says it out loud — and it still reads right
+  // with only one of the two ("48 hrs", "$1.12").
+  const unit = (unitCents === null || unitCents === undefined) ? '' : moneyText(unitCents);
+  const detail = (qtyText && unit) ? (qtyText + ' at ' + unit) : (qtyText || unit);
+  if (detail) {
+    const sub = document.createElement('span');
+    sub.className = 'prop-line-sub';
+    sub.textContent = detail;
+    d.appendChild(sub);
+  }
+
   const m = document.createElement('span');
   m.className = 'prop-line-money';
   m.textContent = cents === null ? '' : moneyText(cents);
@@ -523,7 +545,8 @@ function buildClauses(bid) {
   box.appendChild(row('On this bid', count + ' clause' + (count === 1 ? '' : 's')));
 
   if (!proposalClausesOpen) {
-    box.appendChild(textButton('Choose clauses', 'btn btn-block', () => { proposalClausesOpen = true; render(); }));
+    box.appendChild(textButton('Choose clauses', 'btn btn-block',
+      () => { proposalClausesOpen = true; proposalRevealClauses = true; render(); }));
     return box;
   }
 
@@ -536,6 +559,10 @@ function buildClauses(bid) {
   if (other.length) box.appendChild(proposalClauseGroup(bid, 'Other', other));
 
   box.appendChild(textButton('Done', 'btn btn-block', () => { proposalClausesOpen = false; render(); }));
+  // The groups open below the button he tapped, which on a small phone is
+  // below the fold: the first group comes up to meet him. Once, on the render
+  // that follows the tap — not again on every clause he ticks.
+  if (proposalRevealClauses) { proposalRevealClauses = false; revealAfterRender(box); }
   return box;
 }
 

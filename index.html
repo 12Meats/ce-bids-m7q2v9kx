@@ -374,6 +374,31 @@
     }
     input[type="text"]:focus,
     textarea:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+    /* The search field, on the walk and on the home screen. The X sits INSIDE
+       the field on the right, so the field keeps the full width and the tap
+       target is where a phone keyboard has taught him to look for it. */
+    .search-wrap { position: relative; }
+    .search-input { padding-right: 52px; }
+    .search-clear {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 48px;
+      height: 100%;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-size: 1.1rem;
+      line-height: 1;
+      border-radius: 10px;
+    }
+    .search-clear:active { color: var(--color-text); }
+    .search-clear[hidden] { display: none; }
     input.field-invalid { border-color: var(--color-danger); outline-color: var(--color-danger); }
 
     .section-heading {
@@ -517,6 +542,7 @@
     .nudge-on { box-shadow: inset 0 0 0 2px currentColor; }
 
     .bids-search { margin-bottom: var(--space-3); }
+    .walk-search { margin-bottom: var(--space-2); }
 
     .bid-card {
       display: flex;
@@ -724,7 +750,16 @@
     }
     .walk-tile:active { background: #eef2f7; }
 
-    .walk-search { margin-bottom: var(--space-2); }
+    /* The running total at the top of the add list: quiet, but the only proof
+       that the last eight taps landed. */
+    .walk-tally {
+      margin-bottom: var(--space-2);
+      padding: var(--space-1) var(--space-2);
+      border-radius: 10px;
+      background: #eef2f7;
+      color: var(--color-accent);
+      font-weight: 700;
+    }
 
     .walk-thumbs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
     .walk-thumb {
@@ -1025,7 +1060,11 @@
       padding: 3px 0;
       border-bottom: 1px solid var(--color-border);
     }
-    .prop-line-desc { min-width: 0; overflow-wrap: anywhere; }
+    /* Two lines, not a wrap: what it is, then how many at what each. Run
+       together they wrapped on a 375px phone and left the unit price sitting
+       under the row's own total, reading as the same number twice. */
+    .prop-line-desc { min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; }
+    .prop-line-sub { color: var(--color-text-muted); font-size: 0.85rem; }
     .prop-line-money { white-space: nowrap; font-variant-numeric: tabular-nums; }
     .prop-bullets { margin: var(--space-1) 0 0; padding-left: 20px; }
     .prop-bullets li { padding: 2px 0; overflow-wrap: anywhere; }

@@ -19,6 +19,9 @@
 // Screen-local view state.
 let bidHeaderOpen = false;   // the header form is showing for an existing bid
 let bidLostSheetOpen = false;
+// One render long: the "Wrong button?" card is scrolled to only when it is
+// the answer to a tap he just made, never when he opens a lost bid later.
+let bidRevealUndo = false;
 let bidDraft = null;         // the not-yet-created bid, while state.bidId is null
 let bidShakeField = null;    // 'customer' | 'date' — shaken once after the next render
 
@@ -442,6 +445,7 @@ function renderBidScreen(bid, host) {
           bid.status = 'lost';
           bid.lostReason = value;
           bidLostSheetOpen = false;
+          bidRevealUndo = true;
           // On a refused save the sheet comes back up, so the answer he picked
           // is one tap away rather than four.
           persistOr(() => {
@@ -458,6 +462,9 @@ function renderBidScreen(bid, host) {
       }));
       ask.appendChild(fieldLabel('What happened?'));
       ask.appendChild(reasons);
+      // On an SE this card renders below the fold, behind the tab bar: tapping
+      // Lost looked like nothing had happened. The question comes to him.
+      revealAfterRender(ask);
     } else {
       const pair = document.createElement('div');
       pair.className = 'toggle-row';
@@ -487,11 +494,17 @@ function renderBidScreen(bid, host) {
     undo.appendChild(caption('Marked lost: ' + lostReasonLabel(bid.lostReason).toLowerCase() + '.'));
     undo.appendChild(textButton('Reopen', 'btn btn-block', () => bidReopenLost(bid)));
     host.appendChild(undo);
+    // Only on the render that follows the answer he just gave: the card takes
+    // the question's place at the bottom of the screen, and it is the receipt
+    // for the tap. Opening a lost bid later must not yank the page down.
+    if (bidRevealUndo) revealAfterRender(undo);
   } else if (bid.status === 'won' && Store.jobIsEmpty(bid.job)) {
     const undo = card('Wrong button?');
     undo.appendChild(textButton('Undo Won', 'btn btn-block', () => bidUndoWon(bid)));
     host.appendChild(undo);
+    if (bidRevealUndo) revealAfterRender(undo);
   }
+  bidRevealUndo = false;
 }
 
 // ---------------------------------------------------------------------------
