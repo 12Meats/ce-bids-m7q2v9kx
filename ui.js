@@ -779,6 +779,11 @@ function itemCountText(qty, unit, costCents) {
 // clause he thinks is on the document when it isn't.
 const CLAUSE_GROUPS = [
   ['always', 'Always'],
+  // The subcontract language, kept verbatim and kept apart. It is the right
+  // paper under a general contractor and the wrong paper in front of a plant
+  // manager, so it is never seeded and never pre-ticked: he turns it on for
+  // the jobs where he is the sub.
+  ['gc', 'Under a general contractor'],
   ['trench', 'Trenching & underground'],
   ['site', 'Site & pavement'],
   ['hazmat', 'Hazardous waste'],

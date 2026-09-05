@@ -62,57 +62,264 @@
   // -------------------------------------------------------------------------
   // Seed data
   // -------------------------------------------------------------------------
+  // WHAT A FRESH INSTALL KNOWS. Nothing here is a price: every part lands with
+  // lastCostCents null and uses 0, because what a coupling costs is what the
+  // supply house charged him last week and the app learns that off his own
+  // walk. What the seed carries is NAMES, and it carries them SIZE-COMPLETE:
+  // the reason the first list was too small was never the count, it was
+  // standing under a rack with 1-1/2" in his hand and finding only 1/2"
+  // through 1-1/4" in the app.
+  //
+  // So the families are built from their size lists rather than typed out one
+  // by one. A family cannot be half a family, the trade sizes cannot drift
+  // apart between EMT and its couplings, and adding a size adds it everywhere
+  // it belongs. Every name is written the way Catalog.sizeKey reads a size:
+  // the trade size FIRST, with its inch mark ('1-1/4" EMT', not 'EMT 1-1/4'),
+  // and wire over #1 as '4/0 THHN' and never '#4/0', which would read as a #4.
+  //
+  // Seeds are for FRESH INSTALLS. A phone with a catalog of its own keeps it
+  // and gets "Add the standard parts" in Settings, which adds only the names
+  // it is missing.
 
-  const SEED_CATALOG = [
-    ['conduit','1/2" EMT','ft'],['conduit','3/4" EMT','ft'],['conduit','1" EMT','ft'],['conduit','1-1/4" EMT','ft'],
-    ['conduit','3/4" rigid','ft'],['conduit','1" rigid','ft'],['conduit','3/4" S.S. conduit','ft'],['conduit','1" S.S. conduit','ft'],
-    ['conduit','3/4" seal-tight','ft'],['conduit','1" seal-tight','ft'],['conduit','3/4" PVC','ft'],['conduit','1" PVC','ft'],
-    ['wire','#12 THHN','roll'],['wire','#10 THHN','roll'],['wire','#8 THHN','ft'],['wire','#6 THHN','ft'],['wire','#4 THHN','ft'],
-    ['wire','#2 THHN','ft'],['wire','10/4 SO cord','ft'],['wire','12/4 SO cord','ft'],['wire','10/4 VFD cable','ft'],['wire','Cat6','ft'],
-    ['boxes','3/4" hubs','ea'],['boxes','1" hubs','ea'],['boxes','3/4" S.S. hubs','ea'],['boxes','LB 3/4"','ea'],['boxes','LB 1"','ea'],
-    ['boxes','3/4" couplings','ea'],['boxes','3/4" connectors','ea'],['boxes','J-box 4x4','ea'],['boxes','J-box 8x8x4','ea'],
-    ['boxes','J-box 10x10x6','ea'],['boxes','Cord grips','ea'],['boxes','S.S. cord grips','ea'],['boxes','Straps & supports','lot'],
-    ['lighting','LED high bay','ea'],['lighting','LED strip 4 ft','ea'],['lighting','Emergency light fixture','ea'],['lighting','Exit sign','ea'],
-    ['lighting','T8 LED tube','ea'],['lighting','T5 bulb','ea'],['lighting','Motion sensor','ea'],['lighting','Photocell','ea'],['lighting','Wall pack','ea'],
-    ['gear','20 A breaker','ea'],['gear','30 A breaker','ea'],['gear','3-pole 480 V breaker','ea'],['gear','3-pole disconnect','ea'],
-    ['gear','30 A disconnect','ea'],['gear','60 A disconnect','ea'],['gear','Contactor','ea'],['gear','Motor starter','ea'],['gear','VFD','ea'],
-    ['gear','Pin & sleeve','ea'],['gear','Receptacle 20 A','ea'],['gear','Switch 3-way','ea'],['gear','Photo eye','ea'],['gear','Shrink tube, tape, crimps','lot'],
-    ['rentals','Boom lift','day'],['rentals','Scissor lift','day'],['rentals','Trencher','day'],['rentals','Dumpster','ea'],
+  // The six trade sizes this shop actually runs. Everything conduit-shaped is
+  // built from this list, and so is every fitting that has to fit it.
+  const CONDUIT_SIZES = ['1/2"', '3/4"', '1"', '1-1/4"', '1-1/2"', '2"'];
+  // PVC-coated rigid and the stainless fittings are dairy-wash-down items and
+  // he does not run them in every size.
+  const COATED_SIZES = ['3/4"', '1"', '1-1/4"', '1-1/2"'];
+  // THHN and XHHW from the smallest he pulls to 4/0. Written '1/0' and not
+  // '#1/0': Catalog.sizeKey reads a leading '#4' as a #4 wire, so '#4/0' would
+  // sort a 4/0 feeder in with the #4s.
+  const WIRE_SIZES = ['#14', '#12', '#10', '#8', '#6', '#4', '#2', '#1', '1/0', '2/0', '3/0', '4/0'];
+  // XHHW is feeder wire here, so it starts where his feeders start.
+  const XHHW_SIZES = ['#4', '#2', '1/0', '2/0', '3/0', '4/0'];
+
+  // A family: the same part in every size it comes in.
+  function sizedParts(category, sizes, suffix, unit) {
+    return sizes.map((size) => [category, size + ' ' + suffix, typeof unit === 'function' ? unit(size) : unit]);
+  }
+  // Small wire comes off a roll, feeders come off a reel by the foot. His own
+  // habit, kept from the first seed list.
+  function wireUnit(size) { return ['#14', '#12', '#10'].indexOf(size) !== -1 ? 'roll' : 'ft'; }
+
+  const SEED_CATALOG = [].concat(
+    // --- CONDUIT: five materials in six sizes, plus coated rigid ------------
+    sizedParts('conduit', CONDUIT_SIZES, 'EMT', 'ft'),
+    sizedParts('conduit', CONDUIT_SIZES, 'rigid', 'ft'),
+    sizedParts('conduit', CONDUIT_SIZES, 'S.S. conduit', 'ft'),
+    sizedParts('conduit', CONDUIT_SIZES, 'PVC', 'ft'),
+    sizedParts('conduit', CONDUIT_SIZES, 'seal-tight', 'ft'),
+    sizedParts('conduit', COATED_SIZES, 'PVC-coated rigid', 'ft'),
+
+    // --- WIRE: building wire, cable, cord -----------------------------------
+    sizedParts('wire', WIRE_SIZES, 'THHN', wireUnit),
+    sizedParts('wire', XHHW_SIZES, 'XHHW', 'ft'),
+    sizedParts('wire', ['#6', '#4', '#2'], 'bare copper ground', 'ft'),
+    [
+      ['wire', '12/2 MC cable', 'ft'], ['wire', '12/3 MC cable', 'ft'],
+      ['wire', '10/2 MC cable', 'ft'], ['wire', '10/3 MC cable', 'ft'],
+      ['wire', '12/3 SOOW cord', 'ft'], ['wire', '12/4 SOOW cord', 'ft'],
+      ['wire', '10/3 SOOW cord', 'ft'], ['wire', '10/4 SOOW cord', 'ft'],
+      ['wire', '8/3 SOOW cord', 'ft'], ['wire', '8/4 SOOW cord', 'ft'],
+      ['wire', '14/4 VFD cable', 'ft'], ['wire', '12/4 VFD cable', 'ft'],
+      ['wire', '10/4 VFD cable', 'ft'], ['wire', '8/4 VFD cable', 'ft'],
+      ['wire', '6/4 VFD cable', 'ft'],
+      ['wire', 'Cat6', 'ft'], ['wire', 'Wire nuts, tape, crimps', 'lot'],
+    ],
+
+    // --- BOXES: the fittings that hang the pipe, and what it lands in -------
+    sizedParts('boxes', CONDUIT_SIZES, 'coupling', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'connector', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'LB', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'hub', 'ea'),
+    sizedParts('boxes', CONDUIT_SIZES, 'one-hole strap', 'ea'),
+    sizedParts('boxes', COATED_SIZES, 'S.S. hub', 'ea'),
+    [
+      ['boxes', '1" expansion fitting', 'ea'], ['boxes', '2" expansion fitting', 'ea'],
+      ['boxes', 'Strut 1-5/8"', 'ft'], ['boxes', 'Beam clamp', 'ea'],
+      ['boxes', 'J-box 4x4', 'ea'], ['boxes', '4-11/16" box', 'ea'],
+      ['boxes', 'FS box', 'ea'], ['boxes', 'FD box', 'ea'],
+      ['boxes', 'NEMA 4X S.S. 6x6', 'ea'], ['boxes', 'NEMA 4X S.S. 8x8', 'ea'],
+      ['boxes', 'NEMA 4X S.S. 10x10', 'ea'], ['boxes', 'NEMA 4X S.S. 12x12', 'ea'],
+      ['boxes', 'Wireway 4x4', 'ft'], ['boxes', 'Cord grips', 'ea'],
+      ['boxes', 'S.S. cord grips', 'ea'], ['boxes', 'Straps & supports', 'lot'],
+    ],
+
+    // --- LIGHTING -----------------------------------------------------------
+    [
+      ['lighting', 'LED high bay 100 W', 'ea'], ['lighting', 'LED high bay 150 W', 'ea'],
+      ['lighting', 'LED high bay 200 W', 'ea'], ['lighting', 'LED high bay 240 W', 'ea'],
+      ['lighting', 'LED vapor-tight 4 ft', 'ea'], ['lighting', 'LED vapor-tight 8 ft', 'ea'],
+      ['lighting', 'LED strip 4 ft', 'ea'], ['lighting', 'LED strip 8 ft', 'ea'],
+      ['lighting', 'Wall pack', 'ea'],
+      ['lighting', 'Emergency light fixture', 'ea'], ['lighting', 'Exit sign', 'ea'],
+      ['lighting', 'T8 LED tube', 'ea'], ['lighting', 'Occupancy sensor', 'ea'],
+      ['lighting', 'Motion sensor', 'ea'], ['lighting', 'Photocell', 'ea'],
+    ],
+
+    // --- GEAR: breakers, disconnects, motor control, devices ----------------
+    [
+      ['gear', '15 A 1-pole breaker', 'ea'], ['gear', '20 A 1-pole breaker', 'ea'],
+      ['gear', '30 A 1-pole breaker', 'ea'], ['gear', '20 A 2-pole breaker', 'ea'],
+      ['gear', '30 A 2-pole breaker', 'ea'], ['gear', '60 A 2-pole breaker', 'ea'],
+      ['gear', '30 A 3-pole breaker', 'ea'], ['gear', '60 A 3-pole breaker', 'ea'],
+      ['gear', '100 A 3-pole breaker', 'ea'], ['gear', '200 A 3-pole breaker', 'ea'],
+      ['gear', '30 A disconnect, non-fused', 'ea'], ['gear', '30 A disconnect, fused', 'ea'],
+      ['gear', '60 A disconnect, non-fused', 'ea'], ['gear', '60 A disconnect, fused', 'ea'],
+      ['gear', '100 A disconnect, non-fused', 'ea'], ['gear', '100 A disconnect, fused', 'ea'],
+      ['gear', '200 A disconnect, fused', 'ea'],
+      ['gear', '30 A disconnect, NEMA 4X S.S.', 'ea'], ['gear', '60 A disconnect, NEMA 4X S.S.', 'ea'],
+      ['gear', 'Motor starter NEMA 0', 'ea'], ['gear', 'Motor starter NEMA 1', 'ea'],
+      ['gear', 'Motor starter NEMA 2', 'ea'], ['gear', 'Motor starter NEMA 3', 'ea'],
+      ['gear', 'Contactor 30 A', 'ea'], ['gear', 'Contactor 60 A', 'ea'],
+      ['gear', 'VFD 1 HP', 'ea'], ['gear', 'VFD 3 HP', 'ea'], ['gear', 'VFD 5 HP', 'ea'],
+      ['gear', 'VFD 10 HP', 'ea'], ['gear', 'VFD 20 HP', 'ea'], ['gear', 'VFD 30 HP', 'ea'],
+      ['gear', 'VFD 50 HP', 'ea'],
+      ['gear', 'Transformer 15 kVA', 'ea'], ['gear', 'Transformer 30 kVA', 'ea'],
+      ['gear', 'Transformer 45 kVA', 'ea'], ['gear', 'Transformer 75 kVA', 'ea'],
+      ['gear', 'Receptacle 20 A', 'ea'], ['gear', 'Receptacle 30 A', 'ea'], ['gear', 'Receptacle 50 A', 'ea'],
+      ['gear', 'Pin & sleeve 30 A', 'ea'], ['gear', 'Pin & sleeve 60 A', 'ea'], ['gear', 'Pin & sleeve 100 A', 'ea'],
+      ['gear', 'Switch 3-way', 'ea'], ['gear', 'Pilot light', 'ea'], ['gear', 'Push button', 'ea'],
+      ['gear', 'E-stop button', 'ea'], ['gear', 'Terminal blocks', 'ea'],
+      ['gear', 'Fuses, class J', 'ea'],
+      ['gear', 'Photo eye', 'ea'], ['gear', 'Shrink tube, tape, crimps', 'lot'],
+    ],
+
+    // --- RENTALS: kept out of the material lists, offered as rental chips ---
+    [
+      ['rentals', 'Scissor lift 19 ft', 'day'], ['rentals', 'Scissor lift 26 ft', 'day'],
+      ['rentals', 'Scissor lift 32 ft', 'day'], ['rentals', 'Boom lift 45 ft', 'day'],
+      ['rentals', 'Boom lift 60 ft', 'day'], ['rentals', 'Fork lift', 'day'],
+      ['rentals', 'Scaffolding', 'day'], ['rentals', 'Core drill', 'day'],
+      ['rentals', 'Trencher', 'day'], ['rentals', 'Generator', 'day'],
+      ['rentals', 'Dumpster', 'ea'],
+    ]
+  );
+
+  // His own tools, by the job they do. A day of one bills at equipment % of
+  // what it cost new, so every one of them lands with no cost on it: what a
+  // bender cost in 2014 is a number only he has.
+  const SEED_EQUIPMENT = [
+    // Conduit
+    'Hydraulic bender', 'EMT bender', 'Threader', 'Pipe vise and tripod', 'Hydraulic knockout set',
+    'Band saw', 'Chop saw', 'Magnetic drill',
+    // Pulling and terminating
+    'Cable tugger', 'Cable puller', 'Hydraulic cutter', 'Hydraulic crimper', 'Fish tape and rodder',
+    // Concrete and demo
+    'Core drill', 'Concrete saw', 'Rotary hammer', 'Hammer drill', 'Demo hammer',
+    // Access and lifting
+    'Extension ladder', 'Platform ladder', 'Rolling scaffold', 'Chain hoist',
+    // Power and site
+    'Generator', 'Air compressor', 'Welder', 'Job trailer', 'Light stand',
+    // Testing
+    'Megger', 'Thermal camera', 'Power quality meter',
   ];
-  const SEED_EQUIPMENT = ['Threader', 'Generator', 'Tugger', 'Concrete saw', 'Core drill', 'Bender'];
-  const SEED_FORGET = ['Lift rental', 'Equipment', 'Permits', 'Disposal', 'Trenching', 'Travel days', 'Sub-contractor'];
-  const SEED_NOTES = ['Prices subject to change; final pricing based on actual material.',
-    'Disconnect to be supplied by customer.', 'Does not include lift rental.', 'Stainless supports and brackets to be installed by welders.'];
 
-  // Clause library, transcribed verbatim from the owner's own past proposal
-  // (Cantu Electric LLC. Addendum Terms and Conditions, numbered clauses
-  // 1-23, plus two clauses lifted from that same proposal's page-1 "Notes"
-  // bullets, plus one new one-sentence clause for subcontractor jobs).
-  // NOTE FOR REVIEW: this library has not been reviewed by an
-  // attorney/accountant. "provided by Owner, Owner, Architect" in clause 18
-  // (Right to rely) repeats "Owner" as written in the source document — left
-  // verbatim since it is not an unambiguous OCR-style error.
+  // THE DID-YOU-FORGET LIST. Every row carries the kind of line it becomes, so
+  // the walk does not have to guess from the words:
+  //
+  //   'rental' — money that is not material: a lift, a generator, a dumpster,
+  //              a shutdown window. Opens the rental prompt (or the tool
+  //              picker, for the row that is about his own gear), where days
+  //              and a day rate are what the line needs.
+  //   'item'   — a line in one of his areas at $0, flagged amber until he
+  //              prices it. Permits, patch and paint, engineering.
+  //
+  // Order is the point: the ones he forgets most are the ones he reads first.
+  // The list stays editable in Settings, and a row he types there is a plain
+  // string that routes off its own words the way the whole list used to.
+  const SEED_FORGET = [
+    { name: 'Lift rental', kind: 'rental' },
+    { name: 'Temporary power / generators', kind: 'rental' },
+    { name: 'Shutdown windows / after-hours', kind: 'rental' },
+    { name: 'Permits and inspection fees', kind: 'item' },
+    { name: 'Core drilling / concrete cutting', kind: 'item' },
+    { name: 'Disposal / dumpster', kind: 'rental' },
+    { name: 'Scaffolding', kind: 'rental' },
+    { name: 'Equipment (owned tools)', kind: 'rental' },
+    { name: 'Site orientation / badging / LOTO training', kind: 'item' },
+    { name: 'Hot work permit / fire watch', kind: 'item' },
+    { name: 'Patch and paint', kind: 'item' },
+    { name: 'Trenching / backfill', kind: 'item' },
+    { name: 'Utility coordination (APS/SRP)', kind: 'item' },
+    { name: 'Engineering / stamped drawings', kind: 'item' },
+    { name: 'Long-lead gear (VFDs, transformers, switchgear)', kind: 'item' },
+    { name: 'Startup, testing, and commissioning', kind: 'item' },
+    { name: 'Washdown-rated (NEMA 4X / stainless) requirements', kind: 'item' },
+    { name: 'Travel days / per diem', kind: 'item' },
+    { name: 'Sub-contractor', kind: 'item' },
+  ];
+
+  // The first four are his, word for word off his own proposals. The ten under
+  // them are the same voice: what is NOT in the price, said plainly, before it
+  // becomes an argument on site.
+  const SEED_NOTES = [
+    'Prices subject to change; final pricing based on actual material.',
+    'Disconnect to be supplied by customer.',
+    'Does not include lift rental.',
+    'Stainless supports and brackets to be installed by welders.',
+    'Does not include permits or inspection fees.',
+    'Does not include patching, painting, or drywall repair.',
+    'Does not include trenching, backfill, or concrete work.',
+    'Customer to provide clear access to the work area and panels.',
+    'Work to be done during a scheduled shutdown arranged by the customer.',
+    'After-hours or weekend work billed at the hourly rate.',
+    'Existing wiring and equipment assumed to be in working order unless noted.',
+    'Customer-supplied equipment installed as provided; no warranty on customer-supplied parts.',
+    'Lift or scaffolding to be provided by customer.',
+    'Material lead times may affect the schedule.',
+  ];
+
+  // The one note a new bid arrives with, on Full and Summary. It is the
+  // sentence that keeps a copper spike from being his to eat, and it is the
+  // only one that is true of every job he writes. Scope & price bids start
+  // with none: their terms page already carries how long the price is good.
+  const SEED_DEFAULT_NOTE = SEED_NOTES[0];
+
+  // THE CLAUSE LIBRARY.
+  //
+  // NOT LEGAL ADVICE, AND NOT REVIEWED BY AN ATTORNEY. These are drafts in his
+  // own words for his attorney to read, and the Arizona lien rights they do
+  // not mention still need the separate 20-day preliminary notice.
+  //
+  // The eight in "always" are new. What was there before was transcribed off
+  // the Consolidated Co-Ops job, and that was SUBCONTRACT language: paid when
+  // the Owner pays, notice periods written for a general contractor,
+  // liquidated damages, an indemnity with HIM holding the owner harmless, and
+  // a workmanship clause about asphalt and drainage that came from a paving
+  // contract. Nineteen of them went onto every project bid he wrote. On his
+  // OWN proposal, to a plant manager, most of it says the wrong thing.
+  //
+  // So: eight clauses on his own paper, facing the customer, in the words he
+  // would use standing in front of one. The sub-facing text is not thrown
+  // away, it is moved into its own group and kept VERBATIM, for the jobs where
+  // he really is under a general contractor. Trench, site, hazmat and subs are
+  // unchanged.
   const SEED_CLAUSES = [
-    // always (19)
-    { id: 'k01', group: 'always', title: 'Work', text: 'Contractor will furnish all necessary labor, materials, and equipment to complete the work specified in the Contract (the "Work"). All surfaces to which material is to be applied shall be in a condition similar to the condition at the time the project was bid. Owner shall specify one representative to represent the Owner who has authority to accept the Work and authorize changes to the Work. Owner shall provide reasonable access to a water supply source. Owner grants Contractor permission to utilize photos and videos of the Work and the project site in the promotion of Contractor\'s business services.' },
-    { id: 'k02', group: 'always', title: 'Payment', text: 'Contractor shall be paid a monthly progress payment within 15 days after receipt of the payment by the Owner for the value of work performed. Final payment, including all retention, shall be due 15 days after the work described in the Proposal is substantially completed. No provision of this agreement shall serve to void the Contractor\'s entitlement to payment for properly performed work.' },
-    { id: 'k03', group: 'always', title: 'Interest and expenses', text: 'All sums not paid when due shall bear an interest rate of 1 1/2% per month or the maximum legal rate permitted by law, whichever is less, and all costs of collection, including a reasonable attorneys\' fee, shall be paid by Owner.' },
-    { id: 'k04', group: 'always', title: "Attorneys' fees", text: 'In the event of litigation regarding the Contract or collection efforts by Contractor, the prevailing party shall be awarded its reasonable attorneys\' fees and costs, which shall include all costs that would normally be passed through to the client, specifically but not limited to research charges, travel costs, expert witness costs, copying costs, mailing costs, facsimile costs, hand-delivery costs, Federal Express or Express Mail costs, taxable costs and disbursements.' },
-    { id: 'k05', group: 'always', title: 'Continued performance', text: 'Nothing in this Contract shall require the Contractor to continue performance if timely payments are not made to Contractor for suitably performed work.' },
-    { id: 'k06', group: 'always', title: 'Back charges', text: 'No back charges or claim of the Owner for services shall be valid except by an agreement in writing by the Contractor before the work is executed, except in the case of the Contractor\'s failure to meet any requirement of the Contract. In such event, the Owner shall notify the Contractor of such default, in writing, and allow the Contractor reasonable time to correct any deficiency before incurring any cost chargeable to the Contractor.' },
-    { id: 'k07', group: 'always', title: 'Work areas', text: 'Owner is to prepare all work areas so as to be acceptable for Contractor to perform its work under the Contract. Owner shall notify Contractor in advance when the site will be ready for Contractor to perform its work and shall provide Contractor with free and unobstructed access so that the work can be commenced promptly and completed without delay. Contractor will not be called upon to start work until sufficient areas are ready to insure continued work.' },
-    { id: 'k08', group: 'always', title: 'Time for performance', text: 'Contractor shall be given a reasonable time in which to commence and complete the performance of the Contract. Contractor provides no assurances as to a complete date since the Work is subject to weather conditions, prior commitments, mechanical failures, and other cause beyond Contractor\'s control. Contractor shall not be responsible for delays or default where occasioned by any causes of any kind and extent beyond its control, including but not limited to: delay caused by Owner, architect and/or engineers, delays in transportation, shortages of raw materials, civil disorders, labor difficulties, vendor allocations, fires, floods, accident hazardous waste or controlled substances and acts of God. Contractor shall be entitled to equitable adjustment in the contract price for additional costs due to unanticipated project delays or accelerations. Contractor shall not be obligated to provide any labor or materials outside the scope of work unless Owner shall first agree in writing to equitably adjust the contract price to be paid Contractor.' },
-    { id: 'k09', group: 'always', title: 'Workmanship', text: 'All workmanship and materials are guaranteed against defects for a period of one (1) year from the date of substantial completion of installation. This warranty is in lieu of all other warranties, express or implied, including any warranties of merchantability or fitness for a particular purpose. The exclusive remedy shall be that Contractor will replace or repair any part of its work which is found to be defective. Contractor shall not be responsible for special, incidental or consequential damages. Contractor shall not be responsible for damage to its work by other parties or for improper use of equipment by other industry standard practices and will override strict compliance and strict performance. Contractor makes no warranty regarding drainage where the slope provided or allowable is less than two percent (2%). Contractor\'s warranty does not extend to or cover settlement or cracking of asphalt or pavement due to expansive soils, improperly compacted utility trenches, or for failures caused by the inadequate compaction of the subgrade.' },
-    { id: 'k10', group: 'always', title: 'Work hours', text: 'Work called for herein is to be performed during Contractor\'s regular working hours as agreed to by the Owner and the Contractor.' },
-    { id: 'k11', group: 'always', title: 'Notice', text: 'Any notice or written claim required by the Contract to be submitted to the Owner, on account of charges, extras, delays, acceleration, or otherwise, shall be furnished within a time period, and in a manner to permit the Owner to satisfy the requirements of the Contract, notwithstanding any shorter time period otherwise provided.' },
-    { id: 'k12', group: 'always', title: 'Lien rights', text: 'Nothing in this Contract shall serve to void Contractor\'s right to file a lien or claim on its behalf in the event that any payment to Contractor is not timely made.' },
-    { id: 'k13', group: 'always', title: 'Labor', text: 'Contractor shall not be bound by any of Owner\'s labor agreements (in whole or in part).' },
-    { id: 'k14', group: 'always', title: 'Liquidated damages', text: 'The Owner shall make no demand for liquidated damages for delays in any sum in excess of such amounts as may be specifically named in this Contract and no liquidated damages may be assessed against Contractor for more than the amount paid by the Owner for unexcused delays to the event actually caused by the Contractor.' },
-    { id: 'k15', group: 'always', title: 'Schedule', text: 'Contractor shall submit a schedule to Owner, Owner will review and notify Contractor of any schedule conflict. If Contractor finds it necessary to change his schedule, Owner will give his best effort to meet this change in schedule. Contractor shall not be penalized for non-performance and will be paid for work performed.' },
-    { id: 'k16', group: 'always', title: 'Insurance restriction', text: 'Notwithstanding any provision to the contrary, Contractor shall maintain the types and limitations on insurance as shown on the attached certificate of insurance. Contractor is not required to waive any claims or rights of subrogation against the Owner or any others for losses and claims covered or paid by Owner\'s workers compensation or general liability insurance. Acceptance of the Certificate of Insurance constitutes acceptance of the insurance of Contractor, including any additional insured requirements. In addition, Contractor shall not provide completed operations under an additional insured requirement.' },
-    { id: 'k17', group: 'always', title: 'Indemnity, hold harmless', text: 'To the fullest extent permitted by law, Contractor agrees to protect, defend, indemnify, and hold harmless Owner from and against all liability, loss, claims, demands, damages, suits, costs, fees, fines, penalties, expenses, and causes of action to the extent caused by Contractor or any of Contractor\'s employees, agents, representatives, subcontractors, or suppliers. Any indemnification or hold harmless obligation of the Contractor shall extend only to claims resulting to bodily injury and property damage and then only to that part or proportion of any claim damage, loss or defect that results from the negligence or intentional act of Contractor or someone for whom it is responsible. Nothing in this agreement shall require the Contractor to indemnify any other party from any damages including expenses and attorneys\' fees to persons or property for any amount exceeding the degree Contractor directly caused such damages. Contractor shall not be responsible for fines or assessments made against Owner and Contractor. Contractor retains all rights of subrogation. Contractor will not indemnify anybody for any actions except for Contractor\'s own negligence and only in the proportional amount of its negligence.' },
-    { id: 'k18', group: 'always', title: 'Right to rely', text: 'Contractor shall rely on plans, drawings, specifications and other information provided by Owner, Owner, Architect or representatives of each. Contractor assumes no risk for unknown or unforeseen conditions not evident from the plans, drawings, specifications or other information provided to Contractor.' },
-    { id: 'k19', group: 'always', title: 'Dispute resolution', text: 'Final determination of contract compliance and all dispute resolutions shall be handled in the jurisdiction and venue of Maricopa County, Arizona, and be governed by the laws of Arizona.' },
+    // always (8) — his own proposal, to his own customer
+    { id: 'k01', group: 'always', title: 'Scope', text: 'This price covers the work listed in this proposal and nothing else. Anything not listed is not included. If you want something added, we will price it for you and you can decide then.' },
+    { id: 'k02', group: 'always', title: 'Price and material', text: 'This price is good for 30 days from the date on this proposal. Material is billed at what it costs us on the day we buy it. If material prices move between this proposal and the purchase, the difference goes on the invoice, and we will tell you before we buy.' },
+    { id: 'k03', group: 'always', title: 'Payment', text: 'Payment is due within 30 days of the invoice date. On jobs over $10,000 we bill monthly for the work completed that month, and the last invoice is due 30 days after the work is finished.' },
+    { id: 'k04', group: 'always', title: 'Late payment', text: 'Any amount not paid when it is due carries interest at 1.5% a month, or the highest rate Arizona law allows if that is less. The costs of collecting it, including reasonable attorneys\' fees, are added to the balance.' },
+    { id: 'k05', group: 'always', title: 'Changes and concealed conditions', text: 'A price is figured on what we could see on the walk. If the job turns up something we could not see, a wall thicker than it looked, conduit that is not where the drawing puts it, or anything hidden behind or inside the building, we stop and price the change with you. Changes are priced and approved in writing before the work is done.' },
+    { id: 'k06', group: 'always', title: 'Access and shutdowns', text: 'You provide clear access to the work area, the panels, and the equipment, and you schedule any power shutdowns the work needs. Time we spend standing by, and work outside normal working hours, is billed at the hourly rate.' },
+    { id: 'k07', group: 'always', title: 'Warranty', text: 'Our workmanship is warranted for one year from the day the work is finished. Materials carry the manufacturer\'s warranty and no other. Equipment you supply is not covered, and neither is damage caused by others, by misuse, or by conditions outside our work.' },
+    { id: 'k08', group: 'always', title: 'Governing law', text: 'This agreement is governed by the laws of Arizona. Any dispute about it is handled in Maricopa County, Arizona.' },
+
+    // gc (12) — the subcontract language, verbatim, for jobs under a GC
+    { id: 'g01', group: 'gc', title: 'Payment under a general contractor', text: 'Contractor shall be paid a monthly progress payment within 15 days after receipt of the payment by the Owner for the value of work performed. Final payment, including all retention, shall be due 15 days after the work described in the Proposal is substantially completed. No provision of this agreement shall serve to void the Contractor\'s entitlement to payment for properly performed work.' },
+    { id: 'g02', group: 'gc', title: 'Continued performance', text: 'Nothing in this Contract shall require the Contractor to continue performance if timely payments are not made to Contractor for suitably performed work.' },
+    { id: 'g03', group: 'gc', title: 'Back charges', text: 'No back charges or claim of the Owner for services shall be valid except by an agreement in writing by the Contractor before the work is executed, except in the case of the Contractor\'s failure to meet any requirement of the Contract. In such event, the Owner shall notify the Contractor of such default, in writing, and allow the Contractor reasonable time to correct any deficiency before incurring any cost chargeable to the Contractor.' },
+    { id: 'g04', group: 'gc', title: 'Time for performance', text: 'Contractor shall be given a reasonable time in which to commence and complete the performance of the Contract. Contractor provides no assurances as to a complete date since the Work is subject to weather conditions, prior commitments, mechanical failures, and other cause beyond Contractor\'s control. Contractor shall not be responsible for delays or default where occasioned by any causes of any kind and extent beyond its control, including but not limited to: delay caused by Owner, architect and/or engineers, delays in transportation, shortages of raw materials, civil disorders, labor difficulties, vendor allocations, fires, floods, accident hazardous waste or controlled substances and acts of God. Contractor shall be entitled to equitable adjustment in the contract price for additional costs due to unanticipated project delays or accelerations. Contractor shall not be obligated to provide any labor or materials outside the scope of work unless Owner shall first agree in writing to equitably adjust the contract price to be paid Contractor.' },
+    { id: 'g05', group: 'gc', title: 'Notice', text: 'Any notice or written claim required by the Contract to be submitted to the Owner, on account of charges, extras, delays, acceleration, or otherwise, shall be furnished within a time period, and in a manner to permit the Owner to satisfy the requirements of the Contract, notwithstanding any shorter time period otherwise provided.' },
+    { id: 'g06', group: 'gc', title: 'Lien rights', text: 'Nothing in this Contract shall serve to void Contractor\'s right to file a lien or claim on its behalf in the event that any payment to Contractor is not timely made.' },
+    { id: 'g07', group: 'gc', title: 'Labor', text: 'Contractor shall not be bound by any of Owner\'s labor agreements (in whole or in part).' },
+    { id: 'g08', group: 'gc', title: 'Liquidated damages', text: 'The Owner shall make no demand for liquidated damages for delays in any sum in excess of such amounts as may be specifically named in this Contract and no liquidated damages may be assessed against Contractor for more than the amount paid by the Owner for unexcused delays to the event actually caused by the Contractor.' },
+    { id: 'g09', group: 'gc', title: 'Schedule', text: 'Contractor shall submit a schedule to Owner, Owner will review and notify Contractor of any schedule conflict. If Contractor finds it necessary to change his schedule, Owner will give his best effort to meet this change in schedule. Contractor shall not be penalized for non-performance and will be paid for work performed.' },
+    { id: 'g10', group: 'gc', title: 'Insurance restriction', text: 'Notwithstanding any provision to the contrary, Contractor shall maintain the types and limitations on insurance as shown on the attached certificate of insurance. Contractor is not required to waive any claims or rights of subrogation against the Owner or any others for losses and claims covered or paid by Owner\'s workers compensation or general liability insurance. Acceptance of the Certificate of Insurance constitutes acceptance of the insurance of Contractor, including any additional insured requirements. In addition, Contractor shall not provide completed operations under an additional insured requirement.' },
+    { id: 'g11', group: 'gc', title: 'Indemnity, hold harmless', text: 'To the fullest extent permitted by law, Contractor agrees to protect, defend, indemnify, and hold harmless Owner from and against all liability, loss, claims, demands, damages, suits, costs, fees, fines, penalties, expenses, and causes of action to the extent caused by Contractor or any of Contractor\'s employees, agents, representatives, subcontractors, or suppliers. Any indemnification or hold harmless obligation of the Contractor shall extend only to claims resulting to bodily injury and property damage and then only to that part or proportion of any claim damage, loss or defect that results from the negligence or intentional act of Contractor or someone for whom it is responsible. Nothing in this agreement shall require the Contractor to indemnify any other party from any damages including expenses and attorneys\' fees to persons or property for any amount exceeding the degree Contractor directly caused such damages. Contractor shall not be responsible for fines or assessments made against Owner and Contractor. Contractor retains all rights of subrogation. Contractor will not indemnify anybody for any actions except for Contractor\'s own negligence and only in the proportional amount of its negligence.' },
+    { id: 'g12', group: 'gc', title: 'Right to rely', text: 'Contractor shall rely on plans, drawings, specifications and other information provided by Owner, Owner, Architect or representatives of each. Contractor assumes no risk for unknown or unforeseen conditions not evident from the plans, drawings, specifications or other information provided to Contractor.' },
+
     // trench (3)
     { id: 'k20', group: 'trench', title: 'Soils', text: 'Contractor shall have no liability to Owner or any third-party relating to underlying soil conditions. Contractor will not sacrifice the quality or integrity by placing asphalt pavement on base course or subgrade that is unstable or subgrade containing frost, including top lifts or overlays when temperatures do not meet material specifications. Contractor\'s warranty shall be waived and have no effect should Owner direct or authorize Contractor to pave on unstable subgrade or subgrade containing frost and Owner shall be responsible for any and all resulting damage or required repairs. If Owner requests that the top lift of asphalt be placed at a later date, the cost for all clean up and remobilization is the Owner\'s responsibility.' },
     { id: 'k21', group: 'trench', title: 'Underground utilities', text: 'Cantu Electric LLC. will not be held liable for any private underground utilities not marked by Arizona 811 including electric, water, sprinkler lines, etc.' },
@@ -183,12 +390,39 @@
   const DETAIL = ['full', 'summary', 'scope'];
   const JOB_TYPE = ['service', 'project'];
   const LOST_REASON = ['price', 'timing', 'other', 'silence'];
-  const CLAUSE_GROUP = ['always', 'trench', 'site', 'hazmat', 'subs'];
+  const CLAUSE_GROUP = ['always', 'gc', 'trench', 'site', 'hazmat', 'subs'];
+  // What a did-you-forget row turns into when he taps "Add it": a rental line
+  // or a $0 item in one of his areas.
+  const FORGET_KIND = ['rental', 'item'];
   // The two answers a did-you-forget row can be in. A row with no key at all
   // is the third state — unanswered — and that is why the field is a map and
   // not a pair of arrays.
   const FORGET_ANSWER = ['no', 'added'];
   const CATALOG_CATEGORY = ['conduit', 'wire', 'boxes', 'lighting', 'gear', 'rentals'];
+
+  // A did-you-forget row is EITHER a plain string or { name, kind }. The list
+  // was strings, his phone may still hold strings, and a row he types in
+  // Settings is still a string — so a string is not a legacy shape to be
+  // migrated away, it is the shape a hand-written row has. Both are read
+  // through forgetName/forgetKind and nothing else touches the raw entry.
+  function validForgetRow(v) {
+    if (isStr(v)) return true;
+    if (!isObj(v) || !isStr(v.name)) return false;
+    if (v.kind !== undefined && !isIn(v.kind, FORGET_KIND)) return false;
+    return true;
+  }
+  function forgetName(row) { return isStr(row) ? row : (isObj(row) && isStr(row.name) ? row.name : ''); }
+  // A row with no kind on it is read off its own words, which is the rule the
+  // walk used before the kinds existed: anything that says rental or lift is a
+  // rental, his own gear is the tool picker (which the rental branch handles),
+  // and everything else is a line in an area.
+  function forgetKind(row) {
+    if (isObj(row) && isIn(row.kind, FORGET_KIND)) return row.kind;
+    const key = forgetName(row).toLowerCase();
+    if (key.indexOf('rental') !== -1 || key.indexOf('lift') !== -1) return 'rental';
+    if (key.indexOf('equipment') !== -1) return 'rental';
+    return 'item';
+  }
   const TAX_MODE = ['included', 'added'];
 
   // -------------------------------------------------------------------------
@@ -263,7 +497,8 @@
         if (!isStr(e.name) || !isIntGte0OrNull(e.costCents) || !isIntGte0OrNull(e.overrideDayCents) || !isBool(e.hidden)) return null;
       }
 
-      if (!strArr(s.forgetList) || !strArr(s.notePhrases)) return null;
+      if (!isArr(s.forgetList) || !s.forgetList.every(validForgetRow)) return null;
+      if (!strArr(s.notePhrases)) return null;
 
       if (!isArr(s.clauses)) return null;
       const clauseIds = new Set();
@@ -724,6 +959,108 @@
   }
 
   // -------------------------------------------------------------------------
+  // THE STANDARD LIBRARIES, ON A PHONE THAT ALREADY HAS DATA
+  // -------------------------------------------------------------------------
+  // A seed only ever runs on a fresh install: emptyData() is the whole of it,
+  // and a phone with a catalog of its own must never have this list dropped on
+  // top of what he has built. But the v2.1 libraries are three times the size
+  // of the v2 ones, and a phone that has been in use for a month should not be
+  // stuck with the short list forever.
+  //
+  // So: ADD THE MISSING NAMES, AND NOTHING ELSE. Case-insensitive and blind to
+  // the spaces around a name, because "bender", "Bender " and "Bender" are one
+  // tool in his head. Nothing is renamed, nothing is re-costed, nothing is
+  // unhidden, and a part he hid on purpose is not quietly re-added underneath
+  // him. Each returns the number of names it added, which is what the banner
+  // says out loud.
+  function addStandardCatalog(d) {
+    const have = new Set((d.catalog || []).map((p) => Catalog.normalizeName(p.name)));
+    let added = 0;
+    SEED_CATALOG.forEach(([category, name, unit]) => {
+      if (have.has(Catalog.normalizeName(name))) return;
+      have.add(Catalog.normalizeName(name));
+      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, uses: 0, hidden: false });
+      added += 1;
+    });
+    return added;
+  }
+
+  function lowerKey(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+
+  function addStandardEquipment(d) {
+    const list = d.settings.equipment;
+    const have = new Set(list.map((e) => lowerKey(e.name)));
+    let added = 0;
+    SEED_EQUIPMENT.forEach((name) => {
+      if (have.has(lowerKey(name))) return;
+      have.add(lowerKey(name));
+      list.push({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false });
+      added += 1;
+    });
+    return added;
+  }
+
+  // The two lists of plain rows. A seeded row carries its kind; a row already
+  // on his phone keeps whatever shape it has.
+  function addStandardForget(d) {
+    const list = d.settings.forgetList;
+    const have = new Set(list.map((r) => lowerKey(forgetName(r))));
+    let added = 0;
+    SEED_FORGET.forEach((row) => {
+      if (have.has(lowerKey(row.name))) return;
+      have.add(lowerKey(row.name));
+      list.push({ name: row.name, kind: row.kind });
+      added += 1;
+    });
+    return added;
+  }
+
+  function addStandardNotes(d) {
+    const list = d.settings.notePhrases;
+    const have = new Set(list.map(lowerKey));
+    let added = 0;
+    SEED_NOTES.forEach((text) => {
+      if (have.has(lowerKey(text))) return;
+      have.add(lowerKey(text));
+      list.push(text);
+      added += 1;
+    });
+    return added;
+  }
+
+  // TERMS ARE NOT ADDED TO, THEY ARE REPLACED. The other four libraries grow:
+  // a part he does not have is a part he might want. The clause library is the
+  // opposite — the whole point of the rewrite is that the nineteen clauses
+  // that used to be seeded are the WRONG paper for his own proposals, and
+  // leaving them alongside the eight new ones would put both on the same
+  // phone under the same heading.
+  //
+  // So the old ones go, except the ones a bid still names: those are hidden,
+  // which is the only kind of delete this file allows for anything a bid
+  // points at (DocModel drops a hidden clause off the paper, and the bid keeps
+  // validating). The standard set comes in with FRESH ids, so it can never
+  // collide with an id a hidden clause is still holding.
+  //
+  // Returns what happened, in the numbers the confirm and the banner say.
+  function resetClauseLibrary(d) {
+    const s = d.settings;
+    const before = s.clauses;
+    const kept = [];
+    let hidden = 0, removed = 0;
+    before.forEach((c) => {
+      if (clauseInUse(d, c.id) > 0) {
+        kept.push({ ...c, hidden: true });
+        hidden += 1;
+      } else {
+        removed += 1;
+      }
+    });
+    const fresh = SEED_CLAUSES.map((c) => ({ ...c, id: uid(), hidden: false }));
+    s.clauses = kept.concat(fresh);
+    return { added: fresh.length, hidden, removed };
+  }
+
+  // -------------------------------------------------------------------------
   // WHAT IS STILL POINTED AT
   // -------------------------------------------------------------------------
   // Settings soft-deletes everything because an old bid holds ids, and a bid
@@ -776,6 +1113,8 @@
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, MISC_LABEL, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
+    forgetName, forgetKind, SEED_DEFAULT_NOTE,
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, noteCrewWage, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
+    addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
     recordCatalogUse, numberInUse };
 });

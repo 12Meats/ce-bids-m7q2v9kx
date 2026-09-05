@@ -716,6 +716,8 @@ function buildSetEquipment() {
   }
 
   box.appendChild(textButton('+ Tool', 'btn btn-block mt-3', settingsAddTool));
+  settingsStandardButton(box, 'Add the standard tools', 'tools',
+    (d) => Store.addStandardEquipment(d), s.equipment, (before) => { setS().equipment = before; });
   settingHiddenToggle(box, 'equipment', hidden.length);
   box.appendChild(caption('A day of a tool bills at ' + pctText(s.equipmentPct)
     + ' of what it cost new, to the nearest $5, never under $5, unless you set your own rate.'));
@@ -867,16 +869,26 @@ function settingsMoveString(listName, i, delta) {
   });
 }
 
+// A did-you-forget row is either a plain string or { name, kind }; a note
+// phrase is always a string. Both lists are read through here so this screen
+// never has to know which shape it is holding.
+function settingsListText(entry) { return Store.forgetName(entry) || String(entry == null ? '' : entry); }
+
 async function settingsRemoveString(listName, i, what) {
   const s = setS();
   const list = s[listName];
-  const text = list[i];
-  const ok = await confirmPanel('Take "' + text + '" off the ' + what + '?', { ok: 'Remove', danger: true });
+  const entry = list[i];
+  const ok = await confirmPanel('Take "' + settingsListText(entry) + '" off the ' + what + '?',
+    { ok: 'Remove', danger: true });
   if (!ok) { render(); return; }
   list.splice(i, 1);
-  settingsSaveAndRender(() => { list.splice(i, 0, text); });
+  settingsSaveAndRender(() => { list.splice(i, 0, entry); });
 }
 
+// A row he types is a plain string, and it stays one: the kind on a seeded row
+// is a shortcut, not a shape the list has to be in. Store.forgetKind reads a
+// hand-typed row off its own words, which is the rule the walk followed before
+// kinds existed at all.
 function settingsAddString(listName, label, placeholder, multiline) {
   promptText('', {
     label,
@@ -885,7 +897,11 @@ function settingsAddString(listName, label, placeholder, multiline) {
     done: (text) => {
       if (!text) return;
       const s = setS();
-      if (s[listName].indexOf(text) !== -1) { showBanner('That one is already on the list'); return; }
+      const key = text.trim().toLowerCase();
+      if (s[listName].some((e) => settingsListText(e).trim().toLowerCase() === key)) {
+        showBanner('That one is already on the list');
+        return;
+      }
       s[listName].push(text);
       settingsSaveAndRender(() => {
         const i = s[listName].indexOf(text);
@@ -895,14 +911,43 @@ function settingsAddString(listName, label, placeholder, multiline) {
   });
 }
 
+// "ADD THE STANDARD ..." — the four libraries that grow.
+//
+// A seed only runs on a fresh install, so a phone that has been in use since
+// v2 has the short lists and no way to catch up. These add the names it is
+// missing and nothing else: nothing is renamed, nothing is re-costed, and a
+// part he hid on purpose is not quietly re-added under him. The count goes in
+// the banner, because "Added" alone does not say whether anything happened.
+//
+// take() is handed the whole list back for the undo: these push many rows at
+// once, and a refused save has to put the list back the way it was rather than
+// unpick it row by row.
+function settingsAddStandard(what, apply, list, restore) {
+  const before = list.slice();
+  const added = apply(state.data);
+  if (added === 0) {
+    showBanner('You already have all the standard ' + what);
+    render();
+    return;
+  }
+  if (!persistOr(() => restore(before))) { render(); return; }
+  showBanner('Added ' + added + ' ' + (added === 1 ? what.replace(/s$/, '') : what), 'ok');
+  render();
+}
+
+function settingsStandardButton(box, label, what, apply, list, restore) {
+  box.appendChild(textButton(label, 'link-btn',
+    () => settingsAddStandard(what, apply, list, restore)));
+}
+
 function buildSetForget() {
   const s = setS();
   const box = card('Did you forget');
   if (s.forgetList.length === 0) {
     box.appendChild(emptyNote('Nothing on the list.'));
   } else {
-    s.forgetList.forEach((text, i) => {
-      settingsListRow(box, text, [
+    s.forgetList.forEach((entry, i) => {
+      settingsListRow(box, settingsListText(entry), [
         settingMiniButton('▲', 'Move up', i === 0, () => settingsMoveString('forgetList', i, -1)),
         settingMiniButton('▼', 'Move down', i === s.forgetList.length - 1, () => settingsMoveString('forgetList', i, 1)),
         settingMiniButton('✕', 'Remove', false, () => settingsRemoveString('forgetList', i, 'list')),
@@ -911,6 +956,8 @@ function buildSetForget() {
   }
   box.appendChild(textButton('+ Item', 'btn btn-block mt-3',
     () => settingsAddString('forgetList', 'Did you forget', 'Permits', false)));
+  settingsStandardButton(box, 'Add the standard list', 'rows',
+    (d) => Store.addStandardForget(d), s.forgetList, (before) => { setS().forgetList = before; });
   box.appendChild(caption('The walk asks you about these, in this order. Put what you forget most at the top.'));
   return box;
 }
@@ -922,13 +969,15 @@ function buildSetNotePhrases() {
     box.appendChild(emptyNote('No phrases saved.'));
   } else {
     s.notePhrases.forEach((text, i) => {
-      settingsListRow(box, text, [
+      settingsListRow(box, settingsListText(text), [
         settingMiniButton('✕', 'Remove', false, () => settingsRemoveString('notePhrases', i, 'phrases')),
       ]);
     });
   }
   box.appendChild(textButton('+ Phrase', 'btn btn-block mt-3',
     () => settingsAddString('notePhrases', 'Note or exclusion', 'Does not include...', false)));
+  settingsStandardButton(box, 'Add the standard notes', 'phrases',
+    (d) => Store.addStandardNotes(d), s.notePhrases, (before) => { setS().notePhrases = before; });
   box.appendChild(caption('One tap each on the proposal screen. Taking one off here leaves it on the bids that already print it.'));
   return box;
 }
@@ -972,10 +1021,43 @@ function buildSetTerms() {
   if (other.length) buildSetClauseGroup(box, 'other', 'Other', other);
 
   box.appendChild(textButton('+ Clause', 'btn btn-block mt-3', () => { settingsAddGroup = true; render(); }));
+  box.appendChild(textButton('Reset to the standard library', 'link-btn', settingsResetClauses));
   settingHiddenToggle(box, 'clauses', hidden.length);
   box.appendChild(caption('A hidden clause comes off every proposal, even bids that already picked it. '
     + 'Unhide it and it is back on them.'));
   return box;
+}
+
+// THE ONE LIBRARY THAT IS REPLACED RATHER THAN ADDED TO.
+//
+// The other four grow: a part he does not have is a part he might want. Terms
+// are the opposite. The clauses seeded before v2.1 were subcontract language
+// off one job, and keeping them beside the eight new ones would put both sets
+// on the same phone under the same heading, which is how the wrong paragraph
+// ends up on a customer's proposal.
+//
+// So the old ones go, except any a bid still names: those are hidden, which is
+// the only delete this app allows for something a bid points at. The sentence
+// says all of that before he taps, in the numbers it is about to move.
+async function settingsResetClauses() {
+  const s = setS();
+  const inUse = s.clauses.filter((c) => Store.clauseInUse(state.data, c.id) > 0).length;
+  const ok = await confirmPanel('Replace your terms library with the standard one? '
+    + 'You have ' + s.clauses.length + ' clause' + (s.clauses.length === 1 ? '' : 's') + '. '
+    + (inUse === 0
+      ? 'None of them are on a bid, so they are replaced.'
+      : inUse + ' of them ' + (inUse === 1 ? 'is' : 'are') + ' on a bid and will be hidden instead of removed, '
+        + 'so those bids keep printing what they already print.'),
+    { ok: 'Replace them', danger: true });
+  if (!ok) { render(); return; }
+  const before = s.clauses;
+  const out = Store.resetClauseLibrary(state.data);
+  if (!persistOr(() => { setS().clauses = before; })) { render(); return; }
+  settingsGroupOpen = null;
+  settingsMenu = null;
+  showBanner('Standard library in. ' + out.added + ' clauses'
+    + (out.hidden ? ', ' + out.hidden + ' of yours hidden' : ''), 'ok');
+  render();
 }
 
 function buildSetClauseGroup(box, key, label, group) {
@@ -1094,9 +1176,12 @@ function buildSetCatalog() {
     list.forEach((p) => buildSetCatalogRow(box, p));
   }
 
+  settingsStandardButton(box, 'Add the standard parts', 'parts',
+    (dd) => Store.addStandardCatalog(dd), d.catalog, (before) => { state.data.catalog = before; });
   settingHiddenToggle(box, 'catalog', hidden.length);
   box.appendChild(caption('New parts get added from the walk. Hide takes it off the walk. '
-    + 'Delete is only offered when no bid uses it.'));
+    + 'Delete is only offered when no bid uses it. "Add the standard parts" adds the ones you are '
+    + 'missing and leaves everything you have alone.'));
   return box;
 }
 

@@ -38,12 +38,16 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
   assert.strictEqual(d.settings.company.roc, 'AZ ROC #276507');
   assert.strictEqual(d.settings.rateCents, 8500);
   assert.strictEqual(d.settings.floorCents, 8500);
-  assert.ok(d.catalog.length >= 50 && d.catalog.length <= 90);
+  assert.ok(d.catalog.length >= 180 && d.catalog.length <= 200, 'the standard parts list is 180 to 200 names');
   assert.ok(d.catalog.every((p) => p.lastCostCents === null && p.uses === 0));
   assert.deepStrictEqual([...new Set(d.catalog.map((p) => p.category))].sort(),
     ['boxes', 'conduit', 'gear', 'lighting', 'rentals', 'wire']);
-  assert.strictEqual(d.settings.equipment.length, 6);
-  assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always').length, 19);
+  assert.strictEqual(d.settings.equipment.length, 30);
+  assert.strictEqual(d.settings.forgetList.length, 19);
+  assert.strictEqual(d.settings.notePhrases.length, 14);
+  // Eight on his own paper, and the subcontract language kept in its own group.
+  assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always').length, 8);
+  assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'gc').length, 12);
   // One, not a guess at where his paper book left off.
   assert.strictEqual(d.settings.nextNumber, 1);
 });
@@ -534,17 +538,17 @@ test('clauseInUse counts the bids that name a clause, and null clauseIds names n
 
 test('findEquipmentByName matches case and surrounding whitespace blind', () => {
   const d = S.emptyData();
-  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
-  assert.strictEqual(S.findEquipmentByName(d, 'bender'), bender);
-  assert.strictEqual(S.findEquipmentByName(d, '  BENDER '), bender);
-  assert.strictEqual(S.findEquipmentByName(d, 'Bender'), bender);
+  const bender = d.settings.equipment.find((e) => e.name === 'EMT bender');
+  assert.strictEqual(S.findEquipmentByName(d, 'emt bender'), bender);
+  assert.strictEqual(S.findEquipmentByName(d, '  EMT BENDER '), bender);
+  assert.strictEqual(S.findEquipmentByName(d, 'EMT bender'), bender);
 });
 
 test('findEquipmentByName ignores hidden tools and anything blank', () => {
   const d = S.emptyData();
-  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
+  const bender = d.settings.equipment.find((e) => e.name === 'EMT bender');
   bender.hidden = true;
-  assert.strictEqual(S.findEquipmentByName(d, 'Bender'), null, 'a put-away tool is not offered, so it is not a duplicate');
+  assert.strictEqual(S.findEquipmentByName(d, 'EMT bender'), null, 'a put-away tool is not offered, so it is not a duplicate');
   assert.strictEqual(S.findEquipmentByName(d, ''), null);
   assert.strictEqual(S.findEquipmentByName(d, '   '), null);
   assert.strictEqual(S.findEquipmentByName(d, null), null);
@@ -562,8 +566,8 @@ test('findEquipmentByName ignores hidden tools and anything blank', () => {
 test('bidEquipmentLine finds the line a tool already has on this bid', () => {
   const d = S.emptyData();
   const bid = S.newBid(d, { customerName: 'UDA', title: 'Panel', jobType: 'service', dateISO: '2026-09-05' });
-  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
-  const line = { equipmentId: bender.id, name: 'Bender', days: 2, dayCents: 4000 };
+  const bender = d.settings.equipment.find((e) => e.name === 'EMT bender');
+  const line = { equipmentId: bender.id, name: 'EMT bender', days: 2, dayCents: 4000 };
   bid.equipment.push(line);
   assert.strictEqual(S.bidEquipmentLine(bid, bender.id), line);
 });
@@ -571,7 +575,7 @@ test('bidEquipmentLine finds the line a tool already has on this bid', () => {
 test('bidEquipmentLine says no when the tool is not on the bid, and never throws', () => {
   const d = S.emptyData();
   const bid = S.newBid(d, { customerName: 'UDA', title: 'Panel', jobType: 'service', dateISO: '2026-09-05' });
-  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
+  const bender = d.settings.equipment.find((e) => e.name === 'EMT bender');
   const threader = d.settings.equipment.find((e) => e.name === 'Threader');
   bid.equipment.push({ equipmentId: threader.id, name: 'Threader', days: 1, dayCents: 1000 });
   assert.strictEqual(S.bidEquipmentLine(bid, bender.id), null);
@@ -674,4 +678,137 @@ test('the snapshot fields are optional, and a bad one is refused', () => {
   // broken file: refusing it would take the whole backup down.
   b.labor.wageCents = { ghost: 3300 };
   assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+// ---------------------------------------------------------------------------
+// THE DID-YOU-FORGET ROWS AND THEIR KIND
+// ---------------------------------------------------------------------------
+
+test('the seeded checklist names its own kinds, and the ones he forgets most come first', () => {
+  const d = S.emptyData();
+  const names = d.settings.forgetList.map(S.forgetName);
+  assert.deepStrictEqual(names.slice(0, 6), [
+    'Lift rental', 'Temporary power / generators', 'Shutdown windows / after-hours',
+    'Permits and inspection fees', 'Core drilling / concrete cutting', 'Disposal / dumpster',
+  ]);
+  const kind = (name) => S.forgetKind(d.settings.forgetList.find((r) => S.forgetName(r) === name));
+  ['Lift rental', 'Scaffolding', 'Temporary power / generators', 'Shutdown windows / after-hours',
+    'Equipment (owned tools)', 'Disposal / dumpster'].forEach((n) => {
+    assert.strictEqual(kind(n), 'rental', n + ' has to reach the rental side of the bid');
+  });
+  ['Permits and inspection fees', 'Trenching / backfill', 'Sub-contractor', 'Patch and paint',
+    'Travel days / per diem'].forEach((n) => {
+    assert.strictEqual(kind(n), 'item', n + ' is a line in one of his areas');
+  });
+});
+
+test('a row he typed himself is a plain string and reads its kind off its own words', () => {
+  assert.strictEqual(S.forgetName('Permits'), 'Permits');
+  assert.strictEqual(S.forgetKind('Permits'), 'item');
+  assert.strictEqual(S.forgetKind('Boom lift'), 'rental');
+  assert.strictEqual(S.forgetKind('Scissor lift rental'), 'rental');
+  assert.strictEqual(S.forgetKind('Equipment'), 'rental');
+  // A row object always wins over its own words.
+  assert.strictEqual(S.forgetKind({ name: 'Lift rental', kind: 'item' }), 'item');
+  assert.strictEqual(S.forgetName({ name: 'Permits' }), 'Permits');
+  assert.strictEqual(S.forgetName(null), '');
+});
+
+test('a settings file whose checklist is still plain strings loads', () => {
+  const { d } = buildFullData();
+  d.settings.forgetList = ['Lift rental', 'Permits', 'Trenching'];
+  assert.ok(S.validateImport(JSON.stringify(d)), 'his phone holds strings and must keep loading');
+  d.settings.forgetList = [{ name: 'Lift rental', kind: 'rental' }, 'Permits'];
+  assert.ok(S.validateImport(JSON.stringify(d)), 'both shapes in one list is legal');
+  d.settings.forgetList = [{ name: 'Lift rental', kind: 'boom' }];
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null, 'there are two kinds of row, not three');
+  d.settings.forgetList = [{ kind: 'rental' }];
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null, 'a row with no name is not a row');
+});
+
+test('the clause library is his own paper, with the subcontract text kept apart', () => {
+  const d = S.emptyData();
+  const always = d.settings.clauses.filter((c) => c.group === 'always');
+  assert.deepStrictEqual(always.map((c) => c.title), ['Scope', 'Price and material', 'Payment',
+    'Late payment', 'Changes and concealed conditions', 'Access and shutdowns', 'Warranty', 'Governing law']);
+  // Drafts for his attorney, and they have to read like a contractor wrote
+  // them: no em-dashes anywhere in the library, the way every other line of
+  // copy in this app is written.
+  d.settings.clauses.forEach((c) => {
+    assert.strictEqual(c.text.indexOf('—'), -1, c.title + ' has an em-dash in it');
+    assert.strictEqual(c.title.indexOf('—'), -1, c.title + ' has an em-dash in it');
+  });
+  // The Consolidated Co-Ops language is still here, word for word, in the one
+  // group that is right for it.
+  const gc = d.settings.clauses.filter((c) => c.group === 'gc');
+  assert.ok(gc.some((c) => c.title === 'Liquidated damages'));
+  assert.ok(gc.some((c) => c.text.indexOf('after receipt of the payment by the Owner') !== -1),
+    'pay-when-paid belongs under a general contractor and nowhere else');
+  assert.strictEqual(always.some((c) => c.text.indexOf('Owner') !== -1), false,
+    'his own proposal talks to a customer, not to an Owner with a capital O');
+});
+
+// ---------------------------------------------------------------------------
+// THE STANDARD LIBRARIES ON A PHONE THAT ALREADY HAS DATA
+// ---------------------------------------------------------------------------
+
+test('Add the standard parts adds only the names he is missing', () => {
+  const d = S.emptyData();
+  const full = d.catalog.length;
+  // A phone off v2: a short list, one name spelled with different capitals,
+  // and one part he put away on purpose.
+  d.catalog = d.catalog.slice(0, 12);
+  d.catalog[0].name = d.catalog[0].name.toUpperCase();
+  d.catalog[1].hidden = true;
+  const first = S.addStandardCatalog(d);
+  assert.strictEqual(d.catalog.length, 12 + first);
+  assert.strictEqual(d.catalog.length, full, 'the missing names, and only those');
+  assert.strictEqual(S.addStandardCatalog(d), 0, 'a second tap adds nothing');
+  assert.strictEqual(d.catalog.filter((p) => p.hidden).length, 1, 'a part he put away stays put away');
+  assert.ok(d.catalog.every((p) => p.lastCostCents === null || p.lastCostCents === undefined
+    || Number.isInteger(p.lastCostCents)));
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+test('the standard tools, checklist and notes add missing names, case-blind', () => {
+  const d = S.emptyData();
+  d.settings.equipment = [{ id: 'e1', name: '  MEGGER ', costCents: 5000, overrideDayCents: null, hidden: false }];
+  assert.strictEqual(S.addStandardEquipment(d), 29, 'the megger he already has is not added twice');
+  assert.strictEqual(S.addStandardEquipment(d), 0);
+
+  d.settings.forgetList = ['lift rental', 'Permits'];
+  const rows = S.addStandardForget(d);
+  assert.strictEqual(rows, 18);
+  assert.strictEqual(d.settings.forgetList.length, 20, 'his own "Permits" row stays, alongside the standard one');
+  assert.strictEqual(S.addStandardForget(d), 0);
+
+  d.settings.notePhrases = ['Does not include lift rental.'];
+  assert.strictEqual(S.addStandardNotes(d), 13);
+  assert.strictEqual(S.addStandardNotes(d), 0);
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+test('Reset to the standard library replaces what is loose and hides what a bid names', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Cooler', jobType: 'project' });
+  const onTheBid = d.settings.clauses[0];
+  b.clauseIds = [onTheBid.id];
+  d.bids.push(b);
+  const before = d.settings.clauses.length;
+
+  const out = S.resetClauseLibrary(d);
+  assert.strictEqual(out.hidden, 1);
+  assert.strictEqual(out.removed, before - 1);
+  assert.strictEqual(d.settings.clauses.length, out.added + 1);
+  // The bid still names its clause, the clause is still in the file, and the
+  // document simply stops printing it.
+  const kept = d.settings.clauses.find((c) => c.id === onTheBid.id);
+  assert.ok(kept, 'a clause a bid points at is never spliced out');
+  assert.strictEqual(kept.hidden, true);
+  assert.ok(S.validateImport(JSON.stringify(d)), 'the whole document still loads afterwards');
+  // Fresh ids on the way in, so the standard set can never collide with an id
+  // one of his own hidden clauses is still holding.
+  const ids = d.settings.clauses.map((c) => c.id);
+  assert.strictEqual(new Set(ids).size, ids.length);
+  assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always' && !c.hidden).length, 8);
 });

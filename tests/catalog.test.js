@@ -212,3 +212,92 @@ test('matches: wire browses by gauge, smallest to biggest', () => {
   assert.deepEqual(names(C.matches(wire, { category: 'wire' })),
     ['#14 THHN', '#12 THHN', '#10 THHN', '#2 THHN', '1/0 THHN', '4/0 THHN', 'Cat6']);
 });
+
+// ---------------------------------------------------------------------------
+// THE WHOLE SEED LIST, THROUGH THE SORT
+// ---------------------------------------------------------------------------
+// The parts list is 198 names now, and its ONE hard rule is that every name is
+// written the way sizeKey reads a size. A name that parses wrong does not
+// crash anything: it quietly sorts into the wrong place on the rack, which is
+// exactly the bug the sort was written to fix. So the whole list goes through
+// it here, not a sample of it.
+const Store = require('../storage.js');
+const SEED = Store.emptyData().catalog;
+
+test('every seeded part name goes through sizeKey without a crash or a NaN', () => {
+  SEED.forEach((p) => {
+    const k = C.sizeKey(p.name);
+    assert.ok(k === null || (typeof k === 'number' && isFinite(k)),
+      p.name + ' has an unreadable size: ' + k);
+  });
+});
+
+test('every seeded part has a category, a unit and a straight-quoted name', () => {
+  const seen = new Set();
+  SEED.forEach((p) => {
+    assert.ok(p.unit, p.name + ' has no unit');
+    assert.strictEqual(p.name, C.straighten(p.name), p.name + ' is not stored straight-quoted');
+    const key = C.normalizeName(p.name);
+    assert.strictEqual(seen.has(key), false, 'two seeded parts named ' + p.name);
+    seen.add(key);
+  });
+});
+
+// Conduit is the family the sort exists for: every one of its names carries a
+// trade size, so a null anywhere in it is a name written the wrong way round
+// ("EMT 1-1/4" instead of '1-1/4" EMT').
+test('every seeded conduit name carries a trade size', () => {
+  SEED.filter((p) => p.category === 'conduit').forEach((p) => {
+    assert.notStrictEqual(C.sizeKey(p.name), null, p.name + ' has no readable trade size');
+  });
+});
+
+// The order he browses in, per category, off a catalog nobody has used yet:
+// sizes ascending, and the names with no size in them after all of them.
+test('each category browses size-ascending, sizeless names last', () => {
+  ['conduit', 'wire', 'boxes', 'lighting', 'gear', 'rentals'].forEach((category) => {
+    const list = C.matches(SEED, { category, includeRentals: true });
+    assert.ok(list.length > 0, category + ' is empty');
+    let last = -Infinity;
+    let sawSizeless = false;
+    list.forEach((p) => {
+      const k = C.sizeKey(p.name);
+      if (k === null) { sawSizeless = true; return; }
+      assert.strictEqual(sawSizeless, false,
+        category + ': ' + p.name + ' has a size and comes after a name that has none');
+      assert.ok(k >= last, category + ': ' + p.name + ' (' + k + ') sorts under ' + last);
+      last = k;
+    });
+  });
+});
+
+// The two scales sizeKey runs, on the names the seed actually ships, because
+// getting either one backwards puts 1-1/4" in front of 1/2" or #10 in front of
+// #2 — the order a computer reads and nobody else does.
+test('the seeded families size the way the rack does', () => {
+  assert.deepStrictEqual(['1/2" EMT', '3/4" EMT', '1" EMT', '1-1/4" EMT', '1-1/2" EMT', '2" EMT'].map(C.sizeKey),
+    [0.5, 0.75, 1, 1.25, 1.5, 2]);
+  assert.deepStrictEqual(['#14 THHN', '#2 THHN', '#1 THHN', '1/0 THHN', '4/0 THHN'].map(C.sizeKey),
+    [986, 998, 999, 1001, 1004]);
+  // A cable configuration is not a size. '12/3 SOOW cord' is three conductors
+  // of #12, and reading it as four inches would file it with the pipe.
+  assert.strictEqual(C.sizeKey('12/3 SOOW cord'), null);
+  assert.strictEqual(C.sizeKey('10/4 VFD cable'), null);
+  assert.strictEqual(C.sizeKey('12/2 MC cable'), null);
+});
+
+// Every fitting family covers every conduit size. The point of the bigger list
+// was never the count: it was standing under a rack with 1-1/2" in his hand.
+test('every fitting family covers every conduit size', () => {
+  const sizes = ['1/2"', '3/4"', '1"', '1-1/4"', '1-1/2"', '2"'];
+  ['EMT', 'rigid', 'S.S. conduit', 'PVC', 'seal-tight'].forEach((family) => {
+    sizes.forEach((size) => {
+      assert.ok(SEED.some((p) => p.name === size + ' ' + family), 'no ' + size + ' ' + family);
+    });
+  });
+  ['coupling', 'connector', 'LB', 'hub', 'one-hole strap'].forEach((family) => {
+    sizes.forEach((size) => {
+      assert.ok(SEED.some((p) => p.name === size + ' ' + family), 'no ' + size + ' ' + family);
+    });
+  });
+});

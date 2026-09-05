@@ -1158,6 +1158,16 @@ function walkCloseSheet() {
 // before it existed has to restore, so every read goes through here rather
 // than touching bid.forgetAnswers directly.
 
+// What this row becomes when he taps "Add it", by NAME: the card and the
+// answers work in names, so the row object is looked back up here. A name that
+// is no longer on the list (he renamed it since answering) reads off its own
+// words through Store.forgetKind, which is what a hand-typed row does anyway.
+function walkForgetKind(name) {
+  const list = state.data.settings.forgetList || [];
+  const row = list.find((r) => Store.forgetName(r) === name);
+  return Store.forgetKind(row === undefined ? name : row);
+}
+
 function walkForgetAnswerOf(bid, name) {
   const a = bid.forgetAnswers;
   if (!a || typeof a !== 'object' || Array.isArray(a)) return undefined;
@@ -1337,7 +1347,10 @@ function buildForgetRow(box, bid, name, answered) {
 // The fold is a button, and its own label says so. Tapping it opens the rows,
 // each still tappable, so undoing an answer is two taps rather than hidden.
 function buildForgetCard(bid) {
-  const list = state.data.settings.forgetList || [];
+  // The rows carry a kind now ({ name, kind }), and a row he typed in Settings
+  // is still a plain string. Everything on this screen works in NAMES, because
+  // that is what bid.forgetAnswers is keyed by and what he reads on the glass.
+  const list = (state.data.settings.forgetList || []).map((row) => Store.forgetName(row)).filter(Boolean);
   if (list.length === 0) return null;
 
   const box = card('Did you forget?');
@@ -1420,34 +1433,32 @@ function walkForgetAdd(bid, name) {
     return;
   }
 
-  // Two of these rows are not material at all, so they go where their money
-  // actually gets priced. The match is a rule rather than the two seed strings
-  // because Settings lets him edit this list: "Lift rental" may well become
-  // "Boom lift" or "Lift / scaffold", and it still has to reach the rentals
-  // side of the bid. Rental is tested first, so a row reading "equipment
-  // rental" is a rental.
-  //
-  // 'lift' is a wide net on purpose and it does catch rows that are not
-  // rentals: "Forklift", "Lift plan" and "Lift gate" would all open the rental
-  // prompt. Both ways of being wrong are cheap and visible — he is looking at a
-  // name field with the row's own words already in it, and Cancel costs one
-  // tap, leaving the row unanswered.
-  if (key.indexOf('rental') !== -1 || key.indexOf('lift') !== -1) {
+  // WHERE THE MONEY FOR THIS ROW ACTUALLY GETS PRICED. Some of these rows are
+  // not material at all, and the row itself says which: the seeded list carries
+  // a kind ('rental' or 'item') per row, so "Shutdown windows / after-hours"
+  // reaches the rental side without anybody having to read the words and
+  // guess. A row he typed in Settings has no kind, and Store.forgetKind falls
+  // back to the old rule for it — anything saying rental or lift is a rental,
+  // his own gear is the tool picker, everything else is a line in an area.
+  if (walkForgetKind(name) === 'rental') {
+    // One kind, two doors: his OWN tools are picked out of the equipment list
+    // (they have a cost and a derived day rate already), and everything else
+    // is named on the rental prompt.
+    if (key.indexOf('equipment') !== -1 || key.indexOf('owned tool') !== -1) {
+      // The sheet is a step deeper, so it pushes — without this the swipe that
+      // closes it spent an entry belonging to the area list underneath, and the
+      // next one after that took him out of the app.
+      navPush();
+      walkForgetRow = name;
+      walkForgetPick = null;
+      walkSheet = { kind: 'equip', from: 'forget' };
+      render();
+      return;
+    }
     walkSheet = null;
     walkForgetRow = null;
     walkForgetPick = null;
     walkAddRental(bid, name, 'forget', name);
-    return;
-  }
-  if (key.indexOf('equipment') !== -1) {
-    // The sheet is a step deeper, so it pushes — without this the swipe that
-    // closes it spent an entry belonging to the area list underneath, and the
-    // next one after that took him out of the app.
-    navPush();
-    walkForgetRow = name;
-    walkForgetPick = null;
-    walkSheet = { kind: 'equip', from: 'forget' };
-    render();
     return;
   }
 
