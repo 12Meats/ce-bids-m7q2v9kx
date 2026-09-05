@@ -155,6 +155,18 @@ const confirmCtx = { open: false, resolve: null };
 
 function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open; }
 
+// Cancel whatever panel is up, exactly as its own Cancel button would: the
+// done callback never runs, so nothing is written. Returns true if there was
+// one. This is what a navigation goes through, because a panel is drawn OVER
+// the screen it was opened from: leave that screen with the keypad still up
+// and the next Done commits into the bid he is no longer looking at.
+function closeAnyPanel() {
+  if (keypadCtx.open) { closeKeypad(); return true; }
+  if (textCtx.open) { closeText(); return true; }
+  if (confirmCtx.open) { closeConfirm(false); return true; }
+  return false;
+}
+
 // --- Number keypad ---------------------------------------------------------
 
 // promptNumber(current, { label, caption, allowDecimal, maxChars, maxDecimals, wasText, done })
@@ -595,6 +607,14 @@ function handleBackspace() {
 let navDepth = 0;
 let navSuppress = false;
 
+// Where a tab tap came FROM, when it came from somewhere that is not a tab.
+// Neither tab has a Back of its own — they are the top — so a tap on Settings
+// from four levels into a walk used to be a one-way door: the back gesture had
+// nothing to go to and he was left rebuilding his way back into the room he
+// was standing in. Set by the tab bar, spent by the first Back, dropped by any
+// other navigation.
+let navTabFrom = null;
+
 function navPush() {
   if (navSuppress) return;
   navDepth += 1;
@@ -617,9 +637,25 @@ function show(screenId, arg, opts) {
   const cfg = SCREENS[key];
   if (!cfg) return;
 
+  // Defensive, and the one rule this screen has no way to enforce from inside
+  // a panel: nothing navigates out from under an open sheet. onPopState turns
+  // the back gesture into a cancel before it ever gets here; this catches any
+  // other caller that navigates while a panel is up.
+  closeAnyPanel();
+
+  // A tab return survives exactly one navigation — the tab tap that set it.
+  // Anything else drops it, so Back off a tab can never jump to a screen he
+  // left three moves ago.
+  navTabFrom = (opts && opts.tabFrom) || null;
+
   // The PIN screen is never a history entry: a swipe must not be able to land
   // on it, and coming back from it must not re-ask for the PIN.
   if (key !== 'pin' && !(opts && opts.replace)) navPush();
+  // A replace stands ON the entry it found, so that entry has to be restamped
+  // with the depth we are actually at. Left alone it still carries the depth
+  // of the screen it replaced, and the next popstate reads that stale number
+  // back into navDepth.
+  else if (key !== 'pin') navReplace();
 
   // The screen being left gets to put its resources back first. Nothing that
   // happens in here may navigate, so a throwing leave() is contained rather
@@ -739,6 +775,10 @@ function goBack() {
     if (cfg && cfg.backStep && cfg.backStep()) return true;
     const back = cfg && screenBack(cfg);
     if (back) { show(back); return true; }
+    // A tab he stepped onto from inside a bid goes back to where he was
+    // standing. show() with no argument means "keep what's on the glass", so
+    // the walk comes back on the same area he left.
+    if (navTabFrom && SCREENS[navTabFrom]) { const to = navTabFrom; show(to); return true; }
     return false;
   } finally {
     navSuppress = wasSuppressed;
@@ -759,6 +799,12 @@ function backTapped() {
 function onPopState(e) {
   const depth = e && e.state && typeof e.state.ceb === 'number' ? e.state.ceb : 0;
   navDepth = depth;
+  // A panel is a question, and the back gesture is the answer "no". It must
+  // never navigate underneath one: the sheet would stay on the glass over
+  // whatever screen the swipe landed on, and Done would then write into the
+  // bid he had just left. So cancel it, put the entry the swipe spent back,
+  // and stay exactly where he is — one gesture, one thing dismissed.
+  if (anyPanelOpen()) { closeAnyPanel(); navPush(); return; }
   // On the PIN screen there is nothing to go back to and everything to lose.
   if (!state.unlocked) { navPush(); return; }
   navSuppress = true;
@@ -823,10 +869,17 @@ function wireNav() {
   el('tabbar').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab');
     if (!btn || !state.unlocked) return;
-    // A tab REPLACES: the two tabs are two places to stand, not a way in and a
-    // way further in, and a swipe should not have to walk back through every
-    // time he has flipped between them.
-    show(btn.dataset.tab, undefined, { replace: true });
+    // Tab to tab REPLACES: the two tabs are two places to stand, not a way in
+    // and a way further in, and a swipe should not have to walk back through
+    // every time he has flipped between them.
+    //
+    // From anywhere else the tap is a step AWAY, so it PUSHES and remembers
+    // what it left. Replacing there spent the entry that led back to the walk,
+    // and the next back gesture took him out of the app instead of back to the
+    // room he was counting in.
+    const from = SCREENS[state.screen];
+    const onTab = !!from && from.tab === state.screen;
+    show(btn.dataset.tab, undefined, onTab ? { replace: true } : { tabFrom: state.screen });
   });
   window.addEventListener('popstate', onPopState);
 }
