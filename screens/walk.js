@@ -480,8 +480,10 @@ function renderWalkArea(bid, edit, area, host) {
     render();
   }));
   // The destructive one goes last, where a thumb reaching for + Item never
-  // lands on it by accident.
-  nav.appendChild(textButton('Delete this area', 'btn btn-danger-outline btn-block',
+  // lands on it by accident, and it goes quiet: nothing on a screen is red, so
+  // this is muted text with no outline round it and the colour waits for the
+  // confirm panel.
+  nav.appendChild(textButton('Delete this area', 'link-btn link-btn-quiet',
     () => walkDeleteArea(edit, area)));
   host.appendChild(nav);
 
@@ -544,6 +546,8 @@ function buildItemActions(box, lineEl, area, it) {
     { label: 'Cost', onTap: () => {
       promptMoney(it.costCents, {
         label: partCostLabel(it.name, it.unit),
+        caption: walkPriceCaption(),
+        captionAction: walkPriceAction(it.name),
         done: (cents) => {
           const part = walkCatalogPart(it);
           const prev = it.costCents;
@@ -561,7 +565,7 @@ function buildItemActions(box, lineEl, area, it) {
         },
       });
     } },
-    { label: 'Delete', cls: 'btn-danger-outline', onTap: async () => {
+    { label: 'Delete', quiet: true, onTap: async () => {
       const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
       if (!ok) { render(); return; }
       const i = area.items.indexOf(it);
@@ -816,9 +820,27 @@ function buildPriceAnswer(bid, area) {
   return box;
 }
 
+// "Check price" under a cost keypad. Offline it is not offered at all rather
+// than offered and then refused: a link that opens the browser's own no-signal
+// page is a tab he has to find his way back out of, and in a plant with no
+// signal that is every tap. Nothing here blocks anything either way.
+function walkPriceCaption() {
+  return navigator.onLine === false ? '' : 'Not sure? Check the price first.';
+}
+
+function walkPriceAction(name) {
+  if (navigator.onLine === false) return null;
+  return { label: 'Check price', onTap: () => openPriceSearch(state.data.settings, name) };
+}
+
 function walkAskCost(bid, area, part, qty) {
   promptMoney(part.lastCostCents, {
     label: partCostLabel(part.name, part.unit || 'ea'),
+    // The one panel in the app with somewhere to send him. It opens the search
+    // in another tab and leaves the keypad standing, so what he was half way
+    // through typing is still here when he comes back with the number.
+    caption: walkPriceCaption(),
+    captionAction: walkPriceAction(part.name),
     done: (cents) => {
       // Clear on the cost keypad means "I don't know yet". The count he just
       // walked off is worth more than the price he hasn't looked up, so the
@@ -990,7 +1012,7 @@ function buildPhotoView(area, id) {
   const actions = document.createElement('div');
   actions.className = 'walk-photo-actions';
   actions.appendChild(textButton('Close', 'btn', () => { walkPhotoOpenId = null; render(); }));
-  actions.appendChild(textButton('Delete', 'btn btn-danger', () => walkDeletePhoto(area, id)));
+  actions.appendChild(textButton('Delete', 'link-btn link-btn-quiet', () => walkDeletePhoto(area, id)));
   wrap.appendChild(actions);
   return wrap;
 }

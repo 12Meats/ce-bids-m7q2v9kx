@@ -492,7 +492,10 @@ function renderBidScreen(bid, host) {
         }
         show('job', bid.id);
       }));
-      pair.appendChild(textButton('Lost', 'btn btn-danger-outline btn-half', () => {
+      // Not red. Losing a bid is a fact he is recording, not a destructive
+      // act, and a red button here made the honest answer look like the wrong
+      // one. Nothing on a screen is red.
+      pair.appendChild(textButton('Lost', 'btn btn-half', () => {
         bidLostSheetOpen = true;
         render();
       }));

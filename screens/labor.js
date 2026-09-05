@@ -375,10 +375,10 @@ function buildTaskCard(edit, task, only) {
   // here. It used to be a dead red button, which reads as an app that is
   // broken rather than as a door that is somewhere else.
   if (!only) {
-    const actions = document.createElement('div');
-    actions.className = 'labor-task-actions';
-    actions.appendChild(textButton('Delete', 'btn btn-danger-outline', () => laborDeleteTask(edit, task)));
-    box.appendChild(actions);
+    // Straight onto the card, last, as muted text. It used to be an outlined
+    // red button in a flex row of its own, which put the one irreversible
+    // thing on this card in the loudest colour on the screen.
+    box.appendChild(textButton('Delete', 'link-btn link-btn-quiet', () => laborDeleteTask(edit, task)));
   } else {
     box.appendChild(caption('Use Merge back to return to one line.'));
   }

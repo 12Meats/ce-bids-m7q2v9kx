@@ -34,7 +34,8 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
-  crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText, areaNoteLine } = sandbox;
+  crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText, areaNoteLine,
+  priceSearchUrl } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
 const MISC_LABEL = vm.runInContext('MISC_LABEL', sandbox);
@@ -624,4 +625,73 @@ test('areaNoteLine cuts a long first line to 60 characters, ellipsis included', 
   // A caller can ask for less, which the Notes row does not, but the shape
   // has to hold if one ever does.
   assert.equal(areaNoteLine('abcdefghij', 5), 'abcd…');
+});
+
+// priceSearchUrl — the fifth pure one. It builds a URL out of a template the
+// owner can type and a part name off his own catalog, and both halves are
+// hostile: the name has spaces, quotes and slashes in it ('3/4" EMT'), and the
+// template is whatever he pasted off his phone.
+const PRICE_DEFAULT = 'https://www.google.com/search?tbm=shop&q={q}';
+
+test('priceSearchUrl falls back to Google Shopping when nothing is set', () => {
+  const expected = PRICE_DEFAULT.replace('{q}', encodeURIComponent('3/4" EMT'));
+  assert.equal(priceSearchUrl(undefined, '3/4" EMT'), expected);
+  assert.equal(priceSearchUrl({}, '3/4" EMT'), expected);
+  assert.equal(priceSearchUrl({ company: {} }, '3/4" EMT'), expected);
+  // A blank one he cleared is the same answer as never having set one.
+  assert.equal(priceSearchUrl({ company: { priceSearchUrl: '   ' } }, '3/4" EMT'), expected);
+});
+
+test('priceSearchUrl puts the encoded name wherever {q} is', () => {
+  const s = { company: { priceSearchUrl: 'https://supply.example.com/s?q={q}&loc=az' } };
+  assert.equal(priceSearchUrl(s, '3/4" EMT'),
+    'https://supply.example.com/s?q=3%2F4%22%20EMT&loc=az');
+  // The slash and the inch mark are the two characters that would otherwise
+  // walk out of the query string and into the path.
+  assert.equal(priceSearchUrl(s, '3/4" EMT').includes('3/4'), false);
+});
+
+test('priceSearchUrl appends when the template has no {q} in it', () => {
+  const s = { company: { priceSearchUrl: 'https://supply.example.com/search?q=' } };
+  assert.equal(priceSearchUrl(s, '1" EMT'), 'https://supply.example.com/search?q=1%22%20EMT');
+});
+
+test('priceSearchUrl replaces every {q} and survives a nameless part', () => {
+  const s = { company: { priceSearchUrl: 'https://x.example/{q}?q={q}' } };
+  assert.equal(priceSearchUrl(s, 'lug'), 'https://x.example/lug?q=lug');
+  assert.equal(priceSearchUrl(s, null), 'https://x.example/?q=');
+  assert.equal(priceSearchUrl(s, '  hub  '), 'https://x.example/hub?q=hub');
+});
+
+// ---------------------------------------------------------------------------
+// NOTHING ON A SCREEN IS RED
+// ---------------------------------------------------------------------------
+// A source grep rather than a screenshot, because this is the kind of rule
+// that comes back one button at a time: somebody adds a Delete, reaches for
+// the class that looks right, and the screen has a red button on it again.
+// Red belongs to exactly one control in this app — the primary button on a
+// confirm panel, beside the sentence naming what is about to go. Everything a
+// screen draws wears .link-btn-quiet instead: muted text, no outline, last in
+// its strip. See attachedStrip's quiet flag.
+const SRC_ROOT = path.join(__dirname, '..');
+const readSrc = (rel) => fs.readFileSync(path.join(SRC_ROOT, rel), 'utf8');
+const SCREEN_FILES = fs.readdirSync(path.join(SRC_ROOT, 'screens'))
+  .filter((f) => f.endsWith('.js')).map((f) => 'screens/' + f);
+
+test('no screen file paints a control red', () => {
+  const offenders = SCREEN_FILES.filter((rel) => readSrc(rel).includes('btn-danger'));
+  assert.deepStrictEqual(offenders, [], 'red on a screen: ' + offenders.join(', '));
+  // ui.js draws the strips for all of them, so it must not hand one out either.
+  assert.equal(readSrc('ui.js').includes('btn-danger'), false, 'ui.js must not paint a control red');
+});
+
+test('the red class exists once, for the confirm panel, and has no outline twin', () => {
+  const html = readSrc('index.html');
+  assert.equal(html.includes('btn-danger-outline'), false,
+    '.btn-danger-outline has no users left and must not come back');
+  assert.equal(html.split('.btn-danger').length - 1, 1, 'one .btn-danger rule');
+  // app.js is the only file that puts it on anything, and only on the confirm.
+  const app = readSrc('app.js');
+  assert.equal((app.match(/btn-danger/g) || []).length, 1);
+  assert.match(app, /opts\.danger \? 'btn-danger' : 'btn-primary'/);
 });

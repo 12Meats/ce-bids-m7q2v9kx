@@ -327,7 +327,7 @@ function buildSurprisesCard(bid, done) {
       box.appendChild(when);
       if (jobSurpriseMenu === item) {
         attachedStrip(when, [
-          { label: 'Delete', cls: 'btn-danger-outline', onTap: () => jobDeleteSurprise(bid, item) },
+          { label: 'Delete', quiet: true, onTap: () => jobDeleteSurprise(bid, item) },
         ], { cancel: () => { jobSurpriseMenu = null; render(); } });
       }
     });
@@ -433,7 +433,7 @@ function buildChangeOrdersCard(bid, settings, done) {
           { label: 'Scope', onTap: () => show('walk', { bidId: bid.id, changeOrderId: co.id }) },
           { label: 'Labor', onTap: () => show('labor', { bidId: bid.id, changeOrderId: co.id }) },
           { label: 'Rename', onTap: () => jobRenameChangeOrder(bid, co) },
-          { label: 'Delete', cls: 'btn-danger-outline', onTap: () => jobDeleteChangeOrder(bid, co, settings) },
+          { label: 'Delete', quiet: true, onTap: () => jobDeleteChangeOrder(bid, co, settings) },
         ], { cancel: () => { jobCoMenu = null; render(); } });
       }
     });

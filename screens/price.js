@@ -249,8 +249,13 @@ function priceLine(name, valueText, onTapMain) {
 // equipment line's three and the Settings rows all sit in one shape. close is
 // what Cancel does - every strip on this screen closes by clearing the flag
 // that opened it.
+// The third slot is a class name, except for the one word 'quiet', which is not
+// a class but a shape: a muted text link on its own line at the bottom of the
+// strip. Every Delete and every Remove on this screen wears it.
 function priceActions(buttons, close) {
-  return attachedStrip(null, buttons.map(([label, cls, onTap]) => ({ label, cls, onTap })), { cancel: close });
+  return attachedStrip(null, buttons.map(([label, cls, onTap]) => (cls === 'quiet'
+    ? { label, onTap, quiet: true }
+    : { label, cls, onTap })), { cancel: close });
 }
 
 // Every strip on this screen is opened by one of two flags and closed the same
@@ -356,7 +361,7 @@ function buildRentalLine(bid, x, markup, warn) {
         priceSave(() => { x.markup = prev; });
         render();
       }],
-      ['Delete rental', 'btn-danger-outline', () => priceDeleteRental(bid, x)],
+      ['Delete rental', 'quiet', () => priceDeleteRental(bid, x)],
     ], priceCloseMenu));
     line.appendChild(caption('Prints at ' + moneyText(prints)));
   }
@@ -492,7 +497,7 @@ function buildEquipmentLine(bid, x, warn) {
         render();
       })],
       ['Day rate, this bid', '', () => priceEquipmentDayRate(x)],
-      ['Remove', 'btn-danger-outline', () => priceDeleteEquipment(bid, x)],
+      ['Remove', 'quiet', () => priceDeleteEquipment(bid, x)],
     ], priceCloseMenu));
   }
   return line;

@@ -305,7 +305,7 @@ function bidRow(bid) {
     wrap.appendChild(attachedStrip(null, [
       { label: 'Duplicate', onTap: () => bidsDuplicate(bid.id) },
       bidsCanDelete(bid)
-        ? { label: 'Delete', cls: 'btn-danger-outline', onTap: () => bidsDelete(bid.id) }
+        ? { label: 'Delete', quiet: true, onTap: () => bidsDelete(bid.id) }
         : null,
     ], {
       cancelLabel: 'Close',
