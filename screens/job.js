@@ -255,11 +255,24 @@ function buildHoursCard(bid, actuals, done) {
 //
 // Cancel at either panel adds nothing: the note alone is not a surprise, and
 // nothing is pushed until both answers are in.
-function jobAddSurprise(bid) {
+//
+// An EMPTY note is not an answer either. It used to walk straight on to the
+// money and write "$240 — " into the list, which is the one entry on this
+// screen that cannot be read back: he knows a job went $240 sideways and has
+// no idea what for. So a blank comes back to the same panel with the ask in
+// the label, and the money is never reached without a note.
+const JOB_SURPRISE_ASK = 'What happened?';
+const JOB_SURPRISE_ASK_AGAIN = 'What happened? A few words.';
+
+function jobAddSurprise(bid, label) {
   promptText('', {
-    label: 'What happened?',
+    label: label || JOB_SURPRISE_ASK,
     placeholder: 'Ten-inch wall, new bit',
     done: (note) => {
+      // Cancel never reaches here (the panel calls nothing) and the value
+      // arrives trimmed, so an empty string is a man who tapped Done with
+      // nothing typed. Ask again rather than move on.
+      if (!note) { jobAddSurprise(bid, JOB_SURPRISE_ASK_AGAIN); return; }
       promptMoney(null, {
         label: 'What did it cost?',
         done: (cents) => {
@@ -443,8 +456,24 @@ function buildActualCard(actuals) {
   box.classList.add('job-actual');
 
   box.appendChild(row('Hours', numText(actuals.actualHours) + ' / ' + numText(actuals.bidHours)));
-  box.appendChild(row('Surprises', moneyText(actuals.surpriseCents) + ' of ' + moneyText(actuals.setAsideCents)));
-  box.appendChild(caption('set aside in the hours cushion'));
+
+  // "$400 of -$150" is not a sentence. The cushion is bid hours minus real
+  // hours in money, and a bid whose hours were pulled BELOW what the work
+  // figured at makes that number negative — there is no cushion, and printing
+  // one as a negative budget reads as a bug. Same guard the reports screen
+  // uses on the same field, worded the same way: the surprises alone, and one
+  // line saying there was nothing set aside to meet them.
+  //
+  // It is the only figure on this card that can go negative and mean nothing.
+  // BidMath clamps the overrun at zero already, and a negative margin is a
+  // real answer — the job lost money — so neither is guarded here.
+  if (actuals.setAsideCents <= 0) {
+    box.appendChild(row('Surprises', moneyText(actuals.surpriseCents)));
+    box.appendChild(caption('No cushion set aside on this bid.'));
+  } else {
+    box.appendChild(row('Surprises', moneyText(actuals.surpriseCents) + ' of ' + moneyText(actuals.setAsideCents)));
+    box.appendChild(caption('set aside in the hours cushion'));
+  }
 
   box.appendChild(row('Price', moneyText(actuals.priceCents)));
   if (actuals.changeOrderCents !== 0) {

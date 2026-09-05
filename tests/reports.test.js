@@ -28,6 +28,9 @@ const sandbox = {
   // ui.js's fmtDateTime is a one-line wrapper around this one; the last-page
   // row is written in it, so the real thing is loaded rather than a stub.
   Dates: D,
+  // ui.js reads MISC_LABEL back off Store at load time: the string lives in
+  // storage.js, which loads first and cannot read ui.js.
+  Store: S,
   // reports.js registers itself on load; nothing else in it runs at load time.
   registerScreen: () => {},
 };

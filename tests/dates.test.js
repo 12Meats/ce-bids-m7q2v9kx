@@ -109,6 +109,16 @@ test('fmtDate prints the way the owner reads a date', () => {
   assert.equal(D.fmtDate(null), '');
 });
 
+test('fmtDateShort drops the padding and the century for the home list', () => {
+  assert.equal(D.fmtDateShort('2026-09-04'), '9/4/26');
+  assert.equal(D.fmtDateShort('2026-01-01'), '1/1/26');
+  assert.equal(D.fmtDateShort('2026-12-31'), '12/31/26');
+  // Refuses exactly what fmtDate refuses, and just as quietly.
+  assert.equal(D.fmtDateShort('2026-13-01'), '');
+  assert.equal(D.fmtDateShort('nonsense'), '');
+  assert.equal(D.fmtDateShort(null), '');
+});
+
 // ---------------------------------------------------------------------------
 // fmtDateTime — the stamp on a saved PDF
 // ---------------------------------------------------------------------------

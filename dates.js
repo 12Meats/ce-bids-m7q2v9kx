@@ -39,6 +39,20 @@
     return MONTH_ABBR[m - 1] + ' ' + Number(iso.slice(8, 10)) + ', ' + iso.slice(0, 4);
   }
 
+  // fmtDateShort('2026-09-04') -> '9/4/26'. The home list only, and it exists
+  // for one reason: that row carries a price, a status, a date and a number on
+  // one line, and on a 375px phone 'Sep 4, 2026' is the 78 pixels that makes
+  // the row wrap in two. Of the four it is the one that can be said shorter
+  // without losing anything — he is placing a bid in time, not reading a
+  // contract date, and 9/4/26 is how he writes it on a job ticket anyway.
+  // Everywhere a date is read on its own, fmtDate stays.
+  function fmtDateShort(iso) {
+    if (!isISO(iso)) return '';
+    const m = Number(iso.slice(5, 7));
+    if (m < 1 || m > 12) return '';
+    return m + '/' + Number(iso.slice(8, 10)) + '/' + iso.slice(2, 4);
+  }
+
   // fmtDateTime(ms) -> 'Sep 4, 2026, 1:59 am' — a stamp he can match against
   // his sent folder. The input is epoch milliseconds, which is what the app
   // stores on a saved PDF, and it is read in LOCAL time because that is the
@@ -168,5 +182,5 @@
     return b.number - a.number;
   }
 
-  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateTime, addDays, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
+  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateShort, fmtDateTime, addDays, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
 });

@@ -301,11 +301,14 @@ function detailCaption(level) { return DETAIL_CAPTIONS[level] || ''; }
 
 // The handful of dollars nobody itemizes and everybody spends. ONE name for
 // it: the walk called it this and the Costs & price screen called the same
-// number "Misc hardware", which is how one line reads as two things. This is
-// the walk's wording, because it is the one he read standing in the plant, and
-// it is what Store.newBid writes into bid.misc.label on every new bid — the
-// label is his to edit, and this is only the fallback for a bid that has none.
-const MISC_LABEL = 'Supports, anchors, and hardware';
+// number "Misc hardware", which is how one line reads as two things.
+//
+// The string itself is Store's, not this file's — Store.newBid stamps it onto
+// bid.misc.label on every new bid and storage.js loads before ui.js and cannot
+// read it back the other way. So it is defined there and re-exported here,
+// which is what the screens already reach for. The label is his to edit; this
+// is only the fallback for a bid that has none.
+const MISC_LABEL = Store.MISC_LABEL;
 
 // crewDaysText(crew, days, hours) -> '2 guys × 3 days = 48 hrs'
 //
@@ -515,6 +518,10 @@ function navTarget(arg) {
 // so it agrees with the dates already stored.
 
 function fmtDate(iso) { return Dates.fmtDate(iso); }
+
+// '9/4/26'. The home list's rows only — see dates.js for why they are the one
+// place that cannot afford the long form.
+function fmtDateShort(iso) { return Dates.fmtDateShort(iso); }
 
 // Epoch milliseconds — a saved PDF's stamp — as 'Sep 4, 2026, 1:59 am'.
 function fmtDateTime(ms) { return Dates.fmtDateTime(ms); }

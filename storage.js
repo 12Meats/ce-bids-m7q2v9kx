@@ -474,13 +474,22 @@
     if (hit) return hit;
     const c = { id: uid(), name: n, contact: '', email: '', phone: '', defaultDetail: 'full' }; d.customers.push(c); return c;
   }
+  // The handful of dollars nobody itemizes and everybody spends. ONE name for
+  // it, and it lives HERE rather than in ui.js with the rest of the shared
+  // wording for one reason: storage.js is loaded first and cannot read ui.js,
+  // but ui.js can read Store. newBid stamps it onto every new bid, the walk
+  // and the Costs & price screen fall back to it on a bid that has none, and
+  // all three now read the same string. They used to be three copies, and two
+  // of them said "Misc hardware" — one line reading as two things.
+  const MISC_LABEL = 'Supports, anchors, and hardware';
+
   function newBid(d, { customerName, title, jobType, dateISO }) {
     const cust = findOrCreateCustomer(d, customerName); const s = d.settings;
     const jt = JOB_TYPE.indexOf(jobType) !== -1 ? jobType : 'service';
     const detail = DETAIL.indexOf(cust.defaultDetail) !== -1 ? cust.defaultDetail : 'full';
     const b = { id: uid(), number: s.nextNumber, customerId: cust.id, title: title || '', dateISO: dateISO || todayISO(),
       status: 'draft', detail, jobType: jt,
-      areas: [], misc: { label: 'Supports, anchors, and hardware', cents: 0 },
+      areas: [], misc: { label: MISC_LABEL, cents: 0 },
       // Hidden crew are people who don't work here any more: seeding them onto
       // a new bid would put a chip on the Labor screen for someone he'd have to
       // notice and take off, and would bill their wage until he did.
@@ -677,7 +686,7 @@
   function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
-  return { KEY, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
+  return { KEY, MISC_LABEL, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, findEquipmentByName, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     recordCatalogUse, numberInUse };
 });

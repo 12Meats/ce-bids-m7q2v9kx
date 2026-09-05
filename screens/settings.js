@@ -167,14 +167,50 @@ function settingHiddenToggle(box, key, hiddenCount) {
 // save put BOTH back — the flag and the strip. A refusal that also swallowed
 // the buttons would leave him looking at a row he just told to hide, with
 // nothing on screen to try again with.
-function settingsHideAction(entry) {
+function settingsHideAction(entry, list) {
   return [entry.hidden ? 'Unhide' : 'Hide', entry.hidden ? '' : 'btn-danger-outline', () => {
+    // Unhiding onto a name that is already on the list makes two rows he
+    // cannot tell apart — and worse, two rows the WALK cannot tell apart: he
+    // put "Bender" away, typed "Bender" again as a new tool, and unhiding the
+    // old one hands the picker the same word twice with different money
+    // behind it. The list stays as it is and says which name is in the way.
+    if (entry.hidden) {
+      const clash = settingsVisibleNamesake(entry, list);
+      if (clash) { showBanner('There is already a visible ' + clash + '.'); return; }
+    }
     const prevHidden = entry.hidden;
     const prevMenu = settingsMenu;
     entry.hidden = !prevHidden;
     settingsMenu = null;
     settingsSaveAndRender(() => { entry.hidden = prevHidden; settingsMenu = prevMenu; });
   }];
+}
+
+// The name of a SHOWN entry that this hidden one would collide with, or null.
+// One function for all four lists, so crew, equipment, clauses and catalog
+// answer the question the same way: a man, a tool, a part and a clause are all
+// picked off a list by their name, and only the name.
+//
+// Case-insensitive and blind to the spaces either side, the same comparison
+// Store.findEquipmentByName makes — "bender" and "Bender " are one name in his
+// head. Two rows only collide inside the same drawer, which is what category
+// and group are: he picks a part one category at a time and a clause one group
+// at a time, so "Coupling" in Fittings and "Coupling" in Strut are two rows he
+// never sees side by side. Crew and equipment have neither field, so both
+// sides read undefined and the drawer check is a no-op.
+function settingsEntryName(entry) {
+  return String((entry && (entry.name != null ? entry.name : entry.title)) || '').trim();
+}
+
+function settingsVisibleNamesake(entry, list) {
+  const key = settingsEntryName(entry).toLowerCase();
+  if (!key || !Array.isArray(list)) return null;
+  const hit = list.find((x) => x !== entry
+    && !x.hidden
+    && x.category === entry.category
+    && x.group === entry.group
+    && settingsEntryName(x).toLowerCase() === key);
+  return hit ? settingsEntryName(hit) : null;
 }
 
 // --- Hide, or really delete -------------------------------------------------
@@ -187,11 +223,12 @@ function settingsHideAction(entry) {
 // mistake. Hiding those leaves a list that only ever grows, with no way to
 // take anything out of it. So each row asks Store first:
 //
-//   nothing points at it   — Delete, and the entry is really spliced out
-//   something points at it — Hide, and the caption says how many bids
+//   nothing points at it   — Hide AND Delete, and Delete really splices it out
+//   something points at it — Hide only, and the caption says how many bids
 //
-// A row that is already hidden keeps its Unhide either way; a tool he put away
-// by mistake must not be reachable only through deleting it.
+// Hide is on both sides of that line. A tool he put away by mistake must not be
+// reachable only through deleting it, and a tool he wants out of the picker
+// until spring must not have to be deleted to get there.
 function settingsInUseText(uses) {
   return 'On ' + uses + ' bid' + (uses === 1 ? '' : 's') + ', so it can be hidden but not deleted.';
 }
@@ -219,7 +256,12 @@ function settingsDeleteAction(list, entry, what) {
 // be deleted, the sentence saying why. buttons are the row's own edits; the
 // remove action is decided here so all four lists decide it the same way.
 function settingsRemoveActions(box, buttons, entry, uses, list, what) {
-  if (entry.hidden || uses > 0) buttons.push(settingsHideAction(entry));
+  // Hide is on EVERY row. It used to disappear the moment nothing pointed at
+  // an entry, which left one button on that row and it was the irreversible
+  // one: a tool he wanted out of the picker for the season had Delete as the
+  // only way to do it. Hiding is never the wrong answer, so it is never the
+  // missing one; Delete just joins it when there is really nothing to lose.
+  buttons.push(settingsHideAction(entry, list));
   if (uses === 0) buttons.push(settingsDeleteAction(list, entry, what));
   box.appendChild(settingActions(buttons));
   if (uses > 0) box.appendChild(caption(settingsInUseText(uses)));
@@ -1031,8 +1073,8 @@ function buildSetCatalog() {
   }
 
   settingHiddenToggle(box, 'catalog', hidden.length);
-  box.appendChild(caption('New parts get added from the walk. Hiding one takes it off the walk '
-    + 'and leaves it on the bids that already use it.'));
+  box.appendChild(caption('New parts get added from the walk. Hide takes it off the walk. '
+    + 'Delete is only offered when no bid uses it.'));
   return box;
 }
 
@@ -1812,12 +1854,16 @@ function settingsSaveAndRender(revert) {
 const SETTINGS_CARDS = [
   ['set-crew', 'Crew', () => buildSetCrew()],
   ['set-rates', 'Rates', () => buildSetRates()],
+  // The parts catalog is the card he came here for — it is the one the strip
+  // was built for in the first place — and eighth in a sideways-scrolling row
+  // is off the right edge on a 375px phone, which is the same "scroll and
+  // hunt" the strip was meant to end. Third, where his thumb already is.
+  ['set-catalog', 'Catalog', () => buildSetCatalog()],
   ['set-equipment', 'Equipment', () => buildSetEquipment()],
   ['set-counter', 'Numbers', () => buildSetCounter()],
   ['set-forget', 'Lists', () => buildSetForget()],
   ['set-notes', null, () => buildSetNotePhrases()],
   ['set-terms', 'Terms', () => buildSetTerms()],
-  ['set-catalog', 'Catalog', () => buildSetCatalog()],
   ['set-company', 'Company', () => buildSetCompany()],
   ['set-lock', 'PIN', () => buildSetLock()],
   ['set-reports', null, () => buildSetReports()],
@@ -1829,6 +1875,13 @@ const SETTINGS_CARDS = [
 // one takes him to its card. The cards carry scroll-margin-top in the CSS so
 // the sticky header does not land on top of the title he just jumped to.
 function buildSetJump() {
+  // The strip scrolls sideways, and a row of chips that ends flush with the
+  // screen edge looks like a row that ENDS. The fade is a CSS overlay on the
+  // wrapper — the chips run under it and the last one is visibly cut, which is
+  // the only thing that says there is more of it to the right.
+  const outer = document.createElement('div');
+  outer.className = 'set-jump-wrap';
+
   const wrap = document.createElement('div');
   wrap.className = 'set-jump';
   wrap.setAttribute('aria-label', 'Jump to a section');
@@ -1841,7 +1894,8 @@ function buildSetJump() {
       catch (e) { target.scrollIntoView(); }   // no options object in an old browser
     }));
   });
-  return wrap;
+  outer.appendChild(wrap);
+  return outer;
 }
 
 // "CE Bids · v1 · built Sep 5, 2026". The version is the cache the phone is

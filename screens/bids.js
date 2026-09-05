@@ -144,16 +144,25 @@ function bidsCanDelete(bid) {
   return true;
 }
 
-// The confirm names the STATUS, because that is the thing he needs to weigh:
-// deleting a draft is housekeeping and deleting a sent one is not. What it
-// will not do is pretend the delete reaches the customer — the PDF is in
-// somebody's inbox and nothing on this phone can take it back, so a bid that
-// has actually gone out says so.
+// The confirm NAMES THE BID and then its status. "Delete this SENT bid?" was
+// true of four rows on the screen, and the one he was looking at was the one
+// the panel covered up — a confirm that cannot be checked against the thing it
+// is about is a confirm he taps through. The number and the customer are how
+// he says which bid he means, so they are how the question asks it.
+//
+// A draft carries no clause: it never left the office and there is nothing to
+// weigh. Sent is something that HAPPENED; won and lost are things he MARKED,
+// so they read that way. And whatever the status, a bid whose PDF actually
+// went out says the delete does not reach the customer — the document is in
+// somebody's inbox and nothing on this phone can take it back.
 function bidsDeleteConfirmText(bid) {
+  const head = 'Delete bid #' + bid.number + ' for ' + bidCustomerName(bid, state.data) + '?';
   const label = (STATUS_LABELS[bid.status] || bid.status || '').toUpperCase();
-  return 'Delete this ' + label + ' bid? '
-    + (bid.sentAt ? "The customer's copy is not affected. " : '')
-    + "This can't be undone.";
+  if (bid.status === 'draft') return head + " This can't be undone.";
+  const was = bid.status === 'sent' ? 'It was ' + label : 'It was marked ' + label;
+  return head + ' ' + was
+    + (bid.sentAt ? "; the customer's copy is not affected." : '.')
+    + " This can't be undone.";
 }
 
 async function bidsDelete(id) {
@@ -225,11 +234,16 @@ function bidRow(bid) {
   // The day the bid is dated. Without it the list is a wall of names and
   // prices with nothing to place them in time, and "the UDA one" is a bid he
   // wrote in March and a bid he wrote last week. Before the number, not after
-  // it: the number is pinned to the right edge, and a date pushed past it
-  // wraps onto a second line on half the rows.
+  // it: the date and the number are one block on the right edge.
+  //
+  // The SHORT form, because this line is four things wide. Price, status, date
+  // and number came to 265px of a 249px row on a 375px phone, and the row that
+  // went over was the DRAFT one — 'Draft' is the widest pill — so the list
+  // wrapped on exactly the bids he has most of. 9/4/26 buys back 34 of those
+  // pixels and says the same thing.
   const when = document.createElement('span');
   when.className = 'bid-when';
-  when.textContent = fmtDate(bid.dateISO);
+  when.textContent = fmtDateShort(bid.dateISO);
   line2.appendChild(when);
   const num = document.createElement('span');
   num.className = 'bid-number';

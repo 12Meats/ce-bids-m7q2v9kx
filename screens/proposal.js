@@ -378,10 +378,18 @@ function buildDetail(bid) {
     });
     render();
   }));
+  // What the button he is looking at actually puts on the paper, in ui.js's
+  // words — the same line the bid header shows, so the two places these three
+  // pills appear cannot describe them differently. It is redrawn on every tap,
+  // which is how he finds out here, with the document in front of him, that
+  // "Scope & price" is the one that takes the line items away. The old static
+  // sentence listed all three at once and said nothing about the one he had
+  // picked; this one only ever describes that one.
+  box.appendChild(caption(detailCaption(bid.detail)));
   const cust = proposalCustomer(bid);
-  box.appendChild(caption(cust
-    ? 'Also becomes the starting detail level for ' + cust.name + "'s next bid."
-    : 'Full lists every line. Summary gives three totals. Scope & price gives one number.'));
+  if (cust) {
+    box.appendChild(caption('Also becomes the starting detail level for ' + cust.name + "'s next bid."));
+  }
   return box;
 }
 

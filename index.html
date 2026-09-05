@@ -586,7 +586,17 @@
       -webkit-user-select: none;
       user-select: none;
     }
-    .bid-line1 { font-size: var(--font-body); font-weight: 700; }
+    /* A long plant name plus a title used to break onto a second and third
+       line and push the row to twice its height. One line, cut with an
+       ellipsis: the first few words are what he recognizes a bid by, and a
+       list where every row is the same height is a list he can scan. */
+    .bid-line1 {
+      font-size: var(--font-body);
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .bid-line2 {
       display: flex;
       align-items: center;
@@ -597,7 +607,13 @@
       color: var(--color-text-muted);
     }
     .bid-price { font-weight: 700; color: var(--color-text); }
-    .bid-number { margin-left: auto; }
+    /* The date and the number are ONE block pinned to the right edge, and the
+       auto margin belongs to the first of them. Both had it, which on a 375px
+       phone split the leftover space between them and pushed the number off
+       the end of the line — the row then wrapped and the price sat alone over
+       a second line holding nothing but a date. Neither ever breaks. */
+    .bid-when { margin-left: auto; white-space: nowrap; }
+    .bid-number { white-space: nowrap; }
     .bid-more {
       width: 52px;
       min-height: 72px;
@@ -897,7 +913,10 @@
        Now it reads as the fact it is, with a small Change beside it. */
     .labor-hpd { display: flex; align-items: baseline; gap: var(--space-1); flex-wrap: wrap; }
     .labor-hpd-text { flex: 1 1 60%; min-width: 0; color: var(--color-text-muted); font-size: 0.95rem; line-height: 1.35; }
-    .labor-hpd-change { flex: 0 0 auto; width: auto; margin-top: 0; padding: 0 8px; }
+    /* 48, not the .link-btn 44: it is a real control on a screen he uses with
+       one thumb in a truck, and 44 was the only tap target on it under the
+       size everything else here is built at. */
+    .labor-hpd-change { flex: 0 0 auto; width: auto; min-height: 48px; margin-top: 0; padding: 0 8px; }
 
     .labor-task-actions { display: flex; margin-top: var(--space-2); }
     .labor-task-actions .btn { flex: 1; min-height: 48px; }
@@ -937,11 +956,15 @@
     .price-line-name { font-weight: 700; min-width: 0; }
     .price-line-value { font-weight: 700; white-space: nowrap; }
     .price-line-sub { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 4px; }
-    /* Wraps, because "$/day for this bid" and two more will not sit on one
-       390px line and a button squeezed to four characters is a button he
-       cannot read. Same shape as the Settings strip. */
+    /* Wraps, because three or four of these will not sit on one 390px line and
+       a button squeezed to four characters is a button he cannot read. The
+       basis is the LABEL, not a fixed share: two equal 40% halves gave "Day
+       rate, this bid" 123px for 130px of words and broke it over two lines
+       while "Days" sat in the same box with 86px spare. Sized off its own text
+       and then grown into whatever the row has left, each label gets a line
+       and the row still fills the card. Same shape as the Settings strip. */
     .price-line-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
-    .price-line-actions .btn { flex: 1 1 40%; min-height: 48px; padding: 0 12px; }
+    .price-line-actions .btn { flex: 1 1 auto; min-height: 48px; padding: 0 12px; }
 
     /* The tool picker's chips, shared with the walk's rental/equipment sheet. */
     .equip-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
@@ -958,7 +981,6 @@
        not read as a control that refuses every tap. */
     .chip-fact { display: inline-flex; align-items: center; }
     .chip-flat { border-style: dashed; color: var(--color-text-muted); }
-    .chip-more { min-width: 56px; padding: 0 14px; font-size: 1.1rem; }
     .chip:disabled { opacity: .55; }
 
     /* A row that reaches past this bid. Color alone is a hint, and a hint is
@@ -1275,6 +1297,22 @@
     }
     .set-jump::-webkit-scrollbar { display: none; }
     .set-jump .chip { flex: 0 0 auto; min-height: 48px; }
+    /* A row of chips ending flush with the screen edge looks like a row that
+       ends. The wrapper lays a fade over the last few pixels so the chip under
+       it is visibly cut off, which is the whole affordance: there is more of
+       this strip to the right. Not a tap target — pointer-events off, or it
+       would eat the tap on the chip beneath it. */
+    .set-jump-wrap { position: relative; }
+    .set-jump-wrap::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: var(--space-1);
+      width: 40px;
+      pointer-events: none;
+      background: linear-gradient(to right, rgba(248, 250, 252, 0), var(--color-bg) 70%);
+    }
 
     .set-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
 

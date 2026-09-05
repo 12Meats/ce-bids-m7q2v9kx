@@ -20,6 +20,7 @@ const path = require('path');
 const vm = require('vm');
 
 const B = require('../bidmath.js');
+const S = require('../storage.js');
 
 function fakeElement(tag) {
   return {
@@ -42,7 +43,9 @@ function fakeElement(tag) {
   };
 }
 
-const sandbox = { document: { createElement: fakeElement }, console, BidMath: B };
+// Store rides along because ui.js reads one string back off it at load time
+// (MISC_LABEL lives in storage.js, which loads first and cannot read ui.js).
+const sandbox = { document: { createElement: fakeElement }, console, BidMath: B, Store: S };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });

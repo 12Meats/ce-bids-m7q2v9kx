@@ -198,14 +198,6 @@ function pricePromptDays(current, label, node, apply) {
   });
 }
 
-// A chip that is its own tap target and its own shake target, so a rejected
-// number is refused where he typed it.
-function priceDaysChip(days, apply) {
-  const c = chip(pricePlural(days, 'day', 'days'), false,
-    () => pricePromptDays(days, 'How many days?', c, apply));
-  return c;
-}
-
 // A fact shaped like a chip so it sits in the same row — a span, not a
 // disabled button: there is nothing here to press, and a control that refuses
 // every tap is a worse answer than something that never looked like one.
@@ -216,9 +208,9 @@ function priceFactChip(text, extraClass) {
   return node;
 }
 
-// A line on this screen is a name and its money, with the small controls
-// underneath: the counts that can be tapped, and the ⋯ that opens Delete. The
-// name/money block is a button only when tapping it means something.
+// A line on this screen is a name and its money, with the facts underneath and
+// its controls in the strip a tap on the line opens. The name/money block is a
+// button only when tapping it means something.
 function priceLine(name, valueText, onTapMain) {
   const wrap = document.createElement('div');
   wrap.className = 'price-line';
@@ -246,9 +238,6 @@ function priceLine(name, valueText, onTapMain) {
   return wrap;
 }
 
-// The ⋯ that opens one line's Delete row. Deliberately not a swipe and not a
-// long-press: both are invisible, and this list is short enough that a button
-// costs nothing.
 // A row that reaches past this bid says so in words, not only in color: the
 // accent on the value is a hint, and a hint is not a warning.
 function priceAllBidsTag(line) {
@@ -259,28 +248,14 @@ function priceAllBidsTag(line) {
   return line;
 }
 
-function priceMoreChip(line) {
-  const c = chip('⋯', priceMenu === line, () => {
-    priceMenu = priceMenu === line ? null : line;
-    render();
-  });
-  c.classList.add('chip-more');
-  c.setAttribute('aria-label', 'More');
-  return c;
-}
-
 // The strip that opens under a line he tapped: [label, class, onTap] each.
-// One builder for all of them, so the rental's two buttons and the equipment
+// One builder for all of them, so the rental's four buttons and the equipment
 // line's three sit in the same box at the same size.
 function priceActions(buttons) {
   const wrap = document.createElement('div');
   wrap.className = 'price-line-actions';
   buttons.forEach(([label, cls, onTap]) => wrap.appendChild(textButton(label, 'btn ' + cls, onTap)));
   return wrap;
-}
-
-function priceDeleteRow(label, onDelete) {
-  return priceActions([[label, 'btn-danger-outline', onDelete]]);
 }
 
 // ---------------------------------------------------------------------------
@@ -322,29 +297,20 @@ function rentalTotalCaption(days) {
   return 'For all ' + pricePlural(days, 'day', 'days') + ', what the rental house charges.';
 }
 
+// ONE tap rule on this screen: tapping a line opens that line's strip, and
+// everything the line can do is in the strip. The rental used to be the
+// exception — its line went straight to the money panel, its days were a chip,
+// and its Delete hid behind a ⋯ — so the same gesture meant three different
+// things depending on which row his thumb landed on. Now it reads and works
+// exactly like the equipment line above it: facts underneath, controls in the
+// strip.
 function buildRentalLine(bid, x, markup) {
   const line = priceLine(x.name || 'Rental', moneyText(x.cents) + ' total', () => {
-    promptMoney(x.cents, {
-      label: rentalTotalLabel(x.name),
-      caption: rentalTotalCaption(x.days),
-      done: (cents) => {
-        const prev = x.cents;
-        // Clear means none of it, which is a real answer here, not a cancel.
-        x.cents = cents === null ? 0 : cents;
-        priceSave(() => { x.cents = prev; });
-        render();
-      },
-    });
+    priceMenu = priceMenu === x ? null : x;
+    render();
   });
 
-  line.sub.appendChild(priceDaysChip(x.days, (v) => {
-    const prev = x.days;
-    x.days = v;
-    priceSave(() => { x.days = prev; });
-    render();
-  }));
-
-  line.sub.appendChild(priceMoreChip(x));
+  line.sub.appendChild(priceFactChip(pricePlural(x.days, 'day', 'days'), 'chip-flat'));
 
   // Only worth saying when the two numbers differ — an un-marked-up rental
   // prints at exactly what it cost, and a line repeating itself is noise. Not
@@ -356,20 +322,40 @@ function buildRentalLine(bid, x, markup) {
   if (!(prints > 0)) line.appendChild(unpricedWarn());
 
   if (priceMenu === x) {
-    // "Marked up" used to be a chip on the line, which said whether the switch
-    // was on and never what it did. Here it is a plain two-state button with
-    // the answer beside it: turn it on and the sentence next to it changes to
-    // the number that goes on the paper.
+    // Days, the money, the markup and the way off the bid — everything this
+    // line can be asked. "Marked up" used to be a chip up on the line, which
+    // said whether the switch was on and never what it did; here it is a plain
+    // two-state button with the answer beside it, so turning it on changes the
+    // sentence under it to the number that goes on the paper.
     line.appendChild(priceActions([
+      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Rental') + ' — how many days?', line, (v) => {
+        const prev = x.days;
+        x.days = v;
+        priceSave(() => { x.days = prev; });
+        render();
+      })],
+      ['Total cost', '', () => {
+        promptMoney(x.cents, {
+          label: rentalTotalLabel(x.name),
+          caption: rentalTotalCaption(x.days),
+          done: (cents) => {
+            const prev = x.cents;
+            // Clear means none of it, which is a real answer here, not a cancel.
+            x.cents = cents === null ? 0 : cents;
+            priceSave(() => { x.cents = prev; });
+            render();
+          },
+        });
+      }],
       [x.markup ? 'Markup on' : 'Markup off', x.markup ? 'btn-on' : '', () => {
         const prev = x.markup;
         x.markup = !prev;
         priceSave(() => { x.markup = prev; });
         render();
       }],
+      ['Delete rental', 'btn-danger-outline', () => priceDeleteRental(bid, x)],
     ]));
     line.appendChild(caption('Prints at ' + moneyText(prints)));
-    line.appendChild(priceDeleteRow('Delete rental', () => priceDeleteRental(bid, x)));
   }
   return line;
 }
@@ -483,7 +469,7 @@ function buildEquipmentLine(bid, x) {
         priceSave(() => { x.days = prev; });
         render();
       })],
-      ['$/day for this bid', '', () => priceEquipmentDayRate(x)],
+      ['Day rate, this bid', '', () => priceEquipmentDayRate(x)],
       ['Remove', 'btn-danger-outline', () => priceDeleteEquipment(bid, x)],
     ]));
   }

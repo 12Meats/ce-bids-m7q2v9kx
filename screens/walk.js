@@ -40,7 +40,6 @@
 // VIEW STATE
 // ---------------------------------------------------------------------------
 
-const WALK_MISC_LABEL = 'Supports, anchors, and hardware';
 // What a rental row on the walk says, and what the banner says the moment one
 // is added. One sentence, one destination, said the same way twice — the
 // banner used to point at a screen and the area then showed nothing.
@@ -249,7 +248,7 @@ function renderWalkAreas(bid, edit, host) {
   // The handful of dollars nobody itemizes and everybody spends. One tap, one
   // number, and it is in the cost stack.
   const miscBox = card();
-  const label = bid.misc.label || WALK_MISC_LABEL;
+  const label = bid.misc.label || MISC_LABEL;
   miscBox.appendChild(row(label, BidMath.fmt(bid.misc.cents), () => {
     promptMoney(bid.misc.cents, {
       label,

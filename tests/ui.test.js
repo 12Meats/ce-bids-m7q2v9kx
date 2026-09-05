@@ -25,7 +25,10 @@ const B = require('../bidmath.js');
 
 // unpricedLines is the fourth: it is what stands between a $0.00 line and a
 // PDF in a customer's inbox, and it reads a whole bid rather than a string.
-const sandbox = { document: undefined, console, BidMath: B };
+// Store is in the sandbox because ui.js reads one string back off it at load
+// time: MISC_LABEL is defined in storage.js (which loads first and cannot read
+// ui.js) and re-exported here.
+const sandbox = { document: undefined, console, BidMath: B, Store: S };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
@@ -368,5 +371,8 @@ test('every detail level has one line saying what prints', () => {
 
 test('the misc line has ONE name, and it is the one a new bid is created with', () => {
   assert.equal(MISC_LABEL, 'Supports, anchors, and hardware');
+  // Literally the same string, not two that happen to match: ui.js reads
+  // Store's, and Store.newBid stamps Store's onto the bid.
+  assert.equal(MISC_LABEL, S.MISC_LABEL);
   assert.equal(S.newBid(S.emptyData(), { customerName: 'UDA' }).misc.label, MISC_LABEL);
 });
