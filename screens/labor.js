@@ -172,7 +172,7 @@ function buildCrewCard(edit) {
   const box = card('Crew');
   box.appendChild(laborCrewChips(edit, edit.labor));
   if ((edit.labor.crewIds || []).length === 0) {
-    box.appendChild(caption("Pick who's on this job."));
+    box.appendChild(emptyNote("Pick who's on this job."));
   }
   return box;
 }
@@ -185,10 +185,10 @@ function buildCrewCard(edit) {
 // service call is half a day), zero is real (a job priced on material alone),
 // and Clear means "never mind" rather than zero — the row is one tap away if
 // zero is what he meant.
-function laborDaysRow(label, holder) {
+function laborDaysRow(label, holder, promptLabel) {
   const line = row(label, numText(holder.days), () => {
     promptNumber(holder.days, {
-      label: 'Days on the job',
+      label: promptLabel || label,
       allowDecimal: true,
       // Quarter and half days are real; a third decimal is a fat-fingered tap.
       maxDecimals: 2,
@@ -210,7 +210,7 @@ function laborDaysRow(label, holder) {
         render();
       },
     });
-  });
+  }, { keypad: true });
   line.classList.add('labor-days');
   return line;
 }
@@ -340,7 +340,9 @@ function buildTaskCard(edit, task, only) {
   }));
 
   box.appendChild(laborCrewChips(edit, task));
-  box.appendChild(laborDaysRow('Days', task));
+  // The keypad names the task: three cards of "Days on the job" in a row is
+  // three identical questions with three different right answers.
+  box.appendChild(laborDaysRow('Days', task, 'Days on "' + (task.name || 'Task') + '"'));
   box.appendChild(caption(laborTaskHoursText(task)));
 
   // Days on it and nobody on it. The caption above already says "0 hours", but
@@ -350,17 +352,20 @@ function buildTaskCard(edit, task, only) {
   // by name, so flagging it here is what stops him meeting that refusal cold.
   if (BidMath.crewlessTasks({ tasks: [task] }).length) box.appendChild(inlineWarn(CREWLESS_TASK_WARN));
 
-  const actions = document.createElement('div');
-  actions.className = 'labor-task-actions';
-  const del = textButton('Delete', 'btn btn-danger-outline', only ? null : () => laborDeleteTask(edit, task));
   // Deleting the last task would leave labor.tasks as [], which BidMath reads
-  // as "no tasks at all" — the readout would silently fall back to the bid's
+  // as "no tasks at all" - the readout would silently fall back to the bid's
   // own line and start quoting a day count nothing on screen shows. There is
-  // already a door out of task mode, so this one is closed and points at it.
-  del.disabled = !!only;
-  actions.appendChild(del);
-  box.appendChild(actions);
-  if (only) box.appendChild(caption('Use Merge back to return to one line.'));
+  // already a door out of task mode, so on the last task Delete is simply not
+  // here. It used to be a dead red button, which reads as an app that is
+  // broken rather than as a door that is somewhere else.
+  if (!only) {
+    const actions = document.createElement('div');
+    actions.className = 'labor-task-actions';
+    actions.appendChild(textButton('Delete', 'btn btn-danger-outline', () => laborDeleteTask(edit, task)));
+    box.appendChild(actions);
+  } else {
+    box.appendChild(caption('Use Merge back to return to one line.'));
+  }
 
   return box;
 }
@@ -484,7 +489,10 @@ function buildTasksSection(bid, edit, host) {
   const labor = edit.labor;
 
   if (labor.tasks === null) {
-    host.appendChild(textButton('Split into tasks', 'btn btn-block', () => laborSplitIntoTasks(edit)));
+    // Outlined in the accent, not the plain grey the pinned Next used to
+    // share with it: two identical-looking block buttons one above the other
+    // is two primary actions, and only one of them is the way forward.
+    host.appendChild(textButton('Split into tasks', 'btn btn-block btn-outline', () => laborSplitIntoTasks(edit)));
     return;
   }
 
@@ -526,17 +534,14 @@ function renderLabor() {
   }
   const edit = co || bid;
 
-  const head = document.createElement('div');
-  head.className = 'labor-head';
-  const title = document.createElement('div');
-  title.className = 'labor-head-title';
-  title.textContent = co ? ('Change order: ' + (co.name || 'Change order')) : (bid.title || 'No title yet');
-  head.appendChild(title);
-  const cust = document.createElement('div');
-  cust.className = 'labor-head-cust';
-  cust.textContent = co ? (bid.title || bidCustomerName(bid, state.data)) : bidCustomerName(bid, state.data);
-  head.appendChild(cust);
-  host.appendChild(head);
+  // A change order has a walk and a labor screen and nothing else, so it gets
+  // no strip: the four steps belong to the bid.
+  if (!co) host.appendChild(stepStrip(bid, laborSettings(), 'labor'));
+
+  host.appendChild(screenHead(
+    co ? ('Change order: ' + (co.name || 'Change order')) : (bid.title || 'No title yet'),
+    co ? (bid.title || bidCustomerName(bid, state.data)) : bidCustomerName(bid, state.data)
+  ));
 
   // Read once and passed down: the readout wants the hours and the wages, the
   // warning wants the unknown ids, and they must be the same reading of the
@@ -558,7 +563,7 @@ function renderLabor() {
   if (edit.labor.tasks === null) {
     host.appendChild(buildCrewCard(edit));
     const daysBox = card();
-    daysBox.appendChild(laborDaysRow('Days on the job', edit.labor));
+    daysBox.appendChild(laborDaysRow('Days on the job', edit.labor, 'Days on the job'));
     host.appendChild(daysBox);
   }
 
@@ -569,13 +574,10 @@ function renderLabor() {
 
   buildTasksSection(bid, edit, host);
 
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  // A change order has no price screen of its own — its price is worked out on
+  // A change order has no price screen of its own - its price is worked out on
   // the job screen, which is where this leads.
-  if (co) nav.appendChild(textButton('Done — back to the job', 'btn btn-block', () => show('job', bid.id)));
-  else nav.appendChild(textButton('Next: Costs & price →', 'btn btn-block', () => show('price', bid.id)));
-  host.appendChild(nav);
+  if (co) pinnedBar(host, 'Done, back to the job', () => show('job', bid.id));
+  else pinnedBar(host, 'Next: Costs & price', () => show('price', bid.id));
 }
 
 // title and back are functions for the same reason the walk's are: this screen

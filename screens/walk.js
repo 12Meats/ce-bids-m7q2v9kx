@@ -154,10 +154,12 @@ function walkCatalogPart(it) {
 }
 
 // A two-line tappable line: name and money on top, the detail underneath.
-// Pass no onTap for an inert one (the area-cost footer).
-function walkRow(name, sub, value, onTap) {
+// Pass no onTap for an inert one (the area-cost footer), which then wears
+// .flat: no chevron, no press state, nothing to aim at. opts.keypad says the
+// tap opens a number panel, so the value goes navy instead of taking a ›.
+function walkRow(name, sub, value, onTap, opts) {
   const node = document.createElement(onTap ? 'button' : 'div');
-  node.className = 'walk-row';
+  node.className = 'walk-row' + tapClasses(onTap, opts);
   if (onTap) {
     node.type = 'button';
     node.addEventListener('click', onTap);
@@ -183,6 +185,7 @@ function walkRow(name, sub, value, onTap) {
     v.textContent = String(value);
     node.appendChild(v);
   }
+  if (onTap && !(opts && opts.keypad)) node.appendChild(chevron());
   return node;
 }
 
@@ -193,54 +196,62 @@ function walkRow(name, sub, value, onTap) {
 function renderWalkAreas(bid, edit, host) {
   const co = edit === bid ? null : edit;
 
-  const head = document.createElement('div');
-  head.className = 'walk-head';
-  const title = document.createElement('div');
-  title.className = 'walk-head-title';
-  title.textContent = co ? ('Change order: ' + (co.name || 'Change order')) : (bid.title || 'No title yet');
-  head.appendChild(title);
-  const cust = document.createElement('div');
-  cust.className = 'walk-head-cust';
-  cust.textContent = co ? (bid.title || bidCustomerName(bid, state.data)) : bidCustomerName(bid, state.data);
-  head.appendChild(cust);
-  host.appendChild(head);
+  // The step strip only belongs to the bid's own four screens. A change order
+  // has a walk and a labor screen and nothing else, and a strip offering Price
+  // and Proposal from inside one would jump him out of it.
+  if (!co) host.appendChild(stepStrip(bid, state.data.settings, 'walk'));
 
-  const box = card('Areas');
-  box.appendChild(caption('At cost — what the material costs you, not the price.'));
+  host.appendChild(screenHead(
+    co ? ('Change order: ' + (co.name || 'Change order')) : (bid.title || 'No title yet'),
+    co ? (bid.title || bidCustomerName(bid, state.data)) : bidCustomerName(bid, state.data)
+  ));
+
   const areas = edit.areas || [];
+
+  // The one number this screen produces: what he has counted, at cost, with
+  // the rooms it came out of underneath it.
+  host.appendChild(bigNumber(
+    BidMath.fmt(BidMath.materialCost({ areas })),
+    walkPlural(areas.length, 'area', 'areas') + ' · at cost, not the price'
+  ));
+
   if (areas.length === 0) {
-    box.appendChild(emptyNote('No areas yet — add the room you are standing in.'));
+    const box = card('Areas');
+    box.appendChild(emptyNote('Tap + Area and name the first room.'));
+    host.appendChild(box);
   } else {
+    // One card per area, not rows inside a shared one: this is the list he
+    // taps into forty times a walk, and it has to read as a row of doors.
     areas.forEach((area) => {
       // A change order's areas carry no photos (the camera is hidden there),
       // so a "0 photos" count would be a fact about nothing.
       const counts = walkPlural((area.items || []).length, 'item', 'items')
         + (co ? '' : ' · ' + walkPlural((area.photoIds || []).length, 'photo', 'photos'));
-      box.appendChild(walkRow(area.name || 'Area', counts, BidMath.fmt(walkAreaCost(area)), () => {
-        // A step deeper, so it gets a history entry: the phone's back gesture
-        // and this screen's own Back are one action now (see app.js navPush).
-        navPush();
-        walkView = 'area';
-        walkAreaId = area.id;
-        walkItemMenu = null;
-        render();
+      host.appendChild(tapCard({
+        title: area.name || 'Area',
+        sub: counts,
+        value: BidMath.fmt(walkAreaCost(area)),
+        onTap: () => {
+          // A step deeper, so it gets a history entry: the phone's back gesture
+          // and this screen's own Back are one action now (see app.js navPush).
+          navPush();
+          walkView = 'area';
+          walkAreaId = area.id;
+          walkItemMenu = null;
+          render();
+        },
       }));
     });
   }
-  host.appendChild(box);
 
-  host.appendChild(textButton('+ Add area', 'btn btn-primary btn-block', () => walkAddArea(edit)));
+  host.appendChild(textButton('+ Area', 'btn btn-primary btn-block', () => walkAddArea(edit)));
 
   // A change order is areas and labor and nothing else. The misc line, the
   // did-you-forget list and the rental placeholders all belong to the bid,
   // where they are already priced — charging them a second time on the change
   // order is the one mistake a change order must never make.
   if (co) {
-    const conav = document.createElement('div');
-    conav.className = 'bid-nav';
-    conav.appendChild(textButton('Next: Labor →', 'btn btn-block',
-      () => show('labor', { bidId: bid.id, changeOrderId: co.id })));
-    host.appendChild(conav);
+    pinnedBar(host, 'Next: Labor', () => show('labor', { bidId: bid.id, changeOrderId: co.id }));
     return;
   }
 
@@ -249,7 +260,7 @@ function renderWalkAreas(bid, edit, host) {
   // number, and it is in the cost stack.
   const miscBox = card();
   const label = bid.misc.label || MISC_LABEL;
-  miscBox.appendChild(row(label, BidMath.fmt(bid.misc.cents), () => {
+  const miscRow = row(label, BidMath.fmt(bid.misc.cents), () => {
     promptMoney(bid.misc.cents, {
       label,
       done: (cents) => {
@@ -260,7 +271,8 @@ function renderWalkAreas(bid, edit, host) {
         render();
       },
     });
-  }));
+  }, { keypad: true });
+  miscBox.appendChild(miscRow);
   // A nudge, not a gate: a misc of $0 never reaches the customer's page (the
   // document only prints the row when it has money in it), so it is amber here
   // and is not one of the lines that blocks a PDF.
@@ -277,10 +289,7 @@ function renderWalkAreas(bid, edit, host) {
   const forget = buildForgetCard(bid);
   if (forget) host.appendChild(forget);
 
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  nav.appendChild(textButton('Next: Labor →', 'btn btn-block', () => show('labor', bid.id)));
-  host.appendChild(nav);
+  pinnedBar(host, 'Next: Labor', () => show('labor', bid.id));
 }
 
 function walkAddArea(edit) {
@@ -315,8 +324,12 @@ function renderWalkArea(bid, edit, area, host) {
   // No inline Back any more: the header's Back button goes exactly one step
   // now, so two "‹ Back" buttons 40 px apart with different destinations is a
   // confusion this screen no longer has.
-  const box = card();
-  box.appendChild(row('Area', area.name || 'Area', () => {
+  // The room's name is the subject of this whole screen, not a label sitting
+  // on the left of a row, so it goes over the top of it and centered - and
+  // Rename underneath, where it is a small deliberate act rather than
+  // something a thumb finds by aiming at the title.
+  const head = screenHead(area.name || 'Area', null, { center: true });
+  head.appendChild(textButton('Rename', 'link-btn screen-head-action', () => {
     promptText(area.name, {
       label: 'Area name',
       placeholder: 'Where you are standing',
@@ -329,10 +342,12 @@ function renderWalkArea(bid, edit, area, host) {
       },
     });
   }));
+  host.appendChild(head);
 
+  const box = card();
   const items = area.items || [];
   if (items.length === 0) {
-    box.appendChild(emptyNote('Nothing counted here yet.'));
+    box.appendChild(emptyNote('Tap + Item to add conduit, wire, boxes, or parts.'));
   } else {
     // What the line will PRINT at, which is what decides whether it is still
     // unpriced — a "Did you forget?" row lands here at $0 and has to say so
@@ -341,14 +356,17 @@ function renderWalkArea(bid, edit, area, host) {
     items.forEach((it) => {
       const line = walkRow(
         it.name,
-        numText(it.qty) + ' ' + it.unit + ' · ' + BidMath.fmt(it.costCents) + ' each',
+        itemCountText(it.qty, it.unit, it.costCents),
         BidMath.fmt(Math.round(it.qty * it.costCents)),
         () => { walkItemMenu = walkItemMenu === it ? null : it; render(); }
       );
       if (walkHighlightItem === it) line.classList.add('walk-row-new');
       box.appendChild(line);
       if (!(BidMath.itemPrice(it, markup).cents > 0)) box.appendChild(unpricedWarn());
-      if (walkItemMenu === it) box.appendChild(buildItemActions(area, it));
+      // Inside this card, under the row that was tapped, indented - not
+      // appended after the whole card, where the answer to "what about this
+      // line?" used to appear under a heading belonging to something else.
+      if (walkItemMenu === it) buildItemActions(box, line, area, it);
     });
   }
 
@@ -375,7 +393,7 @@ function renderWalkArea(bid, edit, area, host) {
 
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
-  nav.appendChild(textButton('+ Add item', 'btn btn-primary btn-block', () => {
+  nav.appendChild(textButton('+ Item', 'btn btn-primary btn-block', () => {
     navPush();
     walkView = 'add';
     walkAddCat = null;
@@ -383,11 +401,15 @@ function renderWalkArea(bid, edit, area, host) {
     walkItemMenu = null;
     render();
   }));
-  // The destructive one goes last, where a thumb reaching for + Add item never
+  // The destructive one goes last, where a thumb reaching for + Item never
   // lands on it by accident.
   nav.appendChild(textButton('Delete this area', 'btn btn-danger-outline btn-block',
     () => walkDeleteArea(edit, area)));
   host.appendChild(nav);
+
+  // Done, not "+ Item": the pinned bar is the way OUT of the room, and the way
+  // further in is the button in the flow above it.
+  pinnedBar(host, 'Done', () => { walkView = 'areas'; walkItemMenu = null; render(); });
 }
 
 async function walkDeleteArea(edit, area) {
@@ -420,60 +442,58 @@ async function walkDeleteArea(edit, area) {
   render();
 }
 
-function buildItemActions(area, it) {
-  const wrap = document.createElement('div');
-  wrap.className = 'walk-item-actions';
-
-  wrap.appendChild(textButton('Edit qty', 'btn', () => {
-    promptNumber(it.qty, {
-      label: 'How many ' + it.unit + '?',
-      allowDecimal: true,
-      done: (v) => {
-        if (v === null) return;
-        if (!(v > 0)) { showBanner('A count has to be more than zero'); render(); return; }
-        const prev = it.qty;
-        it.qty = v;
-        persistOr(() => { it.qty = prev; });
-        walkItemMenu = null;
-        render();
-      },
-    });
-  }));
-
-  wrap.appendChild(textButton('Edit cost', 'btn', () => {
-    promptMoney(it.costCents, {
-      label: 'Cost each (' + it.unit + ')',
-      done: (cents) => {
-        const part = walkCatalogPart(it);
-        const prev = it.costCents;
-        const prevLast = part ? part.lastCostCents : null;
-        it.costCents = cents === null ? 0 : cents;
-        // The catalog remembers the last price he actually paid, so correcting
-        // a fat-fingered cost here also corrects what the next bid offers him.
-        if (part) part.lastCostCents = it.costCents;
-        persistOr(() => {
-          it.costCents = prev;
-          if (part) part.lastCostCents = prevLast;
-        });
-        walkItemMenu = null;
-        render();
-      },
-    });
-  }));
-
-  wrap.appendChild(textButton('Delete', 'btn btn-danger-outline', async () => {
-    const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
-    if (!ok) { render(); return; }
-    const i = area.items.indexOf(it);
-    if (i !== -1) {
-      area.items.splice(i, 1);
-      persistOr(() => { area.items.splice(i, 0, it); });
-    }
-    walkItemMenu = null;
-    render();
-  }));
-
-  return wrap;
+function buildItemActions(box, lineEl, area, it) {
+  const strip = attachedStrip(lineEl, [
+    { label: 'Quantity', onTap: () => {
+      promptNumber(it.qty, {
+        label: partQtyLabel(it.name, it.unit),
+        allowDecimal: true,
+        done: (v) => {
+          if (v === null) return;
+          if (!(v > 0)) { showBanner('A count has to be more than zero'); render(); return; }
+          const prev = it.qty;
+          it.qty = v;
+          persistOr(() => { it.qty = prev; });
+          walkItemMenu = null;
+          render();
+        },
+      });
+    } },
+    { label: 'Cost', onTap: () => {
+      promptMoney(it.costCents, {
+        label: partCostLabel(it.name, it.unit),
+        done: (cents) => {
+          const part = walkCatalogPart(it);
+          const prev = it.costCents;
+          const prevLast = part ? part.lastCostCents : null;
+          it.costCents = cents === null ? 0 : cents;
+          // The catalog remembers the last price he actually paid, so correcting
+          // a fat-fingered cost here also corrects what the next bid offers him.
+          if (part) part.lastCostCents = it.costCents;
+          persistOr(() => {
+            it.costCents = prev;
+            if (part) part.lastCostCents = prevLast;
+          });
+          walkItemMenu = null;
+          render();
+        },
+      });
+    } },
+    { label: 'Delete', cls: 'btn-danger-outline', onTap: async () => {
+      const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
+      if (!ok) { render(); return; }
+      const i = area.items.indexOf(it);
+      if (i !== -1) {
+        area.items.splice(i, 1);
+        persistOr(() => { area.items.splice(i, 0, it); });
+      }
+      walkItemMenu = null;
+      render();
+    } },
+  ], { cancel: () => { walkItemMenu = null; render(); } });
+  // The row is already in the card, so attachedStrip has placed it. This is the
+  // belt-and-braces path for a caller that built the row off-screen.
+  if (!strip.parentNode) box.appendChild(strip);
 }
 
 // ---------------------------------------------------------------------------
@@ -486,13 +506,7 @@ function buildItemActions(area, it) {
 function renderWalkAdd(bid, edit, area, host) {
   const co = edit === bid ? null : edit;
 
-  const head = document.createElement('div');
-  head.className = 'walk-head';
-  const title = document.createElement('div');
-  title.className = 'walk-head-title';
-  title.textContent = 'Add to ' + (area.name || 'this area');
-  head.appendChild(title);
-  host.appendChild(head);
+  host.appendChild(screenHead('Add to ' + (area.name || 'this area'), null, { center: true }));
 
   if (walkAddPending) { host.appendChild(buildPriceAnswer(bid, area)); return; }
   if (walkAddNew) { host.appendChild(buildUnitPicker(bid, area)); return; }
@@ -526,16 +540,14 @@ function renderWalkAdd(bid, edit, area, host) {
   host.appendChild(walkAddListEl);
 
   // The way out of the add flow that is not Back: he is done counting in this
-  // room, rather than one step up the list.
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  nav.appendChild(textButton('Done', 'btn btn-primary btn-block', () => {
+  // room, rather than one step up the list. Pinned, because it is eleven rows
+  // down a parts list by the time he wants it.
+  pinnedBar(host, 'Done', () => {
     walkView = 'area';
     walkAddCat = null;
     walkAddSearch = '';
     render();
-  }));
-  host.appendChild(nav);
+  });
 }
 
 // Tiles, or a list. A search beats a category — typing crosses all six drawers,
@@ -628,7 +640,7 @@ function buildCatalogList(bid, area, box, onChangeOrder) {
       const value = p.lastCostCents === null
         ? p.unit
         : BidMath.fmt(p.lastCostCents) + ' / ' + p.unit;
-      box.appendChild(walkRow(p.name, sub, value, () => walkPickPart(bid, area, p)));
+      box.appendChild(walkRow(p.name, sub, value, () => walkPickPart(bid, area, p), { keypad: true }));
     });
   }
 
@@ -685,7 +697,7 @@ function walkPickPart(bid, area, part) {
     return;
   }
   promptNumber(null, {
-    label: 'How many ' + (part.unit || 'ea') + '?',
+    label: partQtyLabel(part.name, part.unit || 'ea'),
     allowDecimal: true,
     done: (v) => {
       if (v === null) return;
@@ -703,7 +715,7 @@ function walkPickPart(bid, area, part) {
 function buildPriceAnswer(bid, area) {
   const { part, qty } = walkAddPending;
   const box = card();
-  box.appendChild(walkRow(part.name, numText(qty) + ' ' + part.unit, null, null));
+  box.appendChild(walkRow(part.name, itemCountText(qty, part.unit, part.lastCostCents), null, null));
 
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
@@ -724,7 +736,7 @@ function buildPriceAnswer(bid, area) {
 
 function walkAskCost(bid, area, part, qty) {
   promptMoney(part.lastCostCents, {
-    label: 'Cost each (' + (part.unit || 'ea') + ')',
+    label: partCostLabel(part.name, part.unit || 'ea'),
     done: (cents) => {
       // Clear on the cost keypad means "I don't know yet". The count he just
       // walked off is worth more than the price he hasn't looked up, so the
@@ -1051,10 +1063,7 @@ function buildWalkSheet(bid) {
     const settings = state.data.settings;
     const box = equipmentPickerCard('Which piece of equipment?', settings.equipment, settings.equipmentPct,
       (e) => walkAddEquipment(bid, e, from, forgetRow));
-    const nav = document.createElement('div');
-    nav.className = 'bid-nav';
-    nav.appendChild(textButton('Cancel', 'btn btn-block', walkCloseSheet));
-    box.appendChild(nav);
+    box.appendChild(textButton('Cancel', 'link-btn sheet-cancel', walkCloseSheet));
     wrap.appendChild(box);
     return wrap;
   }
@@ -1071,8 +1080,8 @@ function buildWalkSheet(bid) {
     walkSheet = { kind: 'equip', from, back: 'rentEquip' };
     render();
   }));
-  nav.appendChild(textButton('Cancel', 'btn btn-block', walkCloseSheet));
   box.appendChild(nav);
+  box.appendChild(textButton('Cancel', 'link-btn sheet-cancel', walkCloseSheet));
   wrap.appendChild(box);
   return wrap;
 }
@@ -1240,8 +1249,9 @@ function buildForgetRow(box, bid, name, answered) {
 
   box.appendChild(line);
 
-  // "Which area?" — only up while this row is asking it.
-  if (walkForgetPick === name) box.appendChild(buildForgetAreaPicker(bid, name));
+  // "Which area?" - only up while this row is asking it, and attached to the
+  // row that asked in the one shape every inline menu in this app now wears.
+  if (walkForgetPick === name) buildForgetAreaPicker(box, line, bid, name);
 }
 
 // The questions still open, then everything he has already answered folded
@@ -1278,28 +1288,24 @@ function buildForgetCard(bid) {
 
 // The chips he picks an area with when the bid has more than one. Attached
 // under the row that asked, so the question and the answer are in one place.
-function buildForgetAreaPicker(bid, name) {
-  const wrap = document.createElement('div');
-  wrap.className = 'walk-forget-areas';
-  wrap.appendChild(fieldLabel('Which area?'));
-
+function buildForgetAreaPicker(box, lineEl, bid, name) {
   const chips = document.createElement('div');
-  chips.className = 'walk-forget-chips';
+  chips.className = 'equip-chips';
   (bid.areas || []).forEach((area) => {
     chips.appendChild(chip(area.name || 'Area', false, () => walkForgetAddToArea(bid, name, area)));
   });
-  wrap.appendChild(chips);
 
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  nav.appendChild(textButton('Cancel', 'btn btn-block', () => {
-    // Backing out leaves the row unanswered, which is the truth: he has not
-    // said no to permits, he has said not now.
-    walkForgetPick = null;
-    render();
-  }));
-  wrap.appendChild(nav);
-  return wrap;
+  const strip = attachedStrip(lineEl, [], {
+    label: 'Which area?',
+    content: chips,
+    cancel: () => {
+      // Backing out leaves the row unanswered, which is the truth: he has not
+      // said no to permits, he has said not now.
+      walkForgetPick = null;
+      render();
+    },
+  });
+  if (!strip.parentNode) box.appendChild(strip);
 }
 
 function walkForgetUnanswer(bid, name) {

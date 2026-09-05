@@ -216,7 +216,7 @@ function priceLine(name, valueText, onTapMain) {
   wrap.className = 'price-line';
 
   const main = document.createElement(onTapMain ? 'button' : 'div');
-  main.className = 'price-line-main' + (onTapMain ? ' price-line-tap' : '');
+  main.className = 'price-line-main' + tapClasses(onTapMain, null);
   if (onTapMain) {
     main.type = 'button';
     main.addEventListener('click', onTapMain);
@@ -229,6 +229,7 @@ function priceLine(name, valueText, onTapMain) {
   v.className = 'price-line-value';
   v.textContent = valueText;
   main.appendChild(v);
+  if (onTapMain) main.appendChild(chevron());
   wrap.appendChild(main);
 
   const sub = document.createElement('div');
@@ -248,15 +249,19 @@ function priceAllBidsTag(line) {
   return line;
 }
 
-// The strip that opens under a line he tapped: [label, class, onTap] each.
-// One builder for all of them, so the rental's four buttons and the equipment
-// line's three sit in the same box at the same size.
-function priceActions(buttons) {
-  const wrap = document.createElement('div');
-  wrap.className = 'price-line-actions';
-  buttons.forEach(([label, cls, onTap]) => wrap.appendChild(textButton(label, 'btn ' + cls, onTap)));
-  return wrap;
+// The strip that opens under a line he tapped: [label, class, onTap] each,
+// through the app-wide attachedStrip so the rental's four buttons, the
+// equipment line's three and the Settings rows all sit in one shape. close is
+// what Cancel does - every strip on this screen closes by clearing the flag
+// that opened it.
+function priceActions(buttons, close) {
+  return attachedStrip(null, buttons.map(([label, cls, onTap]) => ({ label, cls, onTap })), { cancel: close });
 }
+
+// Every strip on this screen is opened by one of two flags and closed the same
+// way, so there is one function for it rather than four closures that could
+// each forget one of the two.
+function priceCloseMenu() { priceMenu = null; priceHoursMenu = false; render(); }
 
 // ---------------------------------------------------------------------------
 // RENTALS
@@ -328,7 +333,7 @@ function buildRentalLine(bid, x, markup) {
     // two-state button with the answer beside it, so turning it on changes the
     // sentence under it to the number that goes on the paper.
     line.appendChild(priceActions([
-      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Rental') + ' — how many days?', line, (v) => {
+      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Rental') + ', how many days?', line, (v) => {
         const prev = x.days;
         x.days = v;
         priceSave(() => { x.days = prev; });
@@ -354,7 +359,7 @@ function buildRentalLine(bid, x, markup) {
         render();
       }],
       ['Delete rental', 'btn-danger-outline', () => priceDeleteRental(bid, x)],
-    ]));
+    ], priceCloseMenu));
     line.appendChild(caption('Prints at ' + moneyText(prints)));
   }
   return line;
@@ -365,7 +370,7 @@ function buildRentalLine(bid, x, markup) {
 // the chips he gets here are the chips he got standing in the plant.
 function priceAddRental(bid) {
   promptRentalName(state.data.catalog, '', (name) => {
-    pricePromptDays(1, name + ' — how many days?', null, (days) => {
+    pricePromptDays(1, name + ', how many days?', null, (days) => {
       promptMoney(null, {
         label: rentalTotalLabel(name),
         caption: rentalTotalCaption(days),
@@ -413,19 +418,6 @@ async function priceDeleteRental(bid, x) {
 
 function buildEquipment(bid) {
   const s = priceSettings();
-
-  if (pricePicker) {
-    const wrap = document.createElement('div');
-    wrap.appendChild(equipmentPickerCard('Which piece of equipment?', s.equipment, s.equipmentPct,
-      (equip) => pricePickEquipment(bid, equip)));
-    const nav = document.createElement('div');
-    nav.className = 'bid-nav';
-    nav.appendChild(textButton('+ New tool', 'btn btn-block', () => priceNewTool(bid)));
-    nav.appendChild(textButton('Cancel', 'btn btn-block', () => { pricePicker = false; render(); }));
-    wrap.appendChild(nav);
-    return wrap;
-  }
-
   const box = card('Equipment');
   const list = bid.equipment || [];
   if (list.length === 0) {
@@ -433,7 +425,38 @@ function buildEquipment(bid) {
   } else {
     list.forEach((x) => box.appendChild(buildEquipmentLine(bid, x)));
   }
-  box.appendChild(textButton('+ Equipment', 'btn btn-block mt-3', () => { pricePicker = true; render(); }));
+
+  // The picker used to REPLACE this whole card, so tapping + Equipment made
+  // the list of equipment on the bid disappear and a different card take its
+  // place. Now it hangs off the button that opened it, inside the card the
+  // tool is about to join.
+  const add = textButton('+ Equipment', 'btn btn-block mt-3', () => { pricePicker = true; render(); });
+  box.appendChild(add);
+
+  if (pricePicker) {
+    const chips = document.createElement('div');
+    chips.className = 'equip-chips';
+    const visible = (s.equipment || []).filter((e) => e.hidden === false);
+    if (visible.length === 0) {
+      chips.appendChild(emptyNote('No equipment in Settings yet.'));
+    } else {
+      visible.forEach((e) => {
+        const rate = equipmentDayCents(e, s.equipmentPct);
+        chips.appendChild(chip(
+          rate == null ? e.name + ' · no cost yet' : e.name + ' · ' + moneyText(rate) + '/day',
+          false,
+          () => pricePickEquipment(bid, e)
+        ));
+      });
+    }
+    attachedStrip(add, [
+      { label: '+ New tool', onTap: () => priceNewTool(bid) },
+    ], {
+      label: 'Which piece of equipment?',
+      content: chips,
+      cancel: () => { pricePicker = false; render(); },
+    });
+  }
   return box;
 }
 
@@ -463,7 +486,7 @@ function buildEquipmentLine(bid, x) {
 
   if (priceMenu === x) {
     line.appendChild(priceActions([
-      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Equipment') + ' — how many days?', line, (v) => {
+      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Equipment') + ', how many days?', line, (v) => {
         const prev = x.days;
         x.days = v;
         priceSave(() => { x.days = prev; });
@@ -471,7 +494,7 @@ function buildEquipmentLine(bid, x) {
       })],
       ['Day rate, this bid', '', () => priceEquipmentDayRate(x)],
       ['Remove', 'btn-danger-outline', () => priceDeleteEquipment(bid, x)],
-    ]));
+    ], priceCloseMenu));
   }
   return line;
 }
@@ -483,7 +506,7 @@ function buildEquipmentLine(bid, x) {
 // should reach back through the file and change the other.
 function priceEquipmentDayRate(x) {
   promptMoney(x.dayCents, {
-    label: (x.name || 'Equipment') + ' — a day on this bid',
+    label: (x.name || 'Equipment') + ', a day on this bid',
     caption: "Only this bid. The tool's rate in Settings stays.",
     done: (cents) => {
       // Clear means none of it, which is a real answer: a tool that rode along
@@ -573,7 +596,7 @@ function pricePickEquipment(bid, equip) {
 }
 
 function priceEquipmentDays(bid, equip, dayCents) {
-  const label = (equip.name || 'Equipment') + ' at ' + moneyText(dayCents) + ' a day — how many days?';
+  const label = (equip.name || 'Equipment') + ' at ' + moneyText(dayCents) + ' a day, how many days?';
   pricePromptDays(1, label, null, (days) => {
     const eq = { equipmentId: equip.id, name: equip.name, days, dayCents };
     bid.equipment.push(eq);
@@ -724,7 +747,7 @@ function priceSettingsPctRow(label, value, current, keypadLabel, what, apply) {
     const ok = await priceConfirmSettings(what);
     if (!ok) return;
     pricePromptPct(current, keypadLabel, line, apply);
-  });
+  }, { keypad: true });
   line.classList.add('price-settings-row');
   return priceAllBidsTag(line);
 }
@@ -743,9 +766,8 @@ function buildCostStack(bid, stack, markup) {
       priceSave(() => { bid.pricing.markupPct = prev; });
       render();
     });
-  });
+  }, { keypad: true });
   box.appendChild(mk);
-  box.appendChild(caption('What the materials sell for. This bid only.'));
 
   box.appendChild(row('Labor ' + pricePlural(stack.realHours, 'hr', 'hrs') + ' at wages', moneyText(stack.wageCents)));
 
@@ -786,10 +808,9 @@ function buildCostStack(bid, stack, markup) {
         render();
       },
     });
-  });
+  }, { keypad: true });
   truck.classList.add('price-settings-row');
   box.appendChild(priceAllBidsTag(truck));
-  box.appendChild(caption(moneyText(s.truckDayCents) + ' a day. The days come from the Labor screen.'));
 
   box.appendChild(priceSettingsPctRow(
     'Consumables ' + pctText(s.consumablesPct), moneyText(stack.consumables),
@@ -823,7 +844,7 @@ function buildCostStack(bid, stack, markup) {
         render();
       },
     });
-  }));
+  }, { keypad: true }));
 
   // No cents on this row on purpose: the cushion does not cost him anything,
   // it quotes hours he hopes not to work. Its money shows up in the price
@@ -843,17 +864,18 @@ function buildCostStack(bid, stack, markup) {
   box.appendChild(cushion);
 
   if (priceHoursMenu) {
-    box.appendChild(priceActions([
-      ['Cushion for this bid', '', () => {
+    // Attached to the row that opened it, inside this card, indented past it.
+    attachedStrip(cushion, [
+      { label: 'Cushion for this bid', onTap: () => {
         pricePromptPct(cushionPct, 'Hours cushion %, this bid', cushion, (v) => {
           const prev = bid.pricing.cushionPct;
           bid.pricing.cushionPct = v;
           priceSave(() => { bid.pricing.cushionPct = prev; });
           render();
         });
-      }],
-      ['Bid hours', '', () => priceBidHours(bid, stack, cushion)],
-    ]));
+      } },
+      { label: 'Bid hours', onTap: () => priceBidHours(bid, stack, cushion) },
+    ], { cancel: priceCloseMenu });
   }
 
   // A cushion below zero is not hours he hopes not to work, it is hours he is
@@ -886,6 +908,14 @@ function buildCostStack(bid, stack, markup) {
   const total = row('True cost', moneyText(stack.trueCost));
   total.classList.add('price-truecost');
   box.appendChild(total);
+
+  // The two sentences that only ever explain. They were captions under their
+  // own rows, which put four grey lines through the middle of the one card on
+  // this screen he actually reads down.
+  box.appendChild(whatsThis('Materials markup is what the materials sell for, on this bid only. '
+    + 'Truck and gas is ' + moneyText(s.truckDayCents) + ' a day, and the days come from the Labor screen. '
+    + 'Payroll burden, consumables and overhead are Settings: they change what every bid costs you, '
+    + 'never what a sent bid is priced at.'));
 
   return box;
 }
@@ -963,7 +993,7 @@ function buildHandles(bid, stack, solved) {
         priceApply(bid, 'margin', v);
       },
     });
-  });
+  }, { keypad: true });
   if (off) margin.classList.add('price-row-off');
   box.appendChild(margin);
 
@@ -981,16 +1011,20 @@ function buildHandles(bid, stack, solved) {
       label: 'Labor rate an hour',
       done: (cents) => { if (cents !== null) priceApply(bid, 'rate', cents); },
     });
-  });
+  }, { keypad: true });
   if (off) rate.classList.add('price-row-off');
   box.appendChild(rate);
 
+  // The one number this screen exists to produce. Margin and the labor rate
+  // are two other ways of saying it and step down to body size, so a glance
+  // lands on the figure he says out loud.
   const price = row('Bid price', moneyText(solved.priceCents), off ? null : () => {
     promptMoney(solved.priceCents, {
       label: 'What you are bidding',
       done: (cents) => { if (cents !== null) priceApply(bid, 'price', cents); },
     });
-  });
+  }, { keypad: true });
+  price.classList.add('row-big');
   if (off) price.classList.add('price-row-off');
   box.appendChild(price);
 
@@ -1059,8 +1093,9 @@ function buildReadouts(bid, stack, solved, markup) {
   const at = BidMath.atYourRate(stack, s.rateCents, solved.rateCents);
   box.appendChild(priceNote('Labor on the bid: ' + pricePlural(stack.bidHours, 'hr', 'hrs') + ' × '
     + moneyText(solved.rateCents) + ' = ' + moneyText(at.bidLaborCents) + '.'));
-  box.appendChild(priceNote('At your ' + moneyText(s.rateCents) + ' rate this labor would be '
-    + moneyText(at.atRateCents) + '. This bid has ' + moneyText(at.bidLaborCents) + '.'));
+  box.appendChild(whatsThis('At your ' + moneyText(s.rateCents) + ' rate this labor would be '
+    + moneyText(at.atRateCents) + '. This bid has ' + moneyText(at.bidLaborCents) + '.',
+  'Against your usual rate'));
 
   const top = priceTopItems(bid);
   if (top.length) {
@@ -1087,17 +1122,8 @@ function renderPrice() {
     return;
   }
 
-  const head = document.createElement('div');
-  head.className = 'screen-head';
-  const title = document.createElement('div');
-  title.className = 'screen-head-title';
-  title.textContent = bid.title || 'No title yet';
-  head.appendChild(title);
-  const cust = document.createElement('div');
-  cust.className = 'screen-head-cust';
-  cust.textContent = bidCustomerName(bid, state.data);
-  head.appendChild(cust);
-  host.appendChild(head);
+  host.appendChild(stepStrip(bid, state.data.settings, 'price'));
+  host.appendChild(screenHead(bid.title || 'No title yet', bidCustomerName(bid, state.data)));
 
   // ONE reading of the bid, handed to every card. Two costStack calls in one
   // render could straddle a mutation and put two different jobs on the screen
@@ -1127,10 +1153,7 @@ function renderPrice() {
   host.appendChild(buildHandles(bid, stack, solved));
   host.appendChild(buildReadouts(bid, stack, solved, markup));
 
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  nav.appendChild(textButton('Next: Proposal →', 'btn btn-block', () => show('proposal', bid.id)));
-  host.appendChild(nav);
+  pinnedBar(host, 'Next: Proposal', () => show('proposal', bid.id));
 }
 
 registerScreen('price', {
