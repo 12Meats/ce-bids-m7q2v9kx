@@ -1015,7 +1015,9 @@ function buildSetCatalogRow(box, p) {
     ['Rename', '', () => {
       settingsPromptText(p.name, 'Part name', '3/4" EMT', line, { required: true }, (text) => {
         const prev = p.name;
-        p.name = text;
+        // Same rule as adding one: what the iOS keyboard turned into a curly
+        // quote is stored straight, or the search for 1" EMT stops finding it.
+        p.name = Catalog.straighten(text);
         settingsSaveAndRender(() => { p.name = prev; });
       });
     }],

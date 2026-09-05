@@ -113,3 +113,102 @@ test('fitWithin: anything that is not a size answers zero', () => {
   }
   assert.deepEqual(C.fitWithin(4000, 3000, 0), { w: 0, h: 0, scale: 0 });
 });
+
+// ---------------------------------------------------------------------------
+// straighten / normalizeName — the iOS quote bug
+// ---------------------------------------------------------------------------
+
+test('normalizeName: curly quotes are the same characters as straight ones', () => {
+  assert.equal(C.normalizeName('1” S.S. conduit'), '1" s.s. conduit');
+  assert.equal(C.normalizeName('1″ EMT'), '1" emt');       // ″ double prime
+  assert.equal(C.normalizeName('Andy’s spool'), "andy's spool");
+  // Whitespace is collapsed and trimmed, so a stray double space never hides a
+  // part from its own name.
+  assert.equal(C.normalizeName('  3/4"   EMT '), '3/4" emt');
+});
+
+test('straighten: keeps his capitals, fixes only the quotes and the spacing', () => {
+  assert.equal(C.straighten('1” S.S. conduit'), '1" S.S. conduit');
+  assert.equal(C.straighten('  LB  3/4”  '), 'LB 3/4"');
+  assert.equal(C.straighten(null), '');
+  assert.equal(C.straighten(42), '42');
+});
+
+test('matches: a curly-quote query finds the straight-quote part', () => {
+  const cat = [part('conduit', '1" S.S. conduit'), part('conduit', '3/4" EMT')];
+  assert.deepEqual(names(C.matches(cat, { query: '1”' })), ['1" S.S. conduit']);
+  // And the other way round: a part saved with a curly quote is still found by
+  // the straight one an old bid was written with.
+  const curly = [part('conduit', '1” S.S. conduit')];
+  assert.deepEqual(names(C.matches(curly, { query: '1"' })), ['1” S.S. conduit']);
+});
+
+test('matches: "1 in" is 1", and "10 ft" is 10\'', () => {
+  const cat = [part('conduit', '1" S.S. conduit'), part('conduit', '3/4" EMT'), part('gear', "10' whip")];
+  ['1 in', '1in', '1-in', '1 IN'].forEach((q) => {
+    assert.deepEqual(names(C.matches(cat, { query: q })), ['1" S.S. conduit'], q);
+  });
+  assert.deepEqual(names(C.matches(cat, { query: '3/4in emt' })), ['3/4" EMT']);
+  assert.deepEqual(names(C.matches(cat, { query: '10 ft' })), ["10' whip"]);
+  // A word that merely starts with "in" is not an inch mark.
+  assert.deepEqual(names(C.matches([part('gear', 'Inline fuse')], { query: 'inline' })), ['Inline fuse']);
+});
+
+// ---------------------------------------------------------------------------
+// sizeKey — the order the parts sit on the rack
+// ---------------------------------------------------------------------------
+
+test('sizeKey: reads a trade size off the front of a name', () => {
+  assert.equal(C.sizeKey('1/2" EMT'), 0.5);
+  assert.equal(C.sizeKey('3/4" EMT'), 0.75);
+  assert.equal(C.sizeKey('1" EMT'), 1);
+  assert.equal(C.sizeKey('1-1/4" EMT'), 1.25);
+  assert.equal(C.sizeKey('1 1/4" EMT'), 1.25);
+  assert.equal(C.sizeKey('2" rigid'), 2);
+  assert.equal(C.sizeKey('1” S.S. conduit'), 1);   // the curly one too
+  assert.equal(C.sizeKey('1 in EMT'), 1);
+});
+
+test('sizeKey: wire gauges climb from #14 to 4/0', () => {
+  const wire = ['#14 THHN', '#12 THHN', '#10 THHN', '#8 THHN', '#6 THHN', '#4 THHN', '#2 THHN',
+    '#1 THHN', '1/0 THHN', '2/0 THHN', '4/0 THHN'];
+  const keys = wire.map(C.sizeKey);
+  keys.forEach((k, i) => { if (i) assert.ok(k > keys[i - 1], wire[i] + ' is bigger than ' + wire[i - 1]); });
+  assert.equal(C.sizeKey('#12 THHN'), 988);
+  assert.equal(C.sizeKey('4/0 THHN'), 1004);
+});
+
+test('sizeKey: a name with no size in front of it has no key', () => {
+  ['J-box 4x4', 'Contactor', 'LED high bay', '20 A breaker', 'Cat6', 'T8 LED tube']
+    .forEach((n) => assert.equal(C.sizeKey(n), null, n));
+  // A cable configuration is not a fraction of an inch: the inch mark is what
+  // makes a fraction a trade size.
+  assert.equal(C.sizeKey('10/4 SO cord'), null);
+  assert.equal(C.sizeKey('12/4 SO cord'), null);
+});
+
+test('matches: a category browses in trade-size order, history still first', () => {
+  const conduit = [
+    part('conduit', '1-1/4" EMT'),
+    part('conduit', '1/2" EMT'),
+    part('conduit', '2" rigid'),
+    part('conduit', '3/4" EMT'),
+    part('conduit', '1" EMT'),
+    part('conduit', 'Strut'),
+  ];
+  assert.deepEqual(names(C.matches(conduit, { category: 'conduit' })),
+    ['1/2" EMT', '3/4" EMT', '1" EMT', '1-1/4" EMT', '2" rigid', 'Strut']);
+
+  // His history still outranks the rack: the one he uses is on top.
+  const used = conduit.slice();
+  used[2] = part('conduit', '2" rigid', { uses: 11 });
+  assert.deepEqual(names(C.matches(used, { category: 'conduit' })),
+    ['2" rigid', '1/2" EMT', '3/4" EMT', '1" EMT', '1-1/4" EMT', 'Strut']);
+});
+
+test('matches: wire browses by gauge, smallest to biggest', () => {
+  const wire = ['4/0 THHN', '#10 THHN', '1/0 THHN', '#2 THHN', '#14 THHN', 'Cat6', '#12 THHN']
+    .map((n) => part('wire', n));
+  assert.deepEqual(names(C.matches(wire, { category: 'wire' })),
+    ['#14 THHN', '#12 THHN', '#10 THHN', '#2 THHN', '1/0 THHN', '4/0 THHN', 'Cat6']);
+});

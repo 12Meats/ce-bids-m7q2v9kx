@@ -1,8 +1,12 @@
 // storage.js — persistence layer. UMD so node:test and the browser both load it.
+// Takes Catalog as its one dependency, for the single rule it shares with the
+// search: a part name is SAVED with straight quotes, so what the iOS keyboard
+// produced ("1” EMT") and what the seed list holds ("1\" EMT") are one part and
+// not two. index.html therefore loads catalog.js before this file.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.Store = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./catalog.js'));
+  else root.Store = factory(root.Catalog);
+})(typeof self !== 'undefined' ? self : this, function (Catalog) {
   'use strict';
 
   const KEY = 'ce-bids';
@@ -553,7 +557,10 @@
   }
   function addCatalogItem(d, { category, name, unit }) {
     const cat = CATALOG_CATEGORY.indexOf(category) !== -1 ? category : 'gear';
-    const nm = String(name || '');
+    // Straightened, never lowercased: his capitals are his, and a curly quote
+    // off the phone keyboard would otherwise make a second "1” EMT" that the
+    // search for 1" EMT never finds.
+    const nm = Catalog.straighten(name);
     if (!nm) return null;
     const un = String(unit || '');
     const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, uses: 0, hidden: false };

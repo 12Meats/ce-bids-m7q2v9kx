@@ -228,6 +228,17 @@ test('addCatalogItem: clamps category, coerces name/unit, rejects empty name', (
   const empty = S.addCatalogItem(d, { category: 'conduit', name: '', unit: 'ft' });
   assert.strictEqual(empty, null);
 });
+test('addCatalogItem: a name typed on the phone is saved with straight quotes', () => {
+  // iOS turns " into ” as he types it. Saved raw, the part he adds standing in
+  // the plant is a part the search for 1" S.S. conduit never finds again.
+  const d = S.emptyData();
+  const p = S.addCatalogItem(d, { category: 'conduit', name: ' 1” S.S.  conduit ', unit: 'ft' });
+  assert.strictEqual(p.name, '1" S.S. conduit');
+  // Capitals are his and are left exactly as typed.
+  assert.strictEqual(S.addCatalogItem(d, { category: 'gear', name: 'VFD ’24', unit: 'ea' }).name, "VFD '24");
+  // Whitespace alone is still not a name.
+  assert.strictEqual(S.addCatalogItem(d, { category: 'conduit', name: '   ', unit: 'ft' }), null);
+});
 test('newTool: builds a full equipment entry, pushes it, and the document still validates', () => {
   const d = S.emptyData();
   const before = d.settings.equipment.length;

@@ -1522,11 +1522,13 @@
        stores, then the UI helpers, then the shell. Each screen registers itself with
        the shell, so every screen script must come after app.js. -->
   <script src="bidmath.js"></script>
+  <!-- catalog.js before storage.js: Store.addCatalogItem straightens a part
+       name through Catalog, so the module has to exist when storage.js runs. -->
+  <script src="catalog.js"></script>
   <script src="storage.js"></script>
   <script src="docmodel.js"></script>
   <script src="keypad.js"></script>
   <script src="dates.js"></script>
-  <script src="catalog.js"></script>
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="vendor/jspdf.plugin.autotable.min.js"></script>
   <script src="photos.js"></script>
