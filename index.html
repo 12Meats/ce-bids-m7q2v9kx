@@ -843,6 +843,17 @@
     }
     /* "Which area?" hangs under the row that asked it, indented and tinted so
        it reads as part of that row and not as the next one. */
+    /* The answered rows folded into one line. Left-aligned and wrapping,
+       because it is a list of words rather than a button label. */
+    .walk-forget-fold {
+      text-align: left;
+      line-height: 1.35;
+      padding: var(--space-1) 0;
+      color: var(--color-text-muted);
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
     .walk-forget-areas {
       padding: var(--space-2) 0 var(--space-2) var(--space-2);
       margin-bottom: var(--space-2);
@@ -875,15 +886,18 @@
        full-size target, not a 44px afterthought. */
     .labor-warn-actions .btn { min-height: 56px; padding: 0 18px; }
 
-    /* A real row that goes somewhere, not grey text: it opens a confirmation
-       and then a keypad, and it changes every bid in the file. */
-    .labor-hpd .row-value { color: var(--color-accent); font-weight: 700; }
-    .labor-hpd-chevron {
-      padding-left: 8px;
-      font-size: 1.2rem;
-      font-weight: 700;
-      color: var(--color-accent);
-    }
+    /* The one number this screen exists to produce, in the biggest type on it
+       and above the controls that change it. */
+    .labor-big { text-align: center; }
+    .labor-big-line { font-size: var(--font-xl); font-weight: 800; line-height: 1.15; }
+
+    /* Hours per day is a SETTINGS value that happens to be reachable here. It
+       used to be the only chevron on the screen, which made the one thing that
+       changes every bid in the file look like the main road through this one.
+       Now it reads as the fact it is, with a small Change beside it. */
+    .labor-hpd { display: flex; align-items: baseline; gap: var(--space-1); flex-wrap: wrap; }
+    .labor-hpd-text { flex: 1 1 60%; min-width: 0; color: var(--color-text-muted); font-size: 0.95rem; line-height: 1.35; }
+    .labor-hpd-change { flex: 0 0 auto; width: auto; margin-top: 0; padding: 0 8px; }
 
     .labor-task-actions { display: flex; margin-top: var(--space-2); }
     .labor-task-actions .btn { flex: 1; min-height: 48px; }

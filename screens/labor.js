@@ -234,15 +234,52 @@ function buildReadout(bid, real) {
   return box;
 }
 
-// The row that decides what "a day" means everywhere in the app. It lives here
-// because this is the screen where the answer matters, but it is a Settings
-// value: it re-figures the hours, and therefore the price, on every bid in the
-// file — including ones already in a customer's inbox. So it asks EVERY time,
-// not once a session: the second change of the day is exactly as far-reaching
-// as the first, and a screen that stops asking has stopped telling the truth.
+// The sentence he already says out loud, at the top of the screen and in the
+// biggest type on it: "2 guys × 3 days = 48 hrs". The hours were only ever in
+// a readout below the fold, so the one number this screen exists to produce
+// was the one thing it never showed him.
+//
+// Once the job is split into tasks there is no single crew and no single day
+// count to say it with — the tasks each have their own — so what stays is the
+// number itself, which is still the answer to the same question.
+function buildLaborBigNumber(edit, real) {
+  const box = card();
+  box.classList.add('labor-big');
+
+  const big = document.createElement('div');
+  big.className = 'labor-big-line';
+  const labor = edit.labor;
+  big.textContent = (labor.tasks === null)
+    ? crewDaysText((labor.crewIds || []).length, labor.days, real.hours)
+    : laborPlural(real.hours, 'hr', 'hrs');
+  box.appendChild(big);
+
+  if (labor.tasks !== null) box.appendChild(caption('Across ' + laborPlural(labor.tasks.length, 'task', 'tasks') + '.'));
+  return box;
+}
+
+// What "a day" means everywhere in the app. It lives on this screen because
+// this is where the answer matters, but it is a SETTINGS value: it re-figures
+// the hours, and therefore the price, on every bid in the file — including
+// ones already in a customer's inbox. So it asks EVERY time, not once a
+// session.
+//
+// And it is deliberately quiet now. It used to be the only chevron on the
+// screen, which made the one global setting here look like the main road
+// through it: he tapped it looking for this bid's hours. It reads as the fact
+// it is, with a small Change beside it, and the every-bid confirm is unchanged.
 function buildHoursPerDayRow() {
   const box = card();
-  const line = row('Hours per day', laborPlural(laborHoursPerDay(), 'hour', 'hours'), async () => {
+  const line = document.createElement('div');
+  line.className = 'labor-hpd';
+
+  const text = document.createElement('span');
+  text.className = 'labor-hpd-text';
+  text.textContent = 'A work day is ' + laborPlural(laborHoursPerDay(), 'hour', 'hours')
+    + '. Changes every bid, not just this one.';
+  line.appendChild(text);
+
+  line.appendChild(textButton('Change', 'link-btn labor-hpd-change', async () => {
     const ok = await confirmPanel(
       'Change hours per day? This re-figures the hours and price on EVERY bid, including ones already sent.'
     );
@@ -263,17 +300,9 @@ function buildHoursPerDayRow() {
         render();
       },
     });
-  });
-  line.classList.add('labor-hpd');
-
-  const chevron = document.createElement('span');
-  chevron.className = 'labor-hpd-chevron';
-  chevron.textContent = '›';
-  chevron.setAttribute('aria-hidden', 'true');
-  line.appendChild(chevron);
+  }));
 
   box.appendChild(line);
-  box.appendChild(caption('Changes every bid, not just this one.'));
   return box;
 }
 
@@ -518,6 +547,10 @@ function renderLabor() {
   // task just as easily as on the bid's own line, and it is under-pricing the
   // job — and blocking every save — either way.
   if (real.unknownCrewIds.length) host.appendChild(laborUnknownWarn(edit, real.unknownCrewIds));
+
+  // Before the controls, not after them: the answer he came for goes at the
+  // top, and the crew chips and the day count under it are how he changes it.
+  host.appendChild(buildLaborBigNumber(edit, real));
 
   // The crew/days pair is the single line. Once it has been split, the tasks
   // own both, and showing a second set here would be two answers to the same

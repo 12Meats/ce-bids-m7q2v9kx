@@ -126,18 +126,46 @@ function bidsDuplicate(id) {
   show('bid', copy.id);
 }
 
-// Drafts only: a bid that has been sent is a record of what a customer was
-// told, and the app does not offer to erase that.
+// Which bids offer Delete at all.
+//
+// It used to be drafts only, on the reasoning that a sent bid is a record of
+// what a customer was told. But he types bids in a truck and mis-types some of
+// them, and a wrong number that has been emailed is exactly the one he most
+// wants off the list — the app hid the button and said nothing about why, so
+// the list filled up with bids he had already decided were dead.
+//
+// The one thing that really cannot be deleted is WORK. A won or complete bid
+// whose job holds hours, surprises or change orders is the only place that
+// work is written down, and no confirm makes that safe to throw away. Those
+// keep the button hidden; a won bid with a bare job does not.
+function bidsCanDelete(bid) {
+  if (!bid) return false;
+  if (bid.status === 'won' || bid.status === 'complete') return Store.jobIsEmpty(bid.job);
+  return true;
+}
+
+// The confirm names the STATUS, because that is the thing he needs to weigh:
+// deleting a draft is housekeeping and deleting a sent one is not. What it
+// will not do is pretend the delete reaches the customer — the PDF is in
+// somebody's inbox and nothing on this phone can take it back, so a bid that
+// has actually gone out says so.
+function bidsDeleteConfirmText(bid) {
+  const label = (STATUS_LABELS[bid.status] || bid.status || '').toUpperCase();
+  return 'Delete this ' + label + ' bid? '
+    + (bid.sentAt ? "The customer's copy is not affected. " : '')
+    + "This can't be undone.";
+}
+
 async function bidsDelete(id) {
   const bid = state.data.bids.find((b) => b.id === id);
-  if (!bid || bid.status !== 'draft') return;
+  if (!bidsCanDelete(bid)) return;
   bidsMenuId = null;
 
-  const ok = await confirmPanel(
-    `Delete bid #${bid.number} for ${bidCustomerName(bid, state.data)}? This can't be undone.`,
-    { ok: 'Delete', danger: true }
-  );
+  const ok = await confirmPanel(bidsDeleteConfirmText(bid), { ok: 'Delete', danger: true });
   if (!ok) { render(); return; }
+  // Asked again after the question: a job that filled up while the panel was
+  // open is a job this must not take with it.
+  if (!bidsCanDelete(state.data.bids.find((b) => b.id === id))) { render(); return; }
 
   // The document goes FIRST and the blobs only once it is really off disk.
   // A refused save with the photos already deleted is the one outcome there is
@@ -194,6 +222,15 @@ function bidRow(bid) {
   price.textContent = bidPriceText(bid, state.data);
   line2.appendChild(price);
   line2.appendChild(statusPill(bid.status));
+  // The day the bid is dated. Without it the list is a wall of names and
+  // prices with nothing to place them in time, and "the UDA one" is a bid he
+  // wrote in March and a bid he wrote last week. Before the number, not after
+  // it: the number is pinned to the right edge, and a date pushed past it
+  // wraps onto a second line on half the rows.
+  const when = document.createElement('span');
+  when.className = 'bid-when';
+  when.textContent = fmtDate(bid.dateISO);
+  line2.appendChild(when);
   const num = document.createElement('span');
   num.className = 'bid-number';
   num.textContent = '#' + bid.number;
@@ -235,10 +272,12 @@ function bidRow(bid) {
     const actions = document.createElement('div');
     actions.className = 'bid-actions';
     actions.appendChild(textButton('Duplicate', 'btn', () => bidsDuplicate(bid.id)));
-    if (bid.status === 'draft') {
+    if (bidsCanDelete(bid)) {
       actions.appendChild(textButton('Delete', 'btn btn-danger-outline', () => bidsDelete(bid.id)));
     }
-    actions.appendChild(textButton('Cancel', 'btn', () => { bidsMenuId = null; bidsRefreshList(); }));
+    // "Close", not "Cancel". In a menu that has Delete in it, Cancel reads as
+    // "cancel the bid" — he thought it was the button that killed a job.
+    actions.appendChild(textButton('Close', 'btn', () => { bidsMenuId = null; bidsRefreshList(); }));
     wrap.appendChild(actions);
   }
 

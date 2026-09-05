@@ -247,20 +247,26 @@ function buildHoursCard(bid, actuals, done) {
 // SURPRISES
 // ---------------------------------------------------------------------------
 
-// Amount first, then what it was. The money is the thing he is holding the
-// receipt for; the note is what makes it mean something in November.
+// What happened, THEN what it cost. That is the order he says it in — "we hit
+// a ten-inch wall, cost me a bit" — and it is the order every other add in the
+// app asks in (a change order is named first, a rental is named first). Asking
+// for the money first made this the one flow that started with a number and no
+// idea what the number was for.
+//
+// Cancel at either panel adds nothing: the note alone is not a surprise, and
+// nothing is pushed until both answers are in.
 function jobAddSurprise(bid) {
-  promptMoney(null, {
-    label: 'What did it cost?',
-    done: (cents) => {
-      if (cents === null) return;
-      // A $0 surprise is nothing to record, but dropping it in silence looks
-      // like the app lost the entry. Say what happened.
-      if (cents === 0) { showBanner('Nothing added'); render(); return; }
-      promptText('', {
-        label: 'What happened?',
-        placeholder: 'Ten-inch wall, new bit',
-        done: (note) => {
+  promptText('', {
+    label: 'What happened?',
+    placeholder: 'Ten-inch wall, new bit',
+    done: (note) => {
+      promptMoney(null, {
+        label: 'What did it cost?',
+        done: (cents) => {
+          if (cents === null) return;
+          // A $0 surprise is nothing to record, but dropping it in silence
+          // looks like the app lost the entry. Say what happened.
+          if (cents === 0) { showBanner('Nothing added'); render(); return; }
           const job = bid.job;
           const item = { cents, note, at: Store.todayISO() };
           job.surprises.push(item);

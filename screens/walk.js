@@ -66,6 +66,7 @@ let walkItemMenu = null;         // the item object showing its action row
 let walkSheet = null;            // { kind: 'rentEquip' | 'equip', from: 'add' | 'forget' }
 let walkForgetRow = null;        // the forget-list row a placeholder flow is answering
 let walkForgetPick = null;       // the forget-list row showing its "Which area?" chips
+let walkForgetOpen = false;      // the answered rows, unfolded from their one line
 let walkHighlightItem = null;    // the item flashed for a second after it was added
 let walkPhotoOpenId = null;      // the photo showing full-size
 let walkPhotoUrls = [];          // object URLs handed out by the last render
@@ -92,6 +93,7 @@ function walkClearTransient() {
   walkSheet = null;
   walkForgetRow = null;
   walkForgetPick = null;
+  walkForgetOpen = false;
   walkHighlightItem = null;
   walkPhotoOpenId = null;
 }
@@ -1206,46 +1208,72 @@ function walkAfterPlaceholder(from, forgetRow, message) {
 // question back — because "No" said by a thumb is not a decision he should
 // have to live with.
 
+// One row of the checklist, question or answer. Both shapes are built here so
+// the answered ones look like the same row folded, not like a different list.
+function buildForgetRow(box, bid, name, answered) {
+  const line = document.createElement('div');
+  line.className = 'walk-forget';
+
+  const label = document.createElement('span');
+  label.className = 'walk-forget-label';
+  label.textContent = name;
+  line.appendChild(label);
+
+  if (answered) {
+    // A real button, not a glyph: the answer is a thing he can change, and
+    // the only way he finds that out is if it takes a tap.
+    const tick = textButton('✓ Answered', 'btn walk-forget-tick', () => walkForgetUnanswer(bid, name));
+    tick.setAttribute('aria-label', 'Answered · tap to ask again');
+    tick.title = 'Answered · tap to ask again';
+    line.appendChild(tick);
+  } else {
+    const acts = document.createElement('div');
+    acts.className = 'walk-forget-actions';
+    acts.appendChild(textButton('No', 'btn', () => {
+      const undo = walkForgetMark(bid, name, 'no');
+      persistOr(undo);
+      walkForgetPick = null;
+      render();
+    }));
+    acts.appendChild(textButton('Add it', 'btn btn-primary', () => walkForgetAdd(bid, name)));
+    line.appendChild(acts);
+  }
+
+  box.appendChild(line);
+
+  // "Which area?" — only up while this row is asking it.
+  if (walkForgetPick === name) box.appendChild(buildForgetAreaPicker(bid, name));
+}
+
+// The questions still open, then everything he has already answered folded
+// into ONE line at the bottom. Seven checkmarks filled half the walk and
+// pushed the two rows he had not answered yet off the screen — the card is a
+// list of what is left, and the answers are the receipt underneath it.
+//
+// The fold is a button, and its own label says so. Tapping it opens the rows,
+// each still tappable, so undoing an answer is two taps rather than hidden.
 function buildForgetCard(bid) {
   const list = state.data.settings.forgetList || [];
   if (list.length === 0) return null;
 
   const box = card('Did you forget?');
-  list.forEach((name) => {
-    const line = document.createElement('div');
-    line.className = 'walk-forget';
-
-    const label = document.createElement('span');
-    label.className = 'walk-forget-label';
-    label.textContent = name;
-    line.appendChild(label);
-
-    const answer = walkForgetAnswerOf(bid, name);
-    if (answer === 'no' || answer === 'added') {
-      // A real button, not a glyph: the answer is a thing he can change, and
-      // the only way he finds that out is if it takes a tap.
-      const tick = textButton('✓ Answered', 'btn walk-forget-tick', () => walkForgetUnanswer(bid, name));
-      tick.setAttribute('aria-label', 'Answered · tap to ask again');
-      tick.title = 'Answered · tap to ask again';
-      line.appendChild(tick);
-    } else {
-      const acts = document.createElement('div');
-      acts.className = 'walk-forget-actions';
-      acts.appendChild(textButton('No', 'btn', () => {
-        const undo = walkForgetMark(bid, name, 'no');
-        persistOr(undo);
-        walkForgetPick = null;
-        render();
-      }));
-      acts.appendChild(textButton('Add it', 'btn btn-primary', () => walkForgetAdd(bid, name)));
-      line.appendChild(acts);
-    }
-
-    box.appendChild(line);
-
-    // "Which area?" — only up while this row is asking it.
-    if (walkForgetPick === name) box.appendChild(buildForgetAreaPicker(bid, name));
+  const answered = list.filter((name) => {
+    const a = walkForgetAnswerOf(bid, name);
+    return a === 'no' || a === 'added';
   });
+  const open = list.filter((name) => answered.indexOf(name) === -1);
+
+  if (open.length === 0 && answered.length) box.appendChild(emptyNote('All answered.'));
+  open.forEach((name) => buildForgetRow(box, bid, name, false));
+
+  if (answered.length === 0) return box;
+
+  box.appendChild(textButton(
+    'Answered: ' + answered.join(', ') + (walkForgetOpen ? ' · tap to fold up' : ' · tap to change'),
+    'link-btn walk-forget-fold',
+    () => { walkForgetOpen = !walkForgetOpen; walkForgetPick = null; render(); }
+  ));
+  if (walkForgetOpen) answered.forEach((name) => buildForgetRow(box, bid, name, true));
   return box;
 }
 

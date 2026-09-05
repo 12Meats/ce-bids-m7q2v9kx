@@ -260,6 +260,12 @@ function renderBidHeader(bid, host) {
     }
     render();
   }));
+  // Three words on a pill are not an explanation of what leaves the office.
+  // The line says what the button he is looking at actually puts on the
+  // paper, and it changes as he taps — which is how he finds out that
+  // "Scope & price" is the one that takes the line items away. The wording is
+  // ui.js's, shared with anywhere else these three ever appear.
+  host.appendChild(caption(detailCaption(cur.detail)));
 
   // --- The way out ---
   const actions = document.createElement('div');
