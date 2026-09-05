@@ -33,7 +33,9 @@ Then tap **Settings** at the bottom and go through these, in this order:
 ## Your first bid
 
 1. On the **Bids** tab, tap **+ New bid**. Put in the customer, a title, the date, and tap **Service** or **Project**. Tap **Start the walk →**.
-2. **The walk.** Add an area, like a room or a panel. Tap **+ Item**, then tap a tile or use the **search box at the top**. Type it however you say it: **1"** and **1 in** find the same part. Tap **Photos** to shoot pictures into that area. Before you leave, open **Did you forget?** and answer it. Tap **Next: Labor →**.
+2. **The walk.** Add an area, like a room or a panel. Tap **+ Item**, then tap a tile or use the **search box at the top**. Type it however you say it: **1"** and **1 in** find the same part. Tap **Photos** to shoot pictures into that area. Tap **Notes** to write down what you saw in that room, or hold the **mic** key and say it. Those notes are yours: they never go on the customer's paper. Before you leave, answer **Anything missing?**. Tap **Next: Labor →**.
+
+   Ask the plant before you price it: are we live or shut down, and what runs while it's down? Generators and after-hours work go on the bid.
 
    A **rental** is entered as the **total**, not a price per day. A lift at $285 for the week is $285; the days are just what goes on the paper.
 3. **Labor.** Pick who is on the job and how many days. Different pieces? Tap **Split into tasks** and give each its own crew and days. Tap **Costs & price**.
