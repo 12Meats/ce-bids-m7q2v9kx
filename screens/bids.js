@@ -86,7 +86,15 @@ function buildNudges() {
   if (backupAge === null && state.data.bids.length > 0) parts.push('no backup yet');
   if (backupAge !== null && backupAge > NUDGE_DAYS) parts.push(`last backup ${backupAge} days ago`);
   if (parts.length) {
-    wrap.appendChild(nudgeBand(parts.join(' · ') + ' — Settings › Backup', 'danger', () => show('settings')));
+    // A sentence with somewhere to go, not a breadcrumb. "no backup yet -
+    // Settings > Backup" told him where the screen was; what he needed was
+    // that the band itself is the way there.
+    const said = parts.join(' · ');
+    const sentence = said.charAt(0).toUpperCase() + said.slice(1);
+    const tail = backupAge === null || backupAge > NUDGE_DAYS
+      ? ' Tap here to send one.'
+      : ' Tap here to file them.';
+    wrap.appendChild(nudgeBand(sentence + '.' + tail, 'danger', () => show('settings')));
   }
 
   return wrap;
@@ -283,16 +291,17 @@ function bidRow(bid) {
   wrap.appendChild(more);
 
   if (bidsMenuId === bid.id) {
-    const actions = document.createElement('div');
-    actions.className = 'bid-actions';
-    actions.appendChild(textButton('Duplicate', 'btn', () => bidsDuplicate(bid.id)));
-    if (bidsCanDelete(bid)) {
-      actions.appendChild(textButton('Delete', 'btn btn-danger-outline', () => bidsDelete(bid.id)));
-    }
     // "Close", not "Cancel". In a menu that has Delete in it, Cancel reads as
-    // "cancel the bid" — he thought it was the button that killed a job.
-    actions.appendChild(textButton('Close', 'btn', () => { bidsMenuId = null; bidsRefreshList(); }));
-    wrap.appendChild(actions);
+    // "cancel the bid" - he thought it was the button that killed a job.
+    wrap.appendChild(attachedStrip(null, [
+      { label: 'Duplicate', onTap: () => bidsDuplicate(bid.id) },
+      bidsCanDelete(bid)
+        ? { label: 'Delete', cls: 'btn-danger-outline', onTap: () => bidsDelete(bid.id) }
+        : null,
+    ], {
+      cancelLabel: 'Close',
+      cancel: () => { bidsMenuId = null; bidsRefreshList(); },
+    }));
   }
 
   return wrap;
@@ -304,7 +313,7 @@ function renderBidsList(host) {
   const all = bidsSorted();
   if (all.length === 0) {
     const box = card();
-    box.appendChild(emptyNote('No bids yet — tap + New bid to start your first walk.'));
+    box.appendChild(emptyNote('No bids yet. Tap + New bid to start your first walk.'));
     host.appendChild(box);
     return;
   }
@@ -366,15 +375,7 @@ function renderBids() {
 
   // Pinned above the tab bar rather than appended after the list: on a phone
   // with thirty bids, the one button the owner needs must not be a scroll away.
-  const bar = document.createElement('div');
-  bar.className = 'bids-newbar';
-  const newBtn = document.createElement('button');
-  newBtn.type = 'button';
-  newBtn.className = 'btn btn-primary btn-block';
-  newBtn.textContent = '+ New bid';
-  newBtn.addEventListener('click', () => show('bid', null));
-  bar.appendChild(newBtn);
-  host.appendChild(bar);
+  pinnedBar(host, '+ New bid', () => show('bid', null));
 }
 
 registerScreen('bids', { id: 'screen-bids', title: 'Bids', back: null, tab: 'bids', render: renderBids });

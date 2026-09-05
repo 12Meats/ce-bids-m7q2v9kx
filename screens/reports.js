@@ -423,7 +423,7 @@ function buildHourCostCard() {
   box.appendChild(caption('At the ' + pctText(settings.marginPct) + ' margin in Settings. Your rate there is '
     + moneyText(settings.rateCents) + '.'));
 
-  const btn = textButton(reportsBusy ? 'Making the page…' : 'Make the page', 'btn btn-primary btn-block',
+  const btn = textButton(reportsBusy ? 'Making the page…' : 'Make the one-page cost sheet', 'btn btn-primary btn-block',
     () => reportsMakeHourCost());
   if (reportsBusy) {
     btn.disabled = true;

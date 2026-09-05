@@ -29,6 +29,10 @@ let bidShakeField = null;    // 'customer' | 'date' — shaken once after the ne
 // Entering the screen
 // ---------------------------------------------------------------------------
 
+// The two rows on the header form that open a number keypad. row()'s options
+// argument is the whole difference; naming it here keeps the form readable.
+function rowKeypad(label, value, onTap) { return row(label, value, onTap, { keypad: true }); }
+
 function newBidDraft() {
   return {
     customerName: '',
@@ -175,7 +179,7 @@ function renderBidHeader(bid, host) {
   }));
 
   // --- Bid number ---
-  box.appendChild(row('Bid #', '#' + cur.number, () => {
+  box.appendChild(rowKeypad('Bid #', '#' + cur.number, () => {
     promptNumber(cur.number, {
       label: 'Bid number',
       done: (v) => {
@@ -203,9 +207,9 @@ function renderBidHeader(bid, host) {
   }
 
   // --- Date ---
-  const dateRow = row('Date', fmtDate(cur.dateISO), () => {
+  const dateRow = rowKeypad('Date', fmtDate(cur.dateISO), () => {
     promptNumber(null, {
-      label: 'Date — type 915 for Sep 15, or 91526',
+      label: 'Date: type 915 for Sep 15, or 91526',
       // Six digits is the whole vocabulary; a seventh is a fat-fingered tap.
       maxChars: 6,
       // The panel would otherwise say "was not set" for a date that is always
@@ -385,23 +389,15 @@ async function bidUndoWon(bid) {
 }
 
 function renderBidScreen(bid, host) {
+  // Where he is in the bid, and a way straight to any of the four. No step is
+  // current here: this screen is the hub the four hang off, not one of them.
+  host.appendChild(stepStrip(bid, state.data.settings, null));
+
   // --- Summary ---
   const box = card();
 
-  const name = document.createElement('div');
-  name.className = 'bid-head-name';
-  name.textContent = bidCustomerName(bid, state.data);
-  box.appendChild(name);
-
-  const title = document.createElement('div');
-  title.className = 'bid-head-title';
-  title.textContent = bid.title || 'No title yet';
-  box.appendChild(title);
-
-  const price = document.createElement('div');
-  price.className = 'bid-head-price';
-  price.textContent = bidPriceText(bid, state.data);
-  box.appendChild(price);
+  box.appendChild(screenHead(bidCustomerName(bid, state.data), bid.title || 'No title yet'));
+  box.appendChild(bigNumber(bidPriceText(bid, state.data)));
 
   const meta = document.createElement('div');
   meta.className = 'bid-head-meta';
@@ -442,10 +438,9 @@ function renderBidScreen(bid, host) {
   if (bid.status === 'sent') {
     const ask = card('Did you get it?');
     if (bidLostSheetOpen) {
-      const reasons = document.createElement('div');
-      reasons.className = 'bid-nav';
+      const reasons = [];
       LOST_REASONS.forEach(([value, label]) => {
-        reasons.appendChild(textButton(label, 'btn btn-block', () => {
+        reasons.push({ label, onTap: () => {
           const prevStatus = bid.status;
           const prevReason = bid.lostReason;
           bid.status = 'lost';
@@ -460,14 +455,14 @@ function renderBidScreen(bid, host) {
             bidLostSheetOpen = true;
           });
           render();
-        }));
+        } });
       });
-      reasons.appendChild(textButton('Cancel', 'btn btn-block', () => {
-        bidLostSheetOpen = false;
-        render();
+      // The one shape every inline menu in this app wears. It used to be a
+      // column of block buttons ending in a Cancel that touched the next card.
+      ask.appendChild(attachedStrip(null, reasons, {
+        label: 'What happened?',
+        cancel: () => { bidLostSheetOpen = false; render(); },
       }));
-      ask.appendChild(fieldLabel('What happened?'));
-      ask.appendChild(reasons);
       // On an SE this card renders below the fold, behind the tab bar: tapping
       // Lost looked like nothing had happened. The question comes to him.
       revealAfterRender(ask);

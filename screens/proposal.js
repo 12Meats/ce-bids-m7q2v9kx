@@ -450,7 +450,9 @@ function buildNotes(bid) {
   // Not "under Terms": that block is called Notes & exclusions on Full and
   // Summary and Terms only on Scope & price, and the caption should not name
   // a heading the customer's copy might not have.
-  box.appendChild(caption('Tap one to put it on this bid. These print above the signature line.'));
+  box.appendChild((bid.notes || []).length === 0
+    ? emptyNote('Add notes and exclusions from the chips, or type your own.')
+    : caption('Tap one to put it on this bid. These print above the signature line.'));
   const chips = document.createElement('div');
   chips.className = 'prop-chips';
   proposalNoteChips(bid).forEach((phrase) => {
@@ -540,10 +542,13 @@ function proposalClauseGroup(bid, title, list) {
   const on = list.filter((c) => proposalClauseIds(bid).indexOf(c.id) !== -1).length;
   const n = document.createElement('span');
   n.className = 'prop-group-count';
-  n.textContent = on + ' of ' + list.length;
+  // "19 of 19" is a fraction to work out; "19 on" is the answer. And the
+  // control says what it does rather than what state it names: "None" read as
+  // a label for the group rather than as a button that empties it.
+  n.textContent = on + ' on ·';
   head.appendChild(n);
   const allOn = on === list.length;
-  head.appendChild(textButton(allOn ? 'None' : 'All', 'link-btn', () => {
+  head.appendChild(textButton(allOn ? 'Turn all off' : 'Turn all on', 'link-btn', () => {
     const current = proposalClauseIds(bid);
     const ids = list.map((c) => c.id);
     proposalWriteClauses(bid, allOn
@@ -563,21 +568,29 @@ function buildClauses(bid) {
 
   box.appendChild(row('On this bid', count + ' clause' + (count === 1 ? '' : 's')));
 
-  if (!proposalClausesOpen) {
-    box.appendChild(textButton('Choose clauses', 'btn btn-block',
-      () => { proposalClausesOpen = true; proposalRevealClauses = true; render(); }));
-    return box;
-  }
+  const open = textButton('Choose clauses', 'btn btn-block',
+    () => { proposalClausesOpen = true; proposalRevealClauses = true; render(); });
+  box.appendChild(open);
+  if (!proposalClausesOpen) return box;
 
+  // The library hangs off the button that opened it, in the same shape every
+  // other inline menu in this app wears - indented past it, tied to it by the
+  // accent edge, with the way out at the bottom instead of a block button
+  // shoulder to shoulder with the next card.
+  const groups = document.createElement('div');
   const named = new Set(CLAUSE_GROUPS.map(([k]) => k));
   CLAUSE_GROUPS.forEach(([key, title]) => {
     const group = list.filter((c) => c.group === key);
-    if (group.length) box.appendChild(proposalClauseGroup(bid, title, group));
+    if (group.length) groups.appendChild(proposalClauseGroup(bid, title, group));
   });
   const other = list.filter((c) => !named.has(c.group));
-  if (other.length) box.appendChild(proposalClauseGroup(bid, 'Other', other));
+  if (other.length) groups.appendChild(proposalClauseGroup(bid, 'Other', other));
 
-  box.appendChild(textButton('Done', 'btn btn-block', () => { proposalClausesOpen = false; render(); }));
+  attachedStrip(open, [], {
+    content: groups,
+    cancelLabel: 'Done',
+    cancel: () => { proposalClausesOpen = false; render(); },
+  });
   // The groups open below the button he tapped, which on a small phone is
   // below the fold: the first group comes up to meet him. Once, on the render
   // that follows the tap — not again on every clause he ticks.
@@ -798,7 +811,7 @@ async function proposalAfterShare(bid, opts) {
   if (opts.askSent && (bid.status === 'draft' || bid.status === 'sent')) {
     markSent = await confirmPanel('Sent to the customer?', { ok: 'Yes', cancel: 'Not yet' });
   }
-  const markFiled = await confirmPanel('Saved to Files?', { ok: 'Yes', cancel: 'Not yet' });
+  const markFiled = await confirmPanel('Did you save a copy on the phone?', { ok: 'Yes', cancel: 'Not yet' });
   if (!markSent && !markFiled) { render(); return; }
 
   const prev = { status: bid.status, sentAt: bid.sentAt, savedToFilesAt: bid.savedToFilesAt };
@@ -993,19 +1006,13 @@ function buildEmail(bid, box) {
   box.appendChild(line);
 }
 
-function buildShare(bid) {
+function buildShare(bid, doc) {
   const box = card('Send it');
 
-  const shareBtn = textButton(
-    proposalBusy ? 'Making the PDF…' : 'Share proposal',
-    'btn btn-primary btn-block',
-    () => proposalShare(bid)
-  );
-  if (proposalBusy) {
-    shareBtn.disabled = true;
-    shareBtn.setAttribute('aria-busy', 'true');
-  }
-  box.appendChild(shareBtn);
+  // The one number on this screen: what the customer will read at the bottom
+  // of the page. Share itself is pinned above the tab bar, so this card is
+  // the total, the second way to keep a copy, and the address.
+  if (doc) box.appendChild(bigNumber(moneyText(doc.totalCents), 'what the proposal totals'));
 
   const saveBtn = textButton('Save to Files', 'btn btn-block', () => proposalSaveToFiles(bid));
   if (proposalBusy) saveBtn.disabled = true;
@@ -1082,17 +1089,9 @@ function renderProposal() {
     return;
   }
 
-  const head = document.createElement('div');
-  head.className = 'screen-head';
-  const title = document.createElement('div');
-  title.className = 'screen-head-title';
-  title.textContent = bid.title || 'No title yet';
-  head.appendChild(title);
-  const cust = document.createElement('div');
-  cust.className = 'screen-head-cust';
-  cust.textContent = bidCustomerName(bid, state.data) + ' · Bid #' + bid.number;
-  head.appendChild(cust);
-  host.appendChild(head);
+  host.appendChild(stepStrip(bid, state.data.settings, 'proposal'));
+  host.appendChild(screenHead(bid.title || 'No title yet',
+    bidCustomerName(bid, state.data) + ' · Bid #' + bid.number));
 
   // ONE reading of the bid, handed to the preview. Everything below edits the
   // bid and re-renders, so the document on screen is never older than the
@@ -1114,7 +1113,7 @@ function renderProposal() {
   // document to share, and that has to be said before the Share button rather
   // than under it.
   if (!doc) host.appendChild(inlineWarn("This bid can't be priced yet — check the Costs & price screen."));
-  host.appendChild(buildShare(bid));
+  host.appendChild(buildShare(bid, doc));
 
   host.appendChild(buildNotes(bid));
   if (bid.jobType === 'project' || proposalTermsOn) host.appendChild(buildClauses(bid));
@@ -1129,6 +1128,16 @@ function renderProposal() {
     toggle.setAttribute('aria-expanded', proposalPreviewOpen ? 'true' : 'false');
     host.appendChild(toggle);
     if (proposalPreviewOpen) host.appendChild(buildPreview(bid, doc));
+  }
+
+  // The one thing this screen is for, above the tab bar where thirty rows of
+  // clauses can never put it out of reach.
+  const shareBar = pinnedBar(host, proposalBusy ? 'Making the PDF…' : 'Share proposal',
+    () => proposalShare(bid));
+  if (proposalBusy) {
+    const btn = shareBar.querySelector('button');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
   }
 }
 

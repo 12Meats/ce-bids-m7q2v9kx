@@ -221,7 +221,7 @@ function buildHoursCard(bid, actuals, done) {
   // to collect read as a field that was not working. Clearing the keypad still
   // takes the week's row off the job, so nothing about what is stored changes.
   const line = row('Hours', entry ? numText(entry.hours) : '0',
-    done ? null : () => jobLogHours(bid, weekISO));
+    done ? null : () => jobLogHours(bid, weekISO), { keypad: true });
   line.classList.add('job-hours');
   box.appendChild(line);
 
@@ -323,12 +323,12 @@ function buildSurprisesCard(bid, done) {
         render();
       });
       box.appendChild(line);
-      box.appendChild(caption(fmtDate(item.at)));
+      const when = caption(fmtDate(item.at));
+      box.appendChild(when);
       if (jobSurpriseMenu === item) {
-        const acts = document.createElement('div');
-        acts.className = 'job-actions';
-        acts.appendChild(textButton('Delete', 'btn btn-danger-outline', () => jobDeleteSurprise(bid, item)));
-        box.appendChild(acts);
+        attachedStrip(when, [
+          { label: 'Delete', cls: 'btn-danger-outline', onTap: () => jobDeleteSurprise(bid, item) },
+        ], { cancel: () => { jobSurpriseMenu = null; render(); } });
       }
     });
   }
@@ -413,25 +413,23 @@ function buildChangeOrdersCard(bid, settings, done) {
       // Non-empty and still $0 is work with no money on it, which is the same
       // amber every other unpriced line on this bid gets.
       const empty = BidMath.changeOrderIsEmpty(co);
-      box.appendChild(row(co.name || 'Change order', empty ? 'Nothing on it yet' : moneyText(priceCents),
+      const coRow = row(co.name || 'Change order', empty ? 'Nothing on it yet' : moneyText(priceCents),
         done ? null : () => {
           jobCoMenu = jobCoMenu === co ? null : co;
           render();
-        }));
+        });
+      box.appendChild(coRow);
       if (!empty && !(priceCents > 0)) box.appendChild(unpricedWarn());
       if (jobCoMenu === co) {
-        const acts = document.createElement('div');
-        acts.className = 'job-actions';
         // The same two screens the bid itself uses, pointed at this change
         // order. Nothing about walking a room or picking a crew is written
         // twice in this app.
-        acts.appendChild(textButton('Scope', 'btn',
-          () => show('walk', { bidId: bid.id, changeOrderId: co.id })));
-        acts.appendChild(textButton('Labor', 'btn',
-          () => show('labor', { bidId: bid.id, changeOrderId: co.id })));
-        acts.appendChild(textButton('Rename', 'btn', () => jobRenameChangeOrder(bid, co)));
-        acts.appendChild(textButton('Delete', 'btn btn-danger-outline', () => jobDeleteChangeOrder(bid, co, settings)));
-        box.appendChild(acts);
+        attachedStrip(coRow, [
+          { label: 'Scope', onTap: () => show('walk', { bidId: bid.id, changeOrderId: co.id }) },
+          { label: 'Labor', onTap: () => show('labor', { bidId: bid.id, changeOrderId: co.id }) },
+          { label: 'Rename', onTap: () => jobRenameChangeOrder(bid, co) },
+          { label: 'Delete', cls: 'btn-danger-outline', onTap: () => jobDeleteChangeOrder(bid, co, settings) },
+        ], { cancel: () => { jobCoMenu = null; render(); } });
       }
     });
   }
@@ -455,7 +453,11 @@ function buildActualCard(actuals) {
   const box = card('Bid vs. actual');
   box.classList.add('job-actual');
 
-  box.appendChild(row('Hours', numText(actuals.actualHours) + ' / ' + numText(actuals.bidHours)));
+  // The one number this screen exists to answer: how the hours are running
+  // against the hours he sold. Everything else on the card steps down to it.
+  const hours = row('Hours', numText(actuals.actualHours) + ' / ' + numText(actuals.bidHours));
+  hours.classList.add('row-big');
+  box.appendChild(hours);
 
   // "$400 of -$150" is not a sentence. The cushion is bid hours minus real
   // hours in money, and a bid whose hours were pulled BELOW what the work
@@ -535,17 +537,10 @@ function renderJob() {
   const actuals = BidMath.jobActuals(bid, settings);
   const done = !!bid.job.completedAt;
 
-  const head = document.createElement('div');
-  head.className = 'labor-head';
-  const title = document.createElement('div');
-  title.className = 'labor-head-title';
-  title.textContent = bid.title || 'No title yet';
-  head.appendChild(title);
-  const cust = document.createElement('div');
-  cust.className = 'labor-head-cust';
-  cust.textContent = bidCustomerName(bid, state.data);
-  head.appendChild(cust);
-  host.appendChild(head);
+  // No step strip here: a job is what happens after the four steps, not a
+  // fifth one, and offering a jump back to Walk from a won job invites an edit
+  // to a bid somebody is already holding.
+  host.appendChild(screenHead(bid.title || 'No title yet', bidCustomerName(bid, state.data)));
 
   if (done) {
     const line = document.createElement('div');
@@ -559,12 +554,7 @@ function renderJob() {
   host.appendChild(buildChangeOrdersCard(bid, settings, done));
   host.appendChild(buildActualCard(actuals));
 
-  if (!done) {
-    const nav = document.createElement('div');
-    nav.className = 'bid-nav';
-    nav.appendChild(textButton('Mark complete', 'btn btn-confirm btn-block', () => jobMarkComplete(bid)));
-    host.appendChild(nav);
-  }
+  if (!done) pinnedBar(host, 'Mark complete', () => jobMarkComplete(bid), { cls: 'btn-confirm' });
 }
 
 registerScreen('job', { id: 'screen-job', title: 'Job', back: 'bid', tab: 'bids', enter: enterJob, render: renderJob });

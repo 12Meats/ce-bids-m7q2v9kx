@@ -124,20 +124,39 @@ function settingsToggleMenu(key) {
 // underneath it. Appending rather than returning a wrapper on purpose:
 // .row:last-child drops its bottom border, and a wrapper per row would make
 // every single row a last child and take every separator off the card.
-function settingRow(box, label, valueText, onTap, captionText) {
-  const line = row(label, valueText, onTap);
+// Non-null while the Rates card is being built. Every row inside it opens a
+// keypad, and every row inside it used to carry its own grey line of
+// explanation - thirteen of them down one card, which is thirteen lines he
+// scrolls past to reach a number he wanted to change. While this is an array
+// the explanations are collected into it instead, and the card ends with one
+// "What's this?" holding all of them.
+let settingsRateNotes = null;
+
+// Appends a tap-to-edit row and, when there is one, the line of his own words
+// underneath it. Appending rather than returning a wrapper on purpose:
+// .row:last-child drops its bottom border, and a wrapper per row would make
+// every single row a last child and take every separator off the card.
+function settingRow(box, label, valueText, onTap, captionText, opts) {
+  const line = row(label, valueText, onTap, opts || (settingsRateNotes ? { keypad: true } : null));
   box.appendChild(line);
-  if (captionText) box.appendChild(caption(captionText));
+  if (captionText) {
+    if (settingsRateNotes) settingsRateNotes.push(label + ': ' + captionText);
+    else box.appendChild(caption(captionText));
+  }
   return line;
 }
 
-// The strip of buttons that opens under a row he tapped. Wrapping in flex so
-// two or four of them share the width instead of stacking four deep.
-function settingActions(buttons) {
-  const wrap = document.createElement('div');
-  wrap.className = 'set-actions';
-  buttons.forEach(([label, cls, onTap]) => wrap.appendChild(textButton(label, 'btn ' + cls, onTap)));
-  return wrap;
+// The strip of buttons that opens under a row he tapped, in the one shape
+// every inline menu in this app now wears: inside the card, indented past the
+// row, tied to it by the accent edge, and with 16px of clear space before the
+// next row instead of a Cancel button touching it.
+function settingActions(parentEl, buttons, opts) {
+  const o = opts || {};
+  return attachedStrip(parentEl, buttons.map(([label, cls, onTap]) => ({ label, cls, onTap })), {
+    label: o.label,
+    content: o.content,
+    cancel: () => { settingsMenu = null; render(); },
+  });
 }
 
 // A 44px square: ▲ ▼ ✕. Small only in width — never in height, and never in
@@ -167,8 +186,12 @@ function settingHiddenToggle(box, key, hiddenCount) {
 // save put BOTH back — the flag and the strip. A refusal that also swallowed
 // the buttons would leave him looking at a row he just told to hide, with
 // nothing on screen to try again with.
+// Hide is REVERSIBLE - it takes a name off new bids and leaves it on the ones
+// it is already on - so it is a neutral outlined button. It used to be red,
+// which put it beside Delete wearing the same colour and made the safe answer
+// look like the dangerous one.
 function settingsHideAction(entry, list) {
-  return [entry.hidden ? 'Unhide' : 'Hide', entry.hidden ? '' : 'btn-danger-outline', () => {
+  return [entry.hidden ? 'Unhide' : 'Hide', '', () => {
     // Unhiding onto a name that is already on the list makes two rows he
     // cannot tell apart — and worse, two rows the WALK cannot tell apart: he
     // put "Bender" away, typed "Bender" again as a new tool, and unhiding the
@@ -255,7 +278,7 @@ function settingsDeleteAction(list, entry, what) {
 // Appends the row's action strip and, when it is one of the rows that cannot
 // be deleted, the sentence saying why. buttons are the row's own edits; the
 // remove action is decided here so all four lists decide it the same way.
-function settingsRemoveActions(box, buttons, entry, uses, list, what) {
+function settingsRemoveActions(box, parentEl, buttons, entry, uses, list, what, content) {
   // Hide is on EVERY row. It used to disappear the moment nothing pointed at
   // an entry, which left one button on that row and it was the irreversible
   // one: a tool he wanted out of the picker for the season had Delete as the
@@ -263,7 +286,8 @@ function settingsRemoveActions(box, buttons, entry, uses, list, what) {
   // missing one; Delete just joins it when there is really nothing to lose.
   buttons.push(settingsHideAction(entry, list));
   if (uses === 0) buttons.push(settingsDeleteAction(list, entry, what));
-  box.appendChild(settingActions(buttons));
+  const strip = settingActions(parentEl, buttons, { content });
+  if (!strip.parentNode) box.appendChild(strip);
   if (uses > 0) box.appendChild(caption(settingsInUseText(uses)));
 }
 
@@ -441,7 +465,7 @@ function buildSetCrewRow(box, c) {
 
   if (!settingsMenuOpen(key)) return;
 
-  settingsRemoveActions(box, [
+  settingsRemoveActions(box, line, [
     ['Name', '', () => {
       settingsPromptText(c.name, 'Name', 'Shawn', line, { required: true }, (text) => {
         const prev = c.name;
@@ -537,6 +561,7 @@ function settingsAskWage(name, again) {
 function buildSetRates() {
   const s = setS();
   const box = card('Rates & percentages');
+  settingsRateNotes = [];
 
   const hpd = settingRow(box, 'Hours per day', numText(s.hoursPerDay) + (s.hoursPerDay === 1 ? ' hour' : ' hours'),
     async () => {
@@ -636,6 +661,13 @@ function buildSetRates() {
     settingsSaveAndRender(() => { s.taxMode = prev; });
   }));
   box.appendChild(caption('One sentence on the proposal. It does not change a price either way.'));
+
+  // The card's thirteen explanations, folded. Each row still says what it is
+  // and what it is set to; what it MEANS is one tap away instead of a grey
+  // line between every pair of numbers.
+  const notes = settingsRateNotes;
+  settingsRateNotes = null;
+  box.appendChild(whatsThis(notes, 'What these mean'));
 
   return box;
 }
@@ -738,7 +770,7 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
     }],
     [e.overrideDayCents == null ? 'Set day rate' : 'Change day rate', '', () => {
       promptMoney(e.overrideDayCents, {
-        label: (e.name || 'Tool') + ' — your own day rate',
+        label: (e.name || 'Tool') + ', your own day rate',
         done: (cents) => {
           const prev = e.overrideDayCents;
           e.overrideDayCents = cents;   // Clear here is the same as clearing the override
@@ -756,7 +788,7 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
     }]);
   }
 
-  settingsRemoveActions(box, buttons, e, Store.equipmentInUse(state.data, e.id),
+  settingsRemoveActions(box, line, buttons, e, Store.equipmentInUse(state.data, e.id),
     setS().equipment, e.name || 'this tool');
 }
 
@@ -985,8 +1017,9 @@ function buildSetClauseRow(box, c) {
 
   if (!settingsMenuOpen(key)) return;
 
-  box.appendChild(caption(c.text));
-  settingsRemoveActions(box, [
+  const wording = caption(c.text);
+  box.appendChild(wording);
+  settingsRemoveActions(box, wording, [
     ['Title', '', () => {
       settingsPromptText(c.title, 'Clause title', 'Payment', line, { required: true }, (text) => {
         const prev = c.title;
@@ -1085,7 +1118,8 @@ function buildSetCatalogRow(box, p) {
 
   if (!settingsMenuOpen(key)) return;
 
-  box.appendChild(fieldLabel('How it is counted'));
+  // The unit chips ride inside the strip rather than sitting loose above it:
+  // they are part of the same answer to "what about this part?".
   const units = document.createElement('div');
   units.className = 'set-chips';
   CATALOG_UNITS.forEach((unit) => {
@@ -1096,9 +1130,8 @@ function buildSetCatalogRow(box, p) {
       settingsSaveAndRender(() => { p.unit = prev; });
     }));
   });
-  box.appendChild(units);
 
-  settingsRemoveActions(box, [
+  settingsRemoveActions(box, line, [
     ['Rename', '', () => {
       settingsPromptText(p.name, 'Part name', '3/4" EMT', line, { required: true }, (text) => {
         const prev = p.name;
@@ -1108,7 +1141,7 @@ function buildSetCatalogRow(box, p) {
         settingsSaveAndRender(() => { p.name = prev; });
       });
     }],
-  ], p, Store.catalogInUse(state.data, p.id), state.data.catalog, p.name || 'this part');
+  ], p, Store.catalogInUse(state.data, p.id), state.data.catalog, p.name || 'this part', units);
 }
 
 // ---------------------------------------------------------------------------
@@ -1706,15 +1739,21 @@ function buildSetBackup() {
     let sendLabel;
     if (settingsBackupBusy) sendLabel = 'Opening…';
     else if (loading) sendLabel = 'Loading PDFs…';
-    else sendLabel = 'Send backup' + (pdfCount ? ' + ' + pdfCount + (pdfCount === 1 ? ' PDF' : ' PDFs') : '');
+    else sendLabel = 'Send a backup to Adrian';
     const sendBtn = textButton(sendLabel, 'btn btn-primary btn-block', settingsSendBackup);
     if (settingsBackupBusy || loading) {
       sendBtn.disabled = true;
       sendBtn.setAttribute('aria-busy', 'true');
     }
     box.appendChild(sendBtn);
-    box.appendChild(caption('This sends everything on this phone to Adrian. Do it every couple of '
-      + 'weeks, or after a big bid.'));
+    // The button says what it DOES; the count of saved PDFs riding along is a
+    // fact about this particular send, so it goes underneath it. "Send backup
+    // + 1 PDF" made the PDF look like the point.
+    if (!settingsBackupBusy && !loading && pdfCount) {
+      box.appendChild(caption(pdfCount === 1
+        ? 'Takes 1 saved PDF with it.'
+        : 'Takes ' + pdfCount + ' saved PDFs with it.'));
+    }
   }
 
   if (settingsBackupPdfsFailed) {
@@ -1756,7 +1795,7 @@ function buildSetBackup() {
       s.backupEmail = text;
       settingsSaveAndRender(() => { s.backupEmail = prev; });
     });
-  }, 'Whoever keeps the copy that is not on this phone.');
+  }, null);
 
   // --- Photos, on their own
   buildSetBackupPhotos(box);
@@ -1779,7 +1818,14 @@ function buildSetBackup() {
   });
   box.appendChild(picker);
   box.appendChild(textButton('Restore from backup', 'btn btn-danger-outline btn-block mt-3', () => picker.click()));
-  box.appendChild(caption('Pick a backup file. Everything on this phone is replaced by what is in it.'));
+
+  // One caption on this card is the date at the top of it - the answer to the
+  // only question he opens it with. The rest of the explaining folds.
+  box.appendChild(whatsThis([
+    'Send a backup: everything on this phone goes to whoever is named above. Do it every couple of weeks, or after a big bid.',
+    'Send it to: whoever keeps the copy that is not on this phone.',
+    'Restore from backup: pick a backup file. Everything on this phone is replaced by what is in it.',
+  ], 'What this card does'));
 
   return box;
 }
@@ -1895,6 +1941,19 @@ function buildSetJump() {
     }));
   });
   outer.appendChild(wrap);
+
+  // The fade is the affordance: a chip visibly cut off says there is more of
+  // this strip to the right. On a wide phone the strip fits, nothing is cut
+  // off, and the fade was greying out the last chip for no reason. Measured
+  // after the frame this render is built in, because a strip that is not laid
+  // out yet has no widths to compare.
+  const measure = () => {
+    try { outer.classList.toggle('set-jump-over', wrap.scrollWidth > wrap.clientWidth + 1); }
+    catch (e) { /* no layout in this environment */ }
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measure);
+  else measure();
+
   return outer;
 }
 
