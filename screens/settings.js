@@ -198,7 +198,9 @@ function settingsInUseText(uses) {
 
 function settingsDeleteAction(list, entry, what) {
   return ['Delete', 'btn-danger-outline', async () => {
-    const ok = await confirmPanel('Delete ' + what + '? Nothing on your bids uses it. This can\'t be undone.',
+    // "Not on any bid" rather than "nothing uses it": one sentence covers a
+    // man, a tool, a part and a clause without calling any of them "it".
+    const ok = await confirmPanel('Delete ' + what + '? Not on any bid. This can\'t be undone.',
       { ok: 'Delete', danger: true });
     if (!ok) { render(); return; }
     // Asked again after the question: a bid made while the panel was open
