@@ -729,6 +729,11 @@ function buildClauses(bid) {
   // With the library open the card's own heading closes it. Not a decoration:
   // on a 375-point phone the library is taller than the glass, and the title
   // is the one landmark he can find without reading anything.
+  //
+  // It says "Close" at its right end and stands 48 points tall while it is a
+  // control. A heading that quietly answers a tap is a secret, and this app
+  // does not have secret controls: if it can be tapped it wears a word and it
+  // is big enough to hit.
   if (proposalClausesOpen) {
     const heading = box.querySelector('.card-title');
     if (heading) {
@@ -736,6 +741,10 @@ function buildClauses(bid) {
       heading.setAttribute('role', 'button');
       heading.setAttribute('tabindex', '0');
       heading.title = 'Tap to close the clause list';
+      const closeWord = document.createElement('span');
+      closeWord.className = 'card-title-close';
+      closeWord.textContent = 'Close';
+      heading.appendChild(closeWord);
       heading.addEventListener('click', proposalCloseClauses);
       heading.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {

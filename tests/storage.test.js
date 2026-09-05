@@ -186,6 +186,25 @@ test('validateImport: area notes are optional, and a string when present', () =>
   badCo.bids[0].job.changeOrders[0].areas[0].notes = { text: 'no' };
   assert.strictEqual(S.validateImport(JSON.stringify(badCo)), null);
 });
+// The walk's textarea stops at AREA_NOTES_MAX, so nothing the app writes can
+// be longer. A hand-edited file can, and a field that has to preview on one
+// row is not where a book belongs.
+test('validateImport: an area note longer than the cap is refused', () => {
+  const { d } = buildFullData();
+  assert.strictEqual(typeof S.AREA_NOTES_MAX, 'number');
+
+  const atCap = JSON.parse(JSON.stringify(d));
+  atCap.bids[0].areas[0].notes = 'n'.repeat(S.AREA_NOTES_MAX);
+  assert.ok(S.validateImport(JSON.stringify(atCap)));
+
+  const overCap = JSON.parse(JSON.stringify(d));
+  overCap.bids[0].areas[0].notes = 'n'.repeat(S.AREA_NOTES_MAX + 1);
+  assert.strictEqual(S.validateImport(JSON.stringify(overCap)), null);
+
+  const overCapCo = JSON.parse(JSON.stringify(d));
+  overCapCo.bids[0].job.changeOrders[0].areas[0].notes = 'n'.repeat(S.AREA_NOTES_MAX + 1);
+  assert.strictEqual(S.validateImport(JSON.stringify(overCapCo)), null);
+});
 test('duplicateBid: the area notes travel to the copy', () => {
   const d = S.emptyData();
   const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });

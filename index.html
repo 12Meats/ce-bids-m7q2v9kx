@@ -507,8 +507,24 @@
     /* A card title that is also the way out of what is open under it — the
        clause library. Nothing about it changes except the cursor and a press
        state: it is still the heading, it just answers a tap. */
-    .card-title-tap { cursor: pointer; }
+    .card-title-tap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      min-height: 48px;
+      cursor: pointer;
+    }
     .card-title-tap:active { color: var(--color-accent); }
+    /* The word that makes the heading look like a control. A title that only
+       answers a tap when you happen to try it is not a way out, and this app's
+       rule is that anything tappable says so in words. */
+    .card-title-close {
+      flex: 0 0 auto;
+      color: var(--color-accent);
+      font-weight: 700;
+      text-decoration: underline;
+    }
 
     /* A row is the whole tap target — no small pencil icons to aim at. */
     .row {
@@ -1100,23 +1116,32 @@
       padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
     }
 
+    /* Two lines, the way .walk-row is two lines: the question across the full
+       width, the answer under it. Beside the buttons a label like
+       "Washdown-rated (NEMA 4X / stainless) requirements" had about eleven
+       characters of width at 375 points and came down the screen a word at a
+       time. Nothing he is asked to read should be a sliver. */
     .walk-forget {
       display: flex;
-      align-items: center;
-      gap: var(--space-2);
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-1);
       min-height: 56px;
+      padding: var(--space-1) 0;
       border-bottom: 1px solid var(--color-border);
     }
     .walk-forget:last-child { border-bottom: none; }
-    .walk-forget-label { flex: 1; min-width: 0; }
+    .walk-forget-label { min-width: 0; }
     /* The buttons are .attached-strip-btns, shared with every inline menu in
-       the app. The one thing they need here is not to grow: on a row that is
-       already carrying a label, two buttons that stretch push the words off. */
-    .walk-forget-acts { flex: 0 0 auto; }
-    .walk-forget-acts .btn { min-height: 56px; padding: 0 16px; font-size: 0.95rem; }
-    /* Answered, and still a control: tapping it puts the question back. */
+       the app: 48 px tall, splitting the line between them. On a line of their
+       own now, so there is nothing about their width left to override. */
+    .walk-forget-acts { width: 100%; }
+    /* Answered, and still a control: tapping it puts the question back. Sized
+       to its own words rather than the line, because one button stretched
+       across the width reads as the primary thing to do on the card. */
     .walk-forget-tick {
-      min-height: 56px;
+      align-self: flex-start;
+      min-height: 48px;
       padding: 0 12px;
       font-size: 0.95rem;
       font-weight: 700;

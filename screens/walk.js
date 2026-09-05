@@ -874,8 +874,14 @@ function walkCommitItem(bid, area, part, qty, costCents) {
 // proposal screen in Notes & exclusions and in the scope of work.
 //
 // One row, because that is all a note is worth on a screen whose job is
-// counting: the first line of it muted under the word Notes, or "Add a note"
+// counting: one line of it muted under the word Notes, or "Add a note"
 // when there is none.
+//
+// It is capped at Store.AREA_NOTES_MAX characters — a couple of pages of
+// dictation, far more than anybody writes about one room. The number lives in
+// storage.js, which is what refuses a longer one out of an import; here it is
+// the textarea's maxlength, so the phone stops him at the wall rather than
+// after it. Notes already saved are untouched by either.
 
 function buildAreaNotesCard(area) {
   const box = card();
@@ -886,6 +892,7 @@ function buildAreaNotesCard(area) {
       caption: 'For you, not the customer. Tap the mic to talk.',
       placeholder: 'What you saw in here',
       multiline: true,
+      maxLength: Store.AREA_NOTES_MAX,
       done: (text) => {
         const prev = area.notes;
         // A note cleared to nothing loses the field rather than keeping an
@@ -1561,7 +1568,11 @@ function walkForgetAddToArea(bid, name, area) {
   // underneath a panel asking something else.
   walkForgetPick = null;
   render();
-  promptMoney(0, {
+  // null, not 0: the keypad's "was" line is the truth about what this item
+  // costs today, and the truth is nobody has said. "was $0.00" reads as a
+  // price somebody already put on it. Clear still lands the line at $0 —
+  // see the done handler — so nothing about the answer changes.
+  promptMoney(null, {
     label: name + ', how much?',
     caption: 'Clear if you do not know yet.',
     done: (cents) => walkForgetCommitItem(bid, name, area, cents === null ? 0 : cents),

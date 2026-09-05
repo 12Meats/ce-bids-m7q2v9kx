@@ -42,6 +42,7 @@ function fakeElement(id) {
     parent: null,
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+    removeAttribute(k) { delete this.attrs[k]; },
     appendChild(child) { child.parent = this; this.children.push(child); return child; },
     remove() {
       const p = this.parent;

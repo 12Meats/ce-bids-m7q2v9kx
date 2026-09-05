@@ -584,11 +584,28 @@ const CRLF = String.fromCharCode(13, 10);
 // areaNoteLine is what stands between a dictated paragraph and a card on the
 // walk that is supposed to be a row of doors. Two callers share it — the area
 // card and the Notes row inside the area — so one line means one line in both.
-test('areaNoteLine takes the first line and nothing else', () => {
+test('areaNoteLine joins the lines with a separator', () => {
   assert.equal(areaNoteLine('Panel behind the racking.@@Bring the 6 ft ladder.'.replace('@@', NEWLINE)),
-    'Panel behind the racking.');
-  assert.equal(areaNoteLine('Windows line ending@@second'.replace('@@', CRLF)), 'Windows line ending');
-  assert.equal(areaNoteLine('   padded   @@more'.replace('@@', NEWLINE)), 'padded');
+    'Panel behind the racking. · Bring the 6 ft ladder.');
+  assert.equal(areaNoteLine('Windows line ending@@second'.replace('@@', CRLF)), 'Windows line ending · second');
+  assert.equal(areaNoteLine('   padded   @@more'.replace('@@', NEWLINE)), 'padded · more');
+  // Blank lines between paragraphs are how dictation comes out; they are not
+  // content and they do not get a separator of their own.
+  assert.equal(areaNoteLine(['one', '', '  ', 'two'].join(NEWLINE)), 'one · two');
+});
+// The point of joining before the cut: a three-line note has to LOOK like
+// there is more of it. Taking the first line alone gave back a short string
+// with no ellipsis on it, which reads as the whole note.
+test('areaNoteLine ellipsises a multi-line note that runs past the line', () => {
+  const three = ['line one', 'line two', 'line three'].join(NEWLINE);
+  assert.equal(areaNoteLine(three, 20), 'line one · line two…');
+  // Three real dictated lines are longer than the row, so the default cap
+  // ellipsises them too rather than handing back a short first line.
+  const dictated = ['Vat room panel is behind the racking', 'bring the six foot ladder', 'and the hole saw'].join(NEWLINE);
+  const cut = areaNoteLine(dictated);
+  assert.equal(cut.length, 60);
+  assert.equal(cut.endsWith('…'), true);
+  assert.equal(cut.startsWith('Vat room panel is behind the racking · bring'), true);
 });
 test('areaNoteLine reads nothing at all as no note', () => {
   ['', '   ', NEWLINE + NEWLINE, null, undefined].forEach((v) => {

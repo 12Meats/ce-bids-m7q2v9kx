@@ -310,7 +310,7 @@ function promptMoney(cents, opts) {
 
 // --- Text prompt -----------------------------------------------------------
 
-// promptText(current, { label, caption, placeholder, suggestions | suggest, multiline, done })
+// promptText(current, { label, caption, placeholder, suggestions | suggest, multiline, maxLength, done })
 // A real <input type="text"> — words are not scroll wheels. done(string) fires
 // on Done (or Enter) with the trimmed value; Cancel calls nothing.
 //
@@ -326,6 +326,11 @@ function promptMoney(cents, opts) {
 // about the panel is unchanged: same title, same chips, same Done and Cancel.
 // The value still comes back trimmed — of the whole string, not per line; the
 // caller splits it if it wants lines.
+//
+// maxLength: an optional ceiling, handed straight to the field's own maxlength
+// so the phone stops taking characters at the wall instead of accepting a
+// paragraph and having something further down refuse it. Callers that do not
+// name one get no cap at all, which is every caller but the area note.
 const TEXT_SUGGESTION_MAX = 8;
 
 function promptText(current, opts) {
@@ -352,6 +357,14 @@ function promptText(current, opts) {
   textCtx.field = field;
   field.value = current == null ? '' : String(current);
   field.placeholder = opts.placeholder || '';
+  // Set on the field this prompt is using and taken off it again when the next
+  // caller does not ask for one: the two controls are reused panel after panel,
+  // and a cap left behind would silently truncate somebody else's answer.
+  const maxLength = (typeof opts.maxLength === 'number' && opts.maxLength > 0)
+    ? Math.floor(opts.maxLength)
+    : null;
+  if (maxLength) field.setAttribute('maxlength', String(maxLength));
+  else field.removeAttribute('maxlength');
   renderTextChips();
 
   el('panel-text').hidden = false;

@@ -1112,18 +1112,30 @@ function bidPriceText(bid, data) {
 // area.notes is optional and is whatever he dictated standing in the room: a
 // paragraph, three lines, or nothing. Two places show a glance at it — the
 // area card on the walk and the Notes row inside the area — and neither has
-// room for a paragraph, so both take the first line and cut it at 60
-// characters. Absent, blank, or all whitespace all come back as '', which
-// every caller reads as "no note yet".
+// room for a paragraph, so both get ONE line of it, cut at 60 characters.
+// Absent, blank, or all whitespace all come back as '', which every caller
+// reads as "no note yet".
+//
+// The lines are JOINED with " · " before the cut rather than thrown away.
+// Taking only the first line meant a three-line note previewed as a short
+// line with no ellipsis on it, which reads as the whole note: the two lines
+// he dictated underneath were invisible and nothing on the glass said they
+// were there. The separator is the one this app already puts between two
+// facts on one line, and the ellipsis now fires whenever there is more note
+// than there is line.
 //
 // It NEVER reaches the customer's paper. docmodel.js does not read the field
 // at all: these are his notes about a room, not a description of the work.
 const AREA_NOTE_PREVIEW_MAX = 60;
 function areaNoteLine(notes, max) {
-  const first = String(notes == null ? '' : notes).split(/\r?\n/)[0].trim();
-  if (!first) return '';
+  const joined = String(notes == null ? '' : notes)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' · ');
+  if (!joined) return '';
   const cap = (typeof max === 'number' && max > 1) ? max : AREA_NOTE_PREVIEW_MAX;
-  return first.length <= cap ? first : first.slice(0, cap - 1).replace(/\s+$/, '') + '…';
+  return joined.length <= cap ? joined : joined.slice(0, cap - 1).replace(/\s+$/, '') + '…';
 }
 
 // areaTallyText(area) -> "3 items · $412.00"

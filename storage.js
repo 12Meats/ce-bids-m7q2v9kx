@@ -11,6 +11,12 @@
 
   const KEY = 'ce-bids';
 
+  // The longest note an area may carry — a couple of pages of dictation, far
+  // more than anybody writes about one room. The walk's textarea wears the
+  // same number as its maxlength, so the only way past it is a file edited by
+  // hand, which is exactly what validateImport is here to catch.
+  const AREA_NOTES_MAX = 2000;
+
   function uid() {
     try {
       const c = (typeof crypto !== 'undefined') ? crypto : (typeof global !== 'undefined' ? global.crypto : undefined);
@@ -573,7 +579,14 @@
           // every bid older than the field, which is why a missing one is not
           // a broken file — and why the v1 and v2 fixtures still load. It is
           // his note, never the customer's: nothing in docmodel.js reads it.
-          if (a.notes !== undefined && a.notes !== null && !isStr(a.notes)) return false;
+          //
+          // Capped at AREA_NOTES_MAX, the same ceiling the textarea wears on
+          // the walk. The app cannot produce a longer one; a hand-edited or
+          // generated import can, and a field that has to preview on one row
+          // is not where a book belongs.
+          if (a.notes !== undefined && a.notes !== null) {
+            if (!isStr(a.notes) || a.notes.length > AREA_NOTES_MAX) return false;
+          }
           if (!isArr(a.items) || !a.items.every(validAreaItem)) return false;
           if (!strArr(a.photoIds)) return false;
         }
@@ -1169,7 +1182,7 @@
   function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
-  return { KEY, MISC_LABEL, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
+  return { KEY, MISC_LABEL, AREA_NOTES_MAX, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
     forgetName, forgetKind, SEED_DEFAULT_NOTE,
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, noteCrewWage, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
