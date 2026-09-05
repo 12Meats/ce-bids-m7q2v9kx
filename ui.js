@@ -712,7 +712,10 @@ function unpricedLines(bid, settings) {
   const stack = BidMath.costStack(bid, settings);
   const rate = (bid.pricing && bid.pricing.rateCents) || 0;
   if (BidMath.solve(stack, 'rate', rate).priceCents + coCents <= 0) {
-    out.push({ kind: 'total', name: 'Labor' });
+    // No name: there is no row to point at. unpricedBlockText says the number
+    // instead, and a banner that can be tapped must not offer to take him to a
+    // "Labor" line that does not exist anywhere on the bid.
+    out.push({ kind: 'total', name: '' });
   }
   return out;
 }

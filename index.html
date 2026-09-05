@@ -46,6 +46,9 @@
       /* The notch/status-bar inset, behind a variable so a test can inject a
          real device value on a desktop browser. */
       --sai-top: env(safe-area-inset-top, 0px);
+      /* The sticky top bar's height, so anything that has to stick UNDER it
+         reads the same number the bar is built from rather than guessing. */
+      --chrome-height: calc(56px + var(--sai-top));
     }
 
     * { box-sizing: border-box; }
@@ -95,7 +98,7 @@
          height as the owner moves between screens. The inset has to be inside
          min-height or the title-only bar comes up short by exactly the notch
          (82px vs 103px on an iPhone 14 Pro). */
-      min-height: calc(56px + var(--sai-top));
+      min-height: var(--chrome-height);
       padding: 4px var(--space-2);
       padding-top: calc(4px + var(--sai-top));
       background: var(--color-accent);
@@ -751,9 +754,20 @@
     .walk-tile:active { background: #eef2f7; }
 
     /* The running total at the top of the add list: quiet, but the only proof
-       that the last eight taps landed. */
+       that the last eight taps landed. It STICKS: the proof is worth nothing
+       eleven rows down a parts list, which is exactly where his thumb is by
+       the time he needs it. Under the chrome (which is sticky at 0 and opaque)
+       and over the rows, with the list's own background so a row sliding
+       beneath it does not read through. */
     .walk-tally {
+      position: sticky;
+      top: var(--chrome-height);
+      z-index: 5;
       margin-bottom: var(--space-2);
+      /* The 12px gap under it is page, not strip, so a row would show through
+         it in a thin sliver as the list scrolls past. The shadow paints that
+         gap in the page's own colour, which is the whole of what it is for. */
+      box-shadow: 0 var(--space-2) 0 var(--color-bg);
       padding: var(--space-1) var(--space-2);
       border-radius: 10px;
       background: #eef2f7;

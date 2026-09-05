@@ -349,16 +349,23 @@ function renderWalkArea(bid, edit, area, host) {
       if (!(BidMath.itemPrice(it, markup).cents > 0)) box.appendChild(unpricedWarn());
       if (walkItemMenu === it) box.appendChild(buildItemActions(area, it));
     });
-    box.appendChild(walkRow('Area cost', null, BidMath.fmt(walkAreaCost(area)), null));
   }
 
   // A lift he added standing in this room used to vanish: rentals are not
   // material lines and live on the bid, so the area he added it from showed
   // nothing at all and a banner sent him to a screen he was not on. It shows
   // here, as what it is — a line somebody else prices.
+  //
+  // ABOVE the area cost, not under it. Area cost is the total of the material
+  // lines over it, and a row printed beneath a total reads as part of it: a
+  // $0 lift under "Area cost $412.00" says the lift is in the 412, and it is
+  // not — it is priced by the day on Costs & price.
   walkAreaRentals(bid, area).forEach((x) => {
     box.appendChild(walkRow(x.name || 'Rental', WALK_RENTAL_SUB, null, null));
   });
+  if (items.length > 0) {
+    box.appendChild(walkRow('Area cost', null, BidMath.fmt(walkAreaCost(area)), null));
+  }
   host.appendChild(box);
 
   // Photos are a walk thing: he is standing in the room with the phone up. A
@@ -540,7 +547,7 @@ function buildWalkAddBody(bid, area, host, onChangeOrder) {
     return;
   }
   const box = card();
-  buildCatalogList(bid, area, box);
+  buildCatalogList(bid, area, box, onChangeOrder);
   host.appendChild(box);
 }
 
@@ -583,11 +590,23 @@ function buildCategoryTiles(onChangeOrder) {
 // so it lives in catalog.js where it is pure and tested: hidden ones excluded,
 // rentals kept out of the material lists, search crossing categories, most-used
 // first. This screen only decides what to do with what comes back.
-function walkCatalogMatches() {
-  return Catalog.matches(state.data.catalog, { category: walkAddCat, query: walkAddSearch });
+function walkCatalogMatches(onChangeOrder) {
+  const searching = walkAddSearch.trim() !== '';
+  return Catalog.matches(state.data.catalog, {
+    category: walkAddCat,
+    query: walkAddSearch,
+    // A search crosses the drawers, and rentals are one of the drawers. He
+    // types "scissor lift" because a scissor lift is the thing he needs; a
+    // search that hides it offered him "+ New part" instead, and the lift went
+    // on the bid as a gear line at material markup. Only a search reaches
+    // them — the browsing lists still keep rentals out, because they are not
+    // material — and a change order never does: it has no rentals list of its
+    // own and must not borrow the bid's.
+    includeRentals: searching && !onChangeOrder,
+  });
 }
 
-function buildCatalogList(bid, area, box) {
+function buildCatalogList(bid, area, box, onChangeOrder) {
   box.textContent = '';
   const searching = walkAddSearch.trim() !== '';
 
@@ -596,7 +615,7 @@ function buildCatalogList(bid, area, box) {
   h.textContent = searching ? 'All parts' : catalogCategoryLabel(walkAddCat);
   box.appendChild(h);
 
-  const list = walkCatalogMatches();
+  const list = walkCatalogMatches(onChangeOrder);
   if (list.length === 0) {
     box.appendChild(emptyNote(searching ? 'Nothing matches that.' : 'Nothing in here yet.'));
   } else {
@@ -1044,7 +1063,11 @@ function buildWalkSheet(bid) {
   nav.className = 'bid-nav';
   nav.appendChild(textButton('Rental', 'btn btn-block', () => walkAddRental(bid, '', from, forgetRow)));
   nav.appendChild(textButton('Owned equipment', 'btn btn-block', () => {
-    walkSheet = { kind: 'equip', from };
+    // A step deeper inside the sheet is still a step: it pushes, and Back
+    // brings the "Rented, or your own?" question back rather than closing the
+    // whole sheet and losing the answer he had already given.
+    navPush();
+    walkSheet = { kind: 'equip', from, back: 'rentEquip' };
     render();
   }));
   nav.appendChild(textButton('Cancel', 'btn btn-block', walkCloseSheet));
@@ -1309,6 +1332,10 @@ function walkForgetAdd(bid, name) {
     return;
   }
   if (key.indexOf('equipment') !== -1) {
+    // The sheet is a step deeper, so it pushes — without this the swipe that
+    // closes it spent an entry belonging to the area list underneath, and the
+    // next one after that took him out of the app.
+    navPush();
     walkForgetRow = name;
     walkForgetPick = null;
     walkSheet = { kind: 'equip', from: 'forget' };
@@ -1408,7 +1435,17 @@ function renderWalk() {
 // it can say "‹ Bid" only where Back really goes to the bid.
 function walkBackStep(peek) {
   if (walkPhotoOpenId) { if (!peek) { walkPhotoOpenId = null; render(); } return true; }
-  if (walkSheet) { if (!peek) walkCloseSheet(); return true; }
+  if (walkSheet) {
+    // The equipment picker reached from "Rented, or your own?" pushed an entry
+    // of its own, so one Back spends it going back up to that question; the
+    // next one closes the sheet. Every other sheet is one step and closes.
+    if (walkSheet.back) {
+      if (!peek) { walkSheet = { kind: walkSheet.back, from: walkSheet.from }; render(); }
+      return true;
+    }
+    if (!peek) walkCloseSheet();
+    return true;
+  }
   if (walkView === 'add') {
     if (walkAddPending || walkAddNew) {
       if (!peek) { walkAddPending = null; walkAddNew = null; render(); }

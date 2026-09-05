@@ -174,6 +174,43 @@ test('duplicateBid: copies content, fresh number/date/status, no job data or sen
   b.clauseIds = ['k01'];
   assert.deepStrictEqual(S.duplicateBid(d, b.id, '2026-09-20').clauseIds, ['k01']);
 });
+// A walk rental remembers the room it was added from, and the copy re-ids
+// every room. Left alone the copied rental still named the ORIGINAL's area:
+// the room he added it in showed nothing, and the lift was only findable on
+// the price screen — the exact bug the areaId was added to fix, reappearing on
+// every duplicate.
+test('duplicateBid: a walk rental follows its area to the copy', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });
+  b.areas.push({ id: 'a1', name: 'Mezz', items: [], photoIds: [] });
+  b.areas.push({ id: 'a2', name: 'Dock', items: [], photoIds: [] });
+  b.rentals.push({ name: 'Scissor lift', days: 1, cents: 0, markup: false, areaId: 'a2' });
+  b.rentals.push({ name: 'Dumpster', days: 2, cents: 0, markup: false });
+  d.bids.push(b);
+
+  const c = S.duplicateBid(d, b.id, '2026-09-20');
+  assert.notStrictEqual(c.areas[1].id, 'a2');                 // the room is new
+  assert.strictEqual(c.rentals[0].areaId, c.areas[1].id);     // and the lift is in it
+  assert.strictEqual(c.rentals[0].areaId !== 'a2', true);
+  assert.strictEqual('areaId' in c.rentals[1], false);        // an area-less one stays area-less
+  // The original is untouched.
+  assert.strictEqual(b.rentals[0].areaId, 'a2');
+  assert.notStrictEqual(S.validateImport(JSON.stringify(d)), null);
+});
+
+// A rental pointing at an area that is not in the bid it was copied from has
+// nothing to follow, so it loses the field rather than carrying a dead id that
+// would show the line in whichever room happened to be given that id next.
+test('duplicateBid: a rental with a dead areaId loses it', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });
+  b.areas.push({ id: 'a1', name: 'Mezz', items: [], photoIds: [] });
+  b.rentals.push({ name: 'Boom lift', days: 1, cents: 0, markup: false, areaId: 'gone' });
+  d.bids.push(b);
+  const c = S.duplicateBid(d, b.id, '2026-09-20');
+  assert.strictEqual('areaId' in c.rentals[0], false);
+});
+
 // The did-you-forget answers go the way the job goes. A copy is a bid he has
 // not walked yet: last month's "No, no permits" is an answer about a different
 // building, and inheriting it hides the question on the one job where it costs.

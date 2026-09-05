@@ -123,6 +123,21 @@ test('APP_VERSION in app.js matches CACHE in sw.js', () => {
   assert.strictEqual(m[1], CACHE, 'APP_VERSION and sw.js CACHE must be bumped together');
 });
 
+// The script tags are an ORDER, not a list. Every file here is a plain global
+// evaluated top to bottom, and storage.js calls Catalog.straighten while it is
+// building a new part: loaded first, storage.js would define itself against a
+// Catalog that is not there yet, and the failure would not show until the day
+// he adds a part in the field. sw.js caching both files makes them load fast,
+// not in the right order.
+test('catalog.js loads before storage.js', () => {
+  const at = (src) => HTML.indexOf('<script src="' + src + '"');
+  const catalog = at('catalog.js');
+  const storage = at('storage.js');
+  assert.notStrictEqual(catalog, -1, 'index.html loads catalog.js');
+  assert.notStrictEqual(storage, -1, 'index.html loads storage.js');
+  assert.ok(catalog < storage, 'catalog.js must be loaded before storage.js');
+});
+
 test('the cache name is namespaced to this app', () => {
   // The sibling timesheet app uses 'ce-*'. Sharing a name across two apps on the
   // same origin would have one wipe the other's cache on activate.

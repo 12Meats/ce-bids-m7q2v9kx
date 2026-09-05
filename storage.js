@@ -552,7 +552,23 @@
     // nobody asked, and answers it wrong.
     c.dateISO = dateISO || todayISO(); c.status = 'draft'; c.sentAt = null; c.savedToFilesAt = null; c.lostReason = null; c.job = null;
     c.forgetAnswers = {};
-    c.areas.forEach((a) => { a.id = uid(); a.photoIds = []; });
+    // Areas are re-ided so the copy's rooms are its own — and anything that
+    // POINTS at an area has to follow them. A walk rental carries the area it
+    // was added from; left holding the original's id it either shows in no
+    // room at all or, worse, in whichever room of the original still has that
+    // id. The map is built while the ids are being handed out, so there is no
+    // second pass to forget to update when something else starts pointing at
+    // an area.
+    const areaIdMap = new Map();
+    c.areas.forEach((a) => { const was = a.id; a.id = uid(); areaIdMap.set(was, a.id); a.photoIds = []; });
+    (c.rentals || []).forEach((r) => {
+      if (!r || typeof r.areaId !== 'string') return;
+      // A rental named on the Costs & price screen has no area, and one whose
+      // area was deleted points at nothing: both lose the field rather than
+      // keeping a dead id.
+      if (areaIdMap.has(r.areaId)) r.areaId = areaIdMap.get(r.areaId);
+      else delete r.areaId;
+    });
     d.bids.push(c); return c;
   }
   function addCatalogItem(d, { category, name, unit }) {
