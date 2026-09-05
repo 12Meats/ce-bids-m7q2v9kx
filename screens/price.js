@@ -345,9 +345,11 @@ function buildRentalLine(bid, x, markup, warn) {
   if (priceMenu === x) {
     // Days, the money, the markup and the way off the bid — everything this
     // line can be asked. "Marked up" used to be a chip up on the line, which
-    // said whether the switch was on and never what it did; here it is a plain
-    // two-state button with the answer beside it, so turning it on changes the
-    // sentence under it to the number that goes on the paper.
+    // said whether the switch was on and never what it did; then it was a
+    // two-state button reading "Markup on/off", which said the state and left
+    // him to work out what tapping it would do. Now the button says the ACTION
+    // — "Add markup", "Remove markup" — and the "Prints at" line under it says
+    // the state, in the only units that matter: the number on the paper.
     line.appendChild(priceActions([
       ['Days', '', () => pricePromptDays(x.days, (x.name || 'Rental') + ', how many days?', line, (v) => {
         const prev = x.days;
@@ -368,7 +370,7 @@ function buildRentalLine(bid, x, markup, warn) {
           },
         });
       }],
-      [x.markup ? 'Markup on' : 'Markup off', x.markup ? 'btn-on' : '', () => {
+      [x.markup ? 'Remove markup' : 'Add markup', '', () => {
         const prev = x.markup;
         x.markup = !prev;
         priceSave(() => { x.markup = prev; });

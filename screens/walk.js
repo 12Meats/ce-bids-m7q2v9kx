@@ -277,7 +277,14 @@ function renderWalkAreas(bid, edit, host) {
     });
   }
 
-  host.appendChild(textButton('+ Area', 'btn btn-primary btn-block', () => walkAddArea(edit)));
+  // Filled on the bid's own walk, where it is the only thing worth doing until
+  // there is a room on the list (the pinned Next below is greyed until then).
+  // Outlined on a change order, where the pinned "Next: Labor" is never greyed
+  // and is therefore the one filled navy button on the screen: a change order
+  // can be labor only, so "+ Area" there is a real second choice, not the way
+  // forward. Two filled blocks would be two ways forward, which is one too many.
+  host.appendChild(textButton('+ Area', 'btn ' + (co ? 'btn-outline' : 'btn-primary') + ' btn-block',
+    () => walkAddArea(edit)));
 
   // A change order is areas and labor and nothing else. The misc line, the
   // did-you-forget list and the rental placeholders all belong to the bid,

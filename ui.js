@@ -971,6 +971,30 @@ function backupDateFromName(name) {
   return hit ? hit[1] : null;
 }
 
+// The date the home band shows AFTER a restore.
+//
+// A restore used to write the file's settings straight to disk, and the file's
+// own lastBackupAt can be null — the first backup a phone ever makes is built
+// before that field is stamped. Restore that file and the home screen says "No
+// backup yet" in red, on a phone whose entire contents just came out of a
+// backup. He does the only thing that sentence asks for: another backup, to
+// answer a warning that was never true.
+//
+// So it is never null coming out of here. The file's own date first, because
+// that is the phone's own history and it is what he would have seen had he
+// never restored. Then the file NAME, which carries the day the file was
+// written. Then today, which is the weakest of the three and still true in the
+// way that matters: the file in his hand IS a backup, and it exists.
+//
+// pdfsSentThroughMs is the other half and needs no help — the file's value
+// rides along untouched, so the PDFs that had already gone stay gone and are
+// not re-queued by a restore.
+function restoredBackupDate(doc, fileName, todayISO) {
+  const s = (doc && doc.settings) || {};
+  const own = typeof s.lastBackupAt === 'string' && s.lastBackupAt ? s.lastBackupAt : null;
+  return own || backupDateFromName(fileName) || todayISO;
+}
+
 // What has not left the phone yet.
 //
 // The watermark is settings.pdfsSentThroughMs: the archive stamp of the newest

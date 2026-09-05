@@ -107,7 +107,7 @@ test('isEmailAddress refuses whitespace anywhere in the address', () => {
 // that has really gone. Every one of them fails silently when it is wrong: a
 // PDF that never leaves, or a confirm naming the wrong week's file.
 
-const { backupDateFromName, pendingPdfs, backupSelection } = sandbox;
+const { backupDateFromName, restoredBackupDate, pendingPdfs, backupSelection } = sandbox;
 
 // Midnight local of a plain day, the way the app reads its own dates.
 function at(iso, hour, min) {
@@ -127,6 +127,35 @@ test('backupDateFromName survives the copy the phone renamed', () => {
 test('backupDateFromName is null when there is no date to read', () => {
   ['backup.json', 'ce-bids-backup.json', 'ce-bids-backup-09-04.json', '', null, undefined]
     .forEach((v) => assert.equal(backupDateFromName(v), null, String(v)));
+});
+
+// The restore used to write the file's own lastBackupAt to disk and stop
+// there. On the first backup a phone ever makes, that field is still null when
+// the file is built — so restoring it put a red "No backup yet" on a phone
+// whose whole contents had just come out of a backup. Three answers, in order,
+// and none of them is null.
+test('restoredBackupDate prefers the date inside the restored file', () => {
+  const doc = { settings: { lastBackupAt: '2026-08-21' } };
+  assert.equal(restoredBackupDate(doc, 'ce-bids-backup-2026-09-04.json', '2026-09-05'), '2026-08-21');
+});
+
+test('restoredBackupDate falls back to the file name when the file carries no date', () => {
+  [null, '', undefined].forEach((v) => {
+    const doc = { settings: { lastBackupAt: v } };
+    assert.equal(restoredBackupDate(doc, 'ce-bids-backup-2026-09-04.json', '2026-09-05'),
+      '2026-09-04', String(v));
+  });
+});
+
+test('restoredBackupDate falls back to today, because the file in hand IS a backup', () => {
+  assert.equal(restoredBackupDate({ settings: { lastBackupAt: null } }, 'backup.json', '2026-09-05'),
+    '2026-09-05');
+});
+
+test('restoredBackupDate is never null, whatever it is handed', () => {
+  [undefined, null, {}, { settings: null }, { settings: {} }].forEach((doc) => {
+    assert.equal(restoredBackupDate(doc, null, '2026-09-05'), '2026-09-05', JSON.stringify(doc));
+  });
 });
 
 test('a null watermark means nothing has gone yet, so everything is pending', () => {

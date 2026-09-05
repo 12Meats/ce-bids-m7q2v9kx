@@ -1677,6 +1677,12 @@ function settingsRestoreFrom(file) {
       { ok: 'Replace', danger: true }
     ).then((ok) => {
       if (!ok) { render(); return; }
+      // The restored phone has a backup — the one in his hand. So the date
+      // the home band reads comes out of restoredBackupDate rather than off
+      // the file raw, which can be null and turn the band red on a phone that
+      // was just restored. pdfsSentThroughMs is left exactly as the file has
+      // it: the PDFs that already went stay gone.
+      data.settings.lastBackupAt = restoredBackupDate(data, file.name, Store.todayISO());
       // Straight to disk and then a reload, rather than swapping state.data
       // under a screen that is still holding pieces of the old document. The
       // app comes back the way it comes back every morning: off the file, at
