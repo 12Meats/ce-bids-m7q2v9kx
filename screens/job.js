@@ -354,11 +354,16 @@ function jobAddChangeOrder(bid) {
     done: (name) => {
       if (!name) return;
       const job = bid.job;
-      const co = Store.newChangeOrder(state.data, name);
+      // The bid is handed over so its men are stamped onto the bid's own wage
+      // snapshot: a change order is priced on the bid's terms, and that
+      // includes what the crew was put on this job at.
+      const wagesBefore = { ...((bid.labor && bid.labor.wageCents) || {}) };
+      const co = Store.newChangeOrder(state.data, name, bid);
       job.changeOrders.push(co);
       if (!persistOr(() => {
         const i = job.changeOrders.indexOf(co);
         if (i !== -1) job.changeOrders.splice(i, 1);
+        if (bid.labor && bid.labor.wageCents) bid.labor.wageCents = wagesBefore;
       })) { render(); return; }
       jobCoMenu = null;
       show('walk', { bidId: bid.id, changeOrderId: co.id });

@@ -26,18 +26,15 @@
 //   The readouts        — the floor, his usual rate, and what a part prints
 //                         at. Four sentences, no controls.
 //
-// The percentages split two ways, and the screen never blurs them:
-//
-//   THIS BID   — material markup and the hours cushion. They live on the bid;
-//                editing one changes this job and nothing else, and the keypad
-//                label says "this bid".
-//   SETTINGS   — payroll burden, consumables, overhead, and the truck day
-//                rate. They re-figure what EVERY bid in the file COSTS, and so
-//                what margin each one is really running at — including bids
-//                already sitting in a customer's inbox. Their prices don't
-//                move (a price is built from the rate stored on that bid), and
-//                the confirmation says exactly that. Each one asks every single
-//                time, not once a session.
+// EVERY PERCENTAGE ON THIS SCREEN BELONGS TO THIS BID. Material markup and the
+// hours cushion always did. Payroll burden, consumables, overhead and the
+// truck day rate used to be Settings, read live, so moving one re-figured what
+// every bid in the file cost — sent ones included — and each of them asked a
+// question before it would move. They are snapshotted onto the bid at
+// Store.newBid now and read back by BidMath.bidSetting, so the questions are
+// gone, every keypad label says "this bid", and Settings decides only what the
+// next bid starts at. The one deliberate way back is the link under the true
+// cost, which names every number it will move before it moves one.
 //
 // Every mutation is snapshot -> mutate -> persistOr(revert), and nothing
 // navigates after a refused save.
@@ -64,6 +61,9 @@ const PRICE_DAY_KEYS = 6;
 // A year on one line. Not a real limit on the work, a limit on the typo.
 const PRICE_MAX_DAYS = 365;
 const PRICE_TOP_ITEMS = 3;
+// One wording for the button and for the question it asks, so the confirm is
+// plainly the same thing he just tapped.
+const PRICE_USE_SETTINGS = "Use today's Settings on this bid";
 
 let priceMenu = null;      // the rental/equipment line showing its actions
 let pricePicker = false;   // true while the tool picker is up
@@ -122,24 +122,14 @@ function priceTouch(bid) {
   return () => { bid.pricing.touched = prev; };
 }
 
-// The question every Settings value on this screen has to ask. EVERY time, not
-// once a session: the second change of the day reaches exactly as far as the
-// first one did.
-//
-// The wording is deliberate, and it is NOT the labor screen's. Hours per day
-// changes bid hours, so it moves the PRICE of every bid in the file. These
-// four — burden, consumables, overhead, the truck day rate — are cost-side
-// only: a bid's price is fixedPrice + its own stored rate × bid hours, and
-// none of that moves. What moves is what the job costs him, and therefore what
-// margin every bid in the file is really running at. Verified against a second
-// bid on the screen: overhead 10% → 20% left its price at $1,240.00 and took
-// its margin from 17.5% to 10%. Saying "this changes every price" would send
-// him hunting for a change that isn't there; saying nothing would hide one
-// that is.
-function priceConfirmSettings(what) {
-  return confirmPanel('Change ' + what + '? This re-figures the cost and margin on EVERY bid, '
-    + 'including ones already sent. Their prices stay where you set them.');
-}
+// The five cost-side numbers this screen edits — hours per day (on the Labor
+// screen), payroll burden, the truck day rate, consumables and overhead — used
+// to be Settings values, and every one of them asked a question first because
+// changing one re-figured the cost and margin of every bid in the file, sent
+// ones included. They are the BID's numbers now, copied off Settings the day
+// it was written, so the questions are gone: nothing typed on this screen
+// reaches any other bid. "Use today's Settings on this bid" is the one way
+// back the other direction, and it says what it will move before it moves it.
 
 // A percentage he types. Out-of-range values never touch the bid — and since
 // nothing was written there is nothing to re-render, so the row he tapped is
@@ -252,16 +242,6 @@ function priceLine(name, valueText, onTapMain) {
   wrap.appendChild(sub);
   wrap.sub = sub;   // where the caller hangs the chips
   return wrap;
-}
-
-// A row that reaches past this bid says so in words, not only in color: the
-// accent on the value is a hint, and a hint is not a warning.
-function priceAllBidsTag(line) {
-  const tag = document.createElement('span');
-  tag.className = 'price-tag';
-  tag.textContent = 'all bids';
-  (line.querySelector('.row-label') || line).appendChild(tag);
-  return line;
 }
 
 // The strip that opens under a line he tapped: [label, class, onTap] each,
@@ -777,14 +757,14 @@ function priceBidHours(bid, stack, node) {
   });
 }
 
-function priceSettingsPctRow(label, value, current, keypadLabel, what, apply) {
-  const line = row(label, value, async () => {
-    const ok = await priceConfirmSettings(what);
-    if (!ok) return;
+// One of the bid's own cost percentages. No confirm and no reach tag: the
+// number belongs to this bid and to nothing else.
+function priceBidPctRow(label, value, current, keypadLabel, apply) {
+  const line = row(label, value, () => {
     pricePromptPct(current, keypadLabel, line, apply);
   }, { keypad: true });
   line.classList.add('price-settings-row');
-  return priceAllBidsTag(line);
+  return line;
 }
 
 function buildCostStack(bid, stack, markup) {
@@ -819,42 +799,43 @@ function buildCostStack(bid, stack, markup) {
   // the stack exposes is wages before it and labor cost after it — so the
   // difference between those two IS the burden, read off the stack rather than
   // recomputed from the bid. Nothing else here does arithmetic on cents.
-  box.appendChild(priceSettingsPctRow(
-    '+ payroll burden ' + pctText(s.burdenPct), moneyText(stack.laborCost - stack.wageCents),
-    s.burdenPct, 'Payroll burden %, every bid', 'payroll burden',
+  const burdenPct = BidMath.bidSetting(bid, s, 'burdenPct');
+  box.appendChild(priceBidPctRow(
+    '+ payroll burden ' + pctText(burdenPct), moneyText(stack.laborCost - stack.wageCents),
+    burdenPct, 'Payroll burden %, this bid',
     (v) => {
-      const prev = s.burdenPct;
-      s.burdenPct = v;
-      priceSave(() => { s.burdenPct = prev; });
+      const prev = bid.pricing.burdenPct;
+      bid.pricing.burdenPct = v;
+      priceSave(() => { bid.pricing.burdenPct = prev; });
       render();
     }
   ));
 
   const truckDays = BidMath.truckDays(bid);
-  const truck = row('Truck & gas ' + pricePlural(truckDays, 'day', 'days'), moneyText(stack.truck), async () => {
-    const ok = await priceConfirmSettings('the truck day rate');
-    if (!ok) return;
-    promptMoney(s.truckDayCents, {
-      label: 'Truck and gas a day, every bid',
+  const truckDayCents = BidMath.bidSetting(bid, s, 'truckDayCents');
+  const truck = row('Truck & gas ' + pricePlural(truckDays, 'day', 'days'), moneyText(stack.truck), () => {
+    promptMoney(truckDayCents, {
+      label: 'Truck and gas a day, this bid',
       done: (cents) => {
         if (cents === null) return;
-        const prev = s.truckDayCents;
-        s.truckDayCents = cents;
-        priceSave(() => { s.truckDayCents = prev; });
+        const prev = bid.pricing.truckDayCents;
+        bid.pricing.truckDayCents = cents;
+        priceSave(() => { bid.pricing.truckDayCents = prev; });
         render();
       },
     });
   }, { keypad: true });
   truck.classList.add('price-settings-row');
-  box.appendChild(priceAllBidsTag(truck));
+  box.appendChild(truck);
 
-  box.appendChild(priceSettingsPctRow(
-    'Consumables ' + pctText(s.consumablesPct), moneyText(stack.consumables),
-    s.consumablesPct, 'Consumables %, every bid', 'consumables',
+  const consumablesPct = BidMath.bidSetting(bid, s, 'consumablesPct');
+  box.appendChild(priceBidPctRow(
+    'Consumables ' + pctText(consumablesPct), moneyText(stack.consumables),
+    consumablesPct, 'Consumables %, this bid',
     (v) => {
-      const prev = s.consumablesPct;
-      s.consumablesPct = v;
-      priceSave(() => { s.consumablesPct = prev; });
+      const prev = bid.pricing.consumablesPct;
+      bid.pricing.consumablesPct = v;
+      priceSave(() => { bid.pricing.consumablesPct = prev; });
       render();
     }
   ));
@@ -934,13 +915,14 @@ function buildCostStack(bid, stack, markup) {
       + ' hours for work you figured at ' + numText(stack.realHours) + '.', true));
   }
 
-  box.appendChild(priceSettingsPctRow(
-    'Overhead ' + pctText(s.overheadPct), moneyText(stack.overhead),
-    s.overheadPct, 'Overhead %, every bid', 'overhead',
+  const overheadPct = BidMath.bidSetting(bid, s, 'overheadPct');
+  box.appendChild(priceBidPctRow(
+    'Overhead ' + pctText(overheadPct), moneyText(stack.overhead),
+    overheadPct, 'Overhead %, this bid',
     (v) => {
-      const prev = s.overheadPct;
-      s.overheadPct = v;
-      priceSave(() => { s.overheadPct = prev; });
+      const prev = bid.pricing.overheadPct;
+      bid.pricing.overheadPct = v;
+      priceSave(() => { bid.pricing.overheadPct = prev; });
       render();
     }
   ));
@@ -949,15 +931,86 @@ function buildCostStack(bid, stack, markup) {
   total.classList.add('price-truecost');
   box.appendChild(total);
 
-  // The two sentences that only ever explain. They were captions under their
-  // own rows, which put four grey lines through the middle of the one card on
-  // this screen he actually reads down.
-  box.appendChild(whatsThis('Materials markup is what the materials sell for, on this bid only. '
-    + 'Truck and gas is ' + moneyText(s.truckDayCents) + ' a day, and the days come from the Labor screen. '
-    + 'Payroll burden, consumables and overhead are Settings: they change what every bid costs you, '
-    + 'never what a sent bid is priced at.'));
+  // The one way back to the shop's numbers, and it only shows up when there is
+  // something to bring forward. Under the true cost, because that is the
+  // figure it moves.
+  const moves = priceSettingsMoves(bid, s);
+  if (moves.length) {
+    box.appendChild(textButton(PRICE_USE_SETTINGS, 'link-btn price-use-settings',
+      () => priceUseSettings(bid, moves)));
+  }
+
+  // The sentence that only ever explains. It was captions under their own
+  // rows, which put four grey lines through the middle of the one card on this
+  // screen he actually reads down.
+  box.appendChild(whatsThis('Every number on this card belongs to THIS bid. Materials markup, payroll '
+    + 'burden, truck and gas, consumables and overhead were copied off Settings the day the bid was '
+    + 'written, and changing one here changes this bid and nothing else. Truck and gas is '
+    + moneyText(BidMath.bidSetting(bid, s, 'truckDayCents')) + ' a day on this bid, and the days come '
+    + 'from the Labor screen. Settings decides what your NEXT bid starts at.'));
 
   return box;
+}
+
+// ---------------------------------------------------------------------------
+// TODAY'S SETTINGS, ON PURPOSE
+// ---------------------------------------------------------------------------
+// A bid is figured once and never re-figured behind him. But a draft walked
+// three weeks ago, before the truck rate went up and before Shawn's raise, is
+// one he may well want brought forward, and doing that by hand is five keypads
+// and a wage he would have to go and look up.
+//
+// So: one tap, and nothing guessed. The confirm names every number that will
+// move, old value and new, and a bid already on today's numbers never sees the
+// button at all.
+
+// What Settings would change, one line each. Wages are named man by man,
+// because "the wages changed" is not something he can check.
+function priceSettingsMoves(bid, s) {
+  const out = [];
+  const label = { hoursPerDay: 'Hours per day', burdenPct: 'Burden', consumablesPct: 'Consumables',
+    truckDayCents: 'Truck & gas', overheadPct: 'Overhead' };
+  const say = (key, v) => (key === 'truckDayCents' ? moneyText(v)
+    : key === 'hoursPerDay' ? numText(v) : pctText(v));
+  BidMath.SNAPSHOT_KEYS.forEach((key) => {
+    const now = BidMath.bidSetting(bid, s, key);
+    if (now === s[key]) return;
+    out.push({ kind: 'pricing', key, text: label[key] + ' ' + say(key, now) + ' to ' + say(key, s[key]) });
+  });
+
+  // Only the men this bid already carries a wage for. A bid older than the
+  // snapshot rule has no map, reads Settings for every wage already, and has
+  // nothing here to move.
+  const map = bid.labor && bid.labor.wageCents;
+  if (map) {
+    Object.keys(map).forEach((id) => {
+      const c = s.crew.find((x) => x.id === id);
+      if (!c || c.wageCents === map[id]) return;
+      out.push({ kind: 'wage', key: id,
+        text: (c.name || 'Crew') + ' ' + moneyText(map[id]) + ' to ' + moneyText(c.wageCents) + ' an hour' });
+    });
+  }
+  return out;
+}
+
+async function priceUseSettings(bid, moves) {
+  const ok = await confirmPanel(PRICE_USE_SETTINGS + '? ' + moves.map((m) => m.text).join('. ') + '.',
+    { ok: 'Use them' });
+  if (!ok) { render(); return; }
+  const s = priceSettings();
+  const prevPricing = { ...bid.pricing };
+  const prevWages = (bid.labor && bid.labor.wageCents) ? { ...bid.labor.wageCents } : null;
+  moves.forEach((m) => {
+    if (m.kind === 'pricing') { bid.pricing[m.key] = s[m.key]; return; }
+    const c = s.crew.find((x) => x.id === m.key);
+    if (c) bid.labor.wageCents[m.key] = c.wageCents;
+  });
+  if (!priceSave(() => {
+    bid.pricing = prevPricing;
+    if (prevWages) bid.labor.wageCents = prevWages;
+  })) { render(); return; }
+  showBanner('This bid is on your Settings numbers now', 'ok');
+  render();
 }
 
 // ---------------------------------------------------------------------------

@@ -93,7 +93,14 @@ function laborChangeOrder(bid) {
 
 function laborSettings() { return state.data.settings; }
 
-function laborHoursPerDay() { return laborSettings().hoursPerDay || 8; }
+// THIS BID'S work day, not the shop's. The number was copied onto the bid the
+// day it was written and the bid has read its own copy ever since, so a rush
+// job at ten hours sits next to last week's eight-hour job and neither one
+// moves when the other is edited. A bid older than the rule has no such field
+// and falls back to Settings, which is BidMath's job, not this screen's.
+function laborHoursPerDay() {
+  return BidMath.hoursPerDayOf(laborBid(), laborSettings());
+}
 
 // numText, not String(n): 0.1 + 0.2 days is 0.30000000000000004, and "two
 // guys × 0.30000000000000004 days" is not a sentence anyone should read.
@@ -132,7 +139,13 @@ function laborCrewChips(edit, holder) {
     wrap.appendChild(chip(c.name || 'Crew', on, () => {
       const prev = (holder.crewIds || []).slice();
       holder.crewIds = on ? prev.filter((id) => id !== c.id) : prev.concat([c.id]);
-      persistOr(() => { holder.crewIds = prev; });
+      // A man's wage is stamped on the bid the first time he lands on it,
+      // wherever he lands — the bid's own line or one task of it — so this
+      // job pays him what he was paid the day he went on it. Already on the
+      // bid, or a bid too old to have a map: noteCrewWage writes nothing and
+      // hands back nothing to undo.
+      const untag = on ? null : Store.noteCrewWage(laborBid(), c.id, laborSettings());
+      persistOr(() => { holder.crewIds = prev; if (untag) untag(); });
       render();
     }));
   });
@@ -263,17 +276,19 @@ function buildLaborBigNumber(edit, real) {
   return box;
 }
 
-// What "a day" means everywhere in the app. It lives on this screen because
-// this is where the answer matters, but it is a SETTINGS value: it re-figures
-// the hours, and therefore the price, on every bid in the file — including
-// ones already in a customer's inbox. So it asks EVERY time, not once a
-// session.
+// What "a day" means ON THIS BID. It used to be the shop's number, and
+// changing it here re-figured the hours and the price of every bid in the
+// file, sent ones included — so it asked first, every time. It no longer
+// reaches that far: a rush job that runs ten-hour days is this bid's fact, and
+// Settings only decides what the NEXT bid starts at. No confirm, because
+// nothing outside this bid moves.
 //
-// And it is deliberately quiet now. It used to be the only chevron on the
-// screen, which made the one global setting here look like the main road
-// through it: he tapped it looking for this bid's hours. It reads as the fact
-// it is, with a small Change beside it, and the every-bid confirm is unchanged.
+// It is deliberately quiet. It used to be the only chevron on the screen,
+// which made one setting look like the main road through it: he tapped it
+// looking for this bid's hours. It reads as the fact it is, with a small
+// Change beside it.
 function buildHoursPerDayRow() {
+  const bid = laborBid();
   const box = card();
   const line = document.createElement('div');
   line.className = 'labor-hpd';
@@ -281,16 +296,12 @@ function buildHoursPerDayRow() {
   const text = document.createElement('span');
   text.className = 'labor-hpd-text';
   text.textContent = 'A work day is ' + laborPlural(laborHoursPerDay(), 'hour', 'hours')
-    + '. Changes every bid, not just this one.';
+    + ' on this bid. This bid only.';
   line.appendChild(text);
 
-  line.appendChild(textButton('Change', 'link-btn link-btn-inline labor-hpd-change', async () => {
-    const ok = await confirmPanel(
-      'Change hours per day? This re-figures the hours and price on EVERY bid, including ones already sent.'
-    );
-    if (!ok) return;
+  line.appendChild(textButton('Change', 'link-btn link-btn-inline labor-hpd-change', () => {
     promptNumber(laborHoursPerDay(), {
-      label: 'Hours in a work day',
+      label: 'Hours per day on this bid',
       done: (v) => {
         if (v === null) return;
         if (!Number.isInteger(v) || v < LABOR_HPD_MIN || v > LABOR_HPD_MAX) {
@@ -298,10 +309,10 @@ function buildHoursPerDayRow() {
           shake(line);
           return;
         }
-        const settings = laborSettings();
-        const prev = settings.hoursPerDay;
-        settings.hoursPerDay = v;
-        persistOr(() => { settings.hoursPerDay = prev; });
+        if (!bid) return;
+        const prev = bid.pricing.hoursPerDay;
+        bid.pricing.hoursPerDay = v;
+        persistOr(() => { bid.pricing.hoursPerDay = prev; });
         render();
       },
     });

@@ -1178,21 +1178,12 @@
     .chip-flat { border-style: dashed; color: var(--color-text-muted); }
     .chip:disabled { opacity: .55; }
 
-    /* A row that reaches past this bid. Color alone is a hint, and a hint is
-       not a warning — so the reach is also written on the row, in words. */
+    /* A cost row he can type on. These used to reach every bid in the file and
+       wore an "all bids" tag saying so; they are this bid's own numbers now,
+       and the accent is what marks them as editable. */
     .price-settings-row .row-value { color: var(--color-accent); font-weight: 700; }
-    .price-tag {
-      display: inline-block;
-      margin-left: 8px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: .02em;
-      white-space: nowrap;
-      background: rgba(4, 30, 66, 0.1);
-      color: var(--color-accent);
-    }
+    /* The way back to the shop's numbers, under the true cost it moves. */
+    .price-use-settings { display: block; margin-top: 12px; }
     .price-truecost { font-size: 1.2rem; }
     .price-truecost .row-label, .price-truecost .row-value { font-weight: 800; color: var(--color-text); }
 

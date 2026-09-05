@@ -11,20 +11,23 @@
 //
 // THE TWO RULES THIS SCREEN LIVES BY
 //
-// 1. HOW FAR DOES IT REACH? A settings value is either a default a NEW bid
-//    takes a copy of, or a live number every bid in the file is figured
-//    against. The difference is invisible on the glass, so it is spelled out
-//    on every single row, and the ones that reach backwards ask before they
-//    change. Verified against the code, not against intuition:
+// 1. HOW FAR DOES IT REACH? SETTINGS NEVER CHANGE AN EXISTING BID. Every
+//    number on this screen that feeds a price is a default a NEW bid takes a
+//    copy of, and that is now the whole list: the five that used to be read
+//    live off Settings are snapshotted onto the bid at Store.newBid and read
+//    back by BidMath.bidSetting. The reach is still spelled out on every row,
+//    but there is only one reach left, so no row asks a question first.
+//    Verified against the code, not against intuition:
 //
-//      Hours per day    — costStack reads it live. It moves real hours, bid
-//                         hours, and therefore the PRICE of every bid.
-//      Burden, consumables, overhead, truck & gas, a crew wage
-//                       — costStack reads all of them live. They move what
-//                         every bid COSTS and so what margin it is really
-//                         running at. Prices don't move: a price is
-//                         fixedPrice + the rate stored on that bid × bid
-//                         hours, and none of that is in here.
+//      Hours per day, burden, consumables, overhead, truck & gas, a crew wage
+//                       — copied onto the bid (bid.pricing and
+//                         bid.labor.wageCents) the day it is written, and
+//                         costStack reads the bid's copy. Changing one here
+//                         changes what the NEXT bid starts at. Changing one on
+//                         a bid he already has is done on that bid's own
+//                         screens: hours per day on Labor, the other four on
+//                         Costs & price, with "Use today's Settings on this
+//                         bid" there for a draft he wants brought forward.
 //      Labor rate, rate floor, default margin, material markup, both
 //      cushions, validity days
 //                       — copied onto a bid by Store.newBid (markup, margin,
@@ -291,22 +294,14 @@ function settingsRemoveActions(box, parentEl, buttons, entry, uses, list, what, 
   if (uses > 0) box.appendChild(caption(settingsInUseText(uses)));
 }
 
-// --- The two questions that reach backwards ---------------------------------
-// Asked EVERY time, not once a session: the second change of the day reaches
-// exactly as far as the first one did. The wording is price.js's and labor.js's
-// word for word, because it is the same fact and he should not have to work
-// out whether two differently worded warnings mean two different things.
-
-function settingsConfirmCost(what) {
-  return confirmPanel('Change ' + what + '? This re-figures the cost and margin on EVERY bid, '
-    + 'including ones already sent. Their prices stay where you set them.');
-}
-
-function settingsConfirmHours() {
-  return confirmPanel(
-    'Change hours per day? This re-figures the hours and price on EVERY bid, including ones already sent.'
-  );
-}
+// --- Nothing here reaches backwards any more --------------------------------
+// Hours per day, payroll burden, consumables, the truck day rate, overhead and
+// the crew's wages used to move every bid in the file, sent ones included, so
+// each one asked a question before it would move. Every one of them is now
+// copied onto a bid the day it is written and read off the bid forever after
+// (Store.newBid, BidMath.bidSetting), so Settings decides what the NEXT bid
+// starts at and nothing else. The questions are gone with the reach; the
+// captions say "New bids only" instead.
 
 // --- Typing a number --------------------------------------------------------
 
@@ -433,9 +428,11 @@ function buildSetCompany() {
 // ---------------------------------------------------------------------------
 // CREW
 // ---------------------------------------------------------------------------
-// A wage is a live number: costStack looks his men up by id every time it
-// figures a bid, so changing one re-figures every bid that man is on. Hiding
-// him does not: the id stays in the file, an old bid keeps him and keeps
+// A wage is NEW BIDS ONLY. What a man is paid is stamped onto a bid the first
+// time he lands on it (Store.newBid, Store.noteCrewWage) and costStack reads
+// that stamp, so a raise typed here is what the next bid pays him and every
+// bid he is already on keeps the wage it was figured at. Hiding him reaches no
+// further: the id stays in the file, an old bid keeps him and keeps
 // validating, and Store.newBid simply stops seeding him onto new ones.
 
 function buildSetCrew() {
@@ -453,7 +450,8 @@ function buildSetCrew() {
   box.appendChild(textButton('+ Worker', 'btn btn-block mt-3', settingsAddCrew));
   settingHiddenToggle(box, 'crew', hidden.length);
   box.appendChild(caption('Hiding somebody keeps him on the bids he is already on. '
-    + 'He just stops showing up on new ones.'));
+    + 'He just stops showing up on new ones. A raise is new bids only: a bid he is already on keeps '
+    + 'the wage he went on it at.'));
   return box;
 }
 
@@ -473,11 +471,7 @@ function buildSetCrewRow(box, c) {
         settingsSaveAndRender(() => { c.name = prev; });
       });
     }],
-    ['Wage', '', async () => {
-      const ok = await settingsConfirmCost('what ' + (c.name || 'he') + ' is paid');
-      if (!ok) { render(); return; }
-      settingsEditWage(c);
-    }],
+    ['Wage', '', () => settingsEditWage(c)],
   ], c, Store.crewInUse(state.data, c.id), setS().crew, c.name || 'this worker');
 }
 
@@ -486,9 +480,9 @@ function buildSetCrewRow(box, c) {
 // must not re-ask the confirm — he already said yes to changing the wage; what
 // he has not done yet is name one.
 //
-// Zero is not a wage. costStack multiplies it by every hour on every bid this
-// man is on, so a man at $0.00/hr works for free on paper and quietly eats the
-// margin — the same reason + Worker refuses one. Clear is different and is
+// Zero is not a wage. costStack multiplies it by every hour of every bid he
+// goes on from here, so a man at $0.00/hr works for free on paper and quietly
+// eats the margin — the same reason + Worker refuses one. Clear is different and is
 // left alone: on a man who already has a wage, "clear" is "leave it as it is",
 // the way it is everywhere else on this screen.
 // again: the keypad has just come back because a zero was typed, and the
@@ -496,7 +490,7 @@ function buildSetCrewRow(box, c) {
 // area, so the only feedback he can see is the one line above the digits.
 function settingsEditWage(c, again) {
   promptMoney(c.wageCents, {
-    label: (c.name || 'Worker') + ', paid an hour' + (again ? '. Enter more than $0' : ''),
+    label: (c.name || 'Worker') + ', paid an hour on new bids' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null) return;
       if (!(cents > 0)) {
@@ -554,9 +548,10 @@ function settingsAskWage(name, again) {
 // ---------------------------------------------------------------------------
 // RATES
 // ---------------------------------------------------------------------------
-// Every row here carries its reach in its caption, in his words, and the five
-// that reach backwards ask before they move. See the header comment for how
-// each claim was checked against costStack and Store.newBid.
+// Every row here carries its reach in its caption, in his words, and since the
+// snapshot rule landed there is only one reach left to carry: NEW BIDS ONLY.
+// Nothing on this card moves a bid that already exists. See the header comment
+// for how each claim was checked against costStack and Store.newBid.
 
 function buildSetRates() {
   const s = setS();
@@ -564,9 +559,7 @@ function buildSetRates() {
   settingsRateNotes = [];
 
   const hpd = settingRow(box, 'Hours per day', numText(s.hoursPerDay) + (s.hoursPerDay === 1 ? ' hour' : ' hours'),
-    async () => {
-      const ok = await settingsConfirmHours();
-      if (!ok) { render(); return; }
+    () => {
       settingsPromptWhole(s.hoursPerDay, 'Hours in a work day', hpd, SET_HPD_MIN, SET_HPD_MAX,
         'A work day is between ' + SET_HPD_MIN + ' and ' + SET_HPD_MAX + ' whole hours',
         (v) => {
@@ -575,10 +568,12 @@ function buildSetRates() {
           settingsSaveAndRender(() => { s.hoursPerDay = prev; });
         });
     },
-    'How long a work day is. Days times this is hours. Changes the hours and the price on every bid, sent ones too.');
+    'How long a work day is. Days times this is hours. New bids only. A bid you already have keeps its own, '
+    + 'and the Labor screen changes it.');
 
-  settingsPctRow(box, s, 'burdenPct', 'Payroll burden', 'payroll burden',
-    'Taxes, workers comp, and insurance on top of a wage. Changes what every bid costs, sent ones too. Prices stay.');
+  settingsPctRow(box, s, 'burdenPct', 'Payroll burden',
+    'Taxes, workers comp, and insurance on top of a wage. New bids only. Change a bid you already have on its '
+    + 'Costs & price screen.');
 
   settingRow(box, 'Labor rate', moneyText(s.rateCents) + '/hr', () => {
     promptMoney(s.rateCents, {
@@ -604,20 +599,18 @@ function buildSetRates() {
     });
   }, 'The lowest rate worth working for. Any bid under it gets a red line on its price screen. No price moves.');
 
-  settingsPctRow(box, s, 'marginPct', 'Default margin', null,
+  settingsPctRow(box, s, 'marginPct', 'Default margin',
     'What a new bid aims for. New bids only.');
 
-  settingsPctRow(box, s, 'markupPct', 'Material markup', null,
+  settingsPctRow(box, s, 'markupPct', 'Material markup',
     'What you add to what the material cost you. New bids only.');
 
-  settingsPctRow(box, s, 'consumablesPct', 'Consumables', 'consumables',
-    'Tape, wire nuts, straps, bits, blades. A share of material cost. Changes what every bid costs, sent ones too. Prices stay.');
+  settingsPctRow(box, s, 'consumablesPct', 'Consumables',
+    'Tape, wire nuts, straps, bits, blades. A share of material cost. New bids only.');
 
-  settingRow(box, 'Truck & gas', moneyText(s.truckDayCents) + '/day', async () => {
-    const ok = await settingsConfirmCost('the truck day rate');
-    if (!ok) { render(); return; }
+  settingRow(box, 'Truck & gas', moneyText(s.truckDayCents) + '/day', () => {
     promptMoney(s.truckDayCents, {
-      label: 'Truck and gas a day, every bid',
+      label: 'Truck and gas a day, new bids',
       done: (cents) => {
         if (cents === null) return;
         const prev = s.truckDayCents;
@@ -625,17 +618,17 @@ function buildSetRates() {
         settingsSaveAndRender(() => { s.truckDayCents = prev; });
       },
     });
-  }, 'What the truck costs you for a day on the job. Changes what every bid costs, sent ones too. Prices stay.');
+  }, 'What the truck costs you for a day on the job. New bids only.');
 
-  settingsPctRow(box, s, 'overheadPct', 'Overhead', 'overhead',
-    'Insurance, shop, phones, Jack, spread over every job. Changes what every bid costs, sent ones too. Prices stay.');
+  settingsPctRow(box, s, 'overheadPct', 'Overhead',
+    'Insurance, shop, phones, Jack, spread over every job. New bids only.');
 
   settingsCushionRow(box, s, 'service', 'Cushion, service call',
     'Extra hours you quote on a service call and hope not to work. New bids only.');
   settingsCushionRow(box, s, 'project', 'Cushion, project',
     'Extra hours you quote on a project and hope not to work. New bids only.');
 
-  settingsPctRow(box, s, 'equipmentPct', 'Equipment', null,
+  settingsPctRow(box, s, 'equipmentPct', 'Equipment',
     'A day of your own tool, as a share of what it cost new. Sets the rate the picker offers next time. '
     + 'Tools already on a bid keep the rate they went on at.');
 
@@ -672,14 +665,10 @@ function buildSetRates() {
   return box;
 }
 
-// The seven plain percentages. confirmWhat is what the far-reach question
-// calls this number, or null for the ones a new bid takes a copy of.
-function settingsPctRow(box, s, key, label, confirmWhat, captionText) {
-  const line = settingRow(box, label, pctText(s[key]), async () => {
-    if (confirmWhat) {
-      const ok = await settingsConfirmCost(confirmWhat);
-      if (!ok) { render(); return; }
-    }
+// The seven plain percentages. Every one of them is copied onto a new bid and
+// reaches no further, so none of them asks anything first.
+function settingsPctRow(box, s, key, label, captionText) {
+  const line = settingRow(box, label, pctText(s[key]), () => {
     settingsPromptPct(s[key], label + ' %', line, (v) => {
       const prev = s[key];
       s[key] = v;
