@@ -177,6 +177,52 @@ function settingsHideAction(entry) {
   }];
 }
 
+// --- Hide, or really delete -------------------------------------------------
+// Hiding is the soft delete every list on this screen used to have, and it is
+// there for one reason: an old bid holds ids, and a bid holding an id nothing
+// answers is a bid validateImport refuses — the whole file, not just that bid.
+//
+// But most of what he puts away is not on any bid at all: a tool he bought and
+// never billed, a clause he wrote and never ticked, a part he added by
+// mistake. Hiding those leaves a list that only ever grows, with no way to
+// take anything out of it. So each row asks Store first:
+//
+//   nothing points at it   — Delete, and the entry is really spliced out
+//   something points at it — Hide, and the caption says how many bids
+//
+// A row that is already hidden keeps its Unhide either way; a tool he put away
+// by mistake must not be reachable only through deleting it.
+function settingsInUseText(uses) {
+  return 'On ' + uses + ' bid' + (uses === 1 ? '' : 's') + ', so it can be hidden but not deleted.';
+}
+
+function settingsDeleteAction(list, entry, what) {
+  return ['Delete', 'btn-danger-outline', async () => {
+    const ok = await confirmPanel('Delete ' + what + '? Nothing on your bids uses it. This can\'t be undone.',
+      { ok: 'Delete', danger: true });
+    if (!ok) { render(); return; }
+    // Asked again after the question: a bid made while the panel was open
+    // could be the one that now names this id, and the save would be refused
+    // with the entry already gone from the list on screen.
+    const i = list.indexOf(entry);
+    if (i === -1) { render(); return; }
+    const prevMenu = settingsMenu;
+    list.splice(i, 1);
+    settingsMenu = null;
+    settingsSaveAndRender(() => { list.splice(i, 0, entry); settingsMenu = prevMenu; });
+  }];
+}
+
+// Appends the row's action strip and, when it is one of the rows that cannot
+// be deleted, the sentence saying why. buttons are the row's own edits; the
+// remove action is decided here so all four lists decide it the same way.
+function settingsRemoveActions(box, buttons, entry, uses, list, what) {
+  if (entry.hidden || uses > 0) buttons.push(settingsHideAction(entry));
+  if (uses === 0) buttons.push(settingsDeleteAction(list, entry, what));
+  box.appendChild(settingActions(buttons));
+  if (uses > 0) box.appendChild(caption(settingsInUseText(uses)));
+}
+
 // --- The two questions that reach backwards ---------------------------------
 // Asked EVERY time, not once a session: the second change of the day reaches
 // exactly as far as the first one did. The wording is price.js's and labor.js's
@@ -351,7 +397,7 @@ function buildSetCrewRow(box, c) {
 
   if (!settingsMenuOpen(key)) return;
 
-  box.appendChild(settingActions([
+  settingsRemoveActions(box, [
     ['Name', '', () => {
       settingsPromptText(c.name, 'Name', 'Shawn', line, { required: true }, (text) => {
         const prev = c.name;
@@ -364,8 +410,7 @@ function buildSetCrewRow(box, c) {
       if (!ok) { render(); return; }
       settingsEditWage(c);
     }],
-    settingsHideAction(c),
-  ]));
+  ], c, Store.crewInUse(state.data, c.id), setS().crew, c.name || 'this worker');
 }
 
 // Changing a wage, after the question about how far it reaches has been
@@ -667,9 +712,8 @@ function buildSetEquipmentRow(box, e, equipmentPct) {
     }]);
   }
 
-  buttons.push(settingsHideAction(e));
-
-  box.appendChild(settingActions(buttons));
+  settingsRemoveActions(box, buttons, e, Store.equipmentInUse(state.data, e.id),
+    setS().equipment, e.name || 'this tool');
 }
 
 // Name, then what it cost new, then one push and one save — the entry is
@@ -898,7 +942,7 @@ function buildSetClauseRow(box, c) {
   if (!settingsMenuOpen(key)) return;
 
   box.appendChild(caption(c.text));
-  box.appendChild(settingActions([
+  settingsRemoveActions(box, [
     ['Title', '', () => {
       settingsPromptText(c.title, 'Clause title', 'Payment', line, { required: true }, (text) => {
         const prev = c.title;
@@ -913,8 +957,7 @@ function buildSetClauseRow(box, c) {
         settingsSaveAndRender(() => { c.text = prev; });
       });
     }],
-    settingsHideAction(c),
-  ]));
+  ], c, Store.clauseInUse(state.data, c.id), setS().clauses, c.title || 'this clause');
 }
 
 function settingsAddClause(group) {
@@ -1011,7 +1054,7 @@ function buildSetCatalogRow(box, p) {
   });
   box.appendChild(units);
 
-  box.appendChild(settingActions([
+  settingsRemoveActions(box, [
     ['Rename', '', () => {
       settingsPromptText(p.name, 'Part name', '3/4" EMT', line, { required: true }, (text) => {
         const prev = p.name;
@@ -1021,8 +1064,7 @@ function buildSetCatalogRow(box, p) {
         settingsSaveAndRender(() => { p.name = prev; });
       });
     }],
-    settingsHideAction(p),
-  ]));
+  ], p, Store.catalogInUse(state.data, p.id), state.data.catalog, p.name || 'this part');
 }
 
 // ---------------------------------------------------------------------------
@@ -1752,33 +1794,80 @@ function settingsSaveAndRender(revert) {
   return ok;
 }
 
+// ---------------------------------------------------------------------------
+// RENDER
+// ---------------------------------------------------------------------------
+
+// Card order is how often he touches it, not how the file is organized. Crew,
+// rates and equipment change with the week; the company address and the PIN
+// were typed once and are not worth a scroll past every time. The sections in
+// the file itself stay in their old order so the diff stays readable.
+//
+// The chip is what the jump strip calls that card, and a card with none is one
+// the strip does not name — the note phrases ride under Lists with the
+// did-you-forget rows, and Reports is a door to another screen rather than a
+// place he is looking for. Ten chips is already a full strip.
+const SETTINGS_CARDS = [
+  ['set-crew', 'Crew', () => buildSetCrew()],
+  ['set-rates', 'Rates', () => buildSetRates()],
+  ['set-equipment', 'Equipment', () => buildSetEquipment()],
+  ['set-counter', 'Numbers', () => buildSetCounter()],
+  ['set-forget', 'Lists', () => buildSetForget()],
+  ['set-notes', null, () => buildSetNotePhrases()],
+  ['set-terms', 'Terms', () => buildSetTerms()],
+  ['set-catalog', 'Catalog', () => buildSetCatalog()],
+  ['set-company', 'Company', () => buildSetCompany()],
+  ['set-lock', 'PIN', () => buildSetLock()],
+  ['set-reports', null, () => buildSetReports()],
+  ['set-backup', 'Backup', () => buildSetBackup()],
+];
+
+// Nine screens of settings with no index: he scrolled for the parts catalog
+// every time. The strip is one horizontal row of chips at the top, and each
+// one takes him to its card. The cards carry scroll-margin-top in the CSS so
+// the sticky header does not land on top of the title he just jumped to.
+function buildSetJump() {
+  const wrap = document.createElement('div');
+  wrap.className = 'set-jump';
+  wrap.setAttribute('aria-label', 'Jump to a section');
+  SETTINGS_CARDS.forEach(([id, label]) => {
+    if (!label) return;
+    wrap.appendChild(chip(label, false, () => {
+      const target = el(id);
+      if (!target) return;
+      try { target.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      catch (e) { target.scrollIntoView(); }   // no options object in an old browser
+    }));
+  });
+  return wrap;
+}
+
+// "CE Bids · v1 · built Sep 5, 2026". The version is the cache the phone is
+// actually being served by (APP_VERSION, held to sw.js's CACHE by
+// tests/sw.test.js); the date is APP_BUILT beside it. index.html is served
+// cache-first, so a deploy that forgets to bump CACHE leaves him on old code
+// with no symptom at all — this line is the symptom, and the DATE is the half
+// he can check against the day he was told to update.
+function settingsVersionText() {
+  return 'CE Bids · ' + String(APP_VERSION).replace(/^bids-/, '') + ' · built ' + fmtDate(APP_BUILT);
+}
+
 function renderSettings() {
   const host = el('settingsContent');
   host.textContent = '';
 
-  // Card order is how often he touches it, not how the file is organized.
-  // Crew, rates and equipment change with the week; the company address and
-  // the PIN were typed once and are not worth a scroll past every time. The
-  // sections in this file stay in their old order so the diff stays readable.
-  host.appendChild(buildSetCrew());
-  host.appendChild(buildSetRates());
-  host.appendChild(buildSetEquipment());
-  host.appendChild(buildSetCounter());
-  host.appendChild(buildSetForget());
-  host.appendChild(buildSetNotePhrases());
-  host.appendChild(buildSetTerms());
-  host.appendChild(buildSetCatalog());
-  host.appendChild(buildSetCompany());
-  host.appendChild(buildSetLock());
-  host.appendChild(buildSetReports());
-  host.appendChild(buildSetBackup());
+  // The cards are built first and appended after the strip, so the strip can
+  // be at the top of the screen while the ids it points at come from the one
+  // list that decides both.
+  const cards = SETTINGS_CARDS.map(([id, label, build]) => {
+    const node = build();
+    node.id = id;
+    return node;
+  });
+  host.appendChild(buildSetJump());
+  cards.forEach((node) => host.appendChild(node));
 
-  // Last line on the screen, and the only way he can tell from the phone which
-  // build he is running. index.html is served cache-first, so a deploy that
-  // forgets to bump CACHE in sw.js leaves him on old code with no symptom at
-  // all; this line is the symptom. APP_VERSION lives in app.js and is checked
-  // against CACHE by tests/sw.test.js, so the two cannot drift.
-  const version = caption('CE Bids · version ' + APP_VERSION);
+  const version = caption(settingsVersionText());
   version.className = 'caption app-version';
   host.appendChild(version);
 }

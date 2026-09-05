@@ -454,6 +454,9 @@
       padding: var(--space-3);
       margin-bottom: var(--space-2);
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      /* The top bar is sticky, so a card scrolled to by the Settings jump
+         strip would otherwise arrive with its title underneath it. */
+      scroll-margin-top: calc(var(--chrome-height) + var(--space-2));
     }
     .card-title {
       font-size: 0.95rem;
@@ -1240,6 +1243,21 @@
 
     /* The six category buttons over the parts list, and the five group
        buttons in the clause picker. */
+    /* The jump strip: one horizontal row that scrolls sideways rather than
+       wrapping into four rows of chips and pushing the first card off the
+       screen it is meant to be an index to. */
+    .set-jump {
+      display: flex;
+      gap: var(--space-1);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: var(--space-1);
+      margin-bottom: var(--space-2);
+    }
+    .set-jump::-webkit-scrollbar { display: none; }
+    .set-jump .chip { flex: 0 0 auto; min-height: 48px; }
+
     .set-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
 
     /* A clause group's header: name on the left, how many it holds on the
