@@ -282,8 +282,18 @@ function attachedStrip(parentRowEl, buttons, opts) {
   // Inserted for the caller when the row is already in the document; handed
   // back unplaced when it is not, so a builder assembling a card off-screen can
   // append it itself.
+  //
+  // And revealed, for the same reason the Lost question is. A strip hangs
+  // UNDER the row that opened it, so tapping a row sitting at the bottom of the
+  // glass drew the whole strip behind the pinned bar: on an SE, tapping "Hours
+  // cushion" with that row above the bar put the strip at y=602 in a 667-point
+  // window and not one pixel of it was on screen. Nothing had visibly happened,
+  // which is the same nothing that made the Lost question look broken.
+  // revealAfterRender leaves a strip that is already comfortably on screen
+  // exactly where it is, so a re-render of an open strip moves nothing.
   if (parentRowEl && parentRowEl.parentNode) {
     parentRowEl.parentNode.insertBefore(wrap, parentRowEl.nextSibling);
+    revealAfterRender(wrap);
   }
   return wrap;
 }
