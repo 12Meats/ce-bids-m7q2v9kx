@@ -362,10 +362,18 @@ function buildChangeOrdersCard(bid, settings, done) {
       // not stored anywhere, so there is nothing to write back and nothing to
       // go stale, and the proposal quotes the same function.
       const priceCents = BidMath.changeOrderPrice(co, bid, settings);
-      box.appendChild(row(co.name || 'Change order', moneyText(priceCents), done ? null : () => {
-        jobCoMenu = jobCoMenu === co ? null : co;
-        render();
-      }));
+      // Three states, and only one of them is a price. Empty is a change order
+      // he opened the moment the customer said the word and has not described
+      // yet — it never prints, so the row says so instead of quoting $0.00.
+      // Non-empty and still $0 is work with no money on it, which is the same
+      // amber every other unpriced line on this bid gets.
+      const empty = BidMath.changeOrderIsEmpty(co);
+      box.appendChild(row(co.name || 'Change order', empty ? 'Nothing on it yet' : moneyText(priceCents),
+        done ? null : () => {
+          jobCoMenu = jobCoMenu === co ? null : co;
+          render();
+        }));
+      if (!empty && !(priceCents > 0)) box.appendChild(unpricedWarn());
       if (jobCoMenu === co) {
         const acts = document.createElement('div');
         acts.className = 'job-actions';

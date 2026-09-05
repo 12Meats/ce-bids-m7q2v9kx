@@ -91,6 +91,48 @@ test('change orders append a section and add to the total', () => {
   assert.strictEqual(doc.totalCents, base + price);
 });
 
+// He adds a change order the minute the customer says the word, and describes
+// it afterwards. Until then it has no items and no days, so it prints nothing —
+// an already-sent bid re-shared that afternoon was carrying a heading and a
+// $0.00 line for work nobody had written down yet.
+test('a change order with no items and no labor never prints, at any level', () => {
+  const { d, b } = fixture();
+  const empty = { id: 'co1', name: 'Whatever they said on the phone', areas: [],
+    labor: { crewIds: ['c1'], days: 0, tasks: null } };
+  b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [empty], completedAt: null };
+  const doc = D.build(b, d, 'full');
+  assert.strictEqual(doc.sections.some((s) => s.title.indexOf('Change order') === 0), false);
+  assert.strictEqual(D.build(b, d, 'summary').summary.some((r) => r.label.indexOf('Change order') === 0), false);
+  // It priced at nothing, so leaving it out moves no money.
+  assert.strictEqual(doc.totalCents, D.build({ ...b, job: null }, d, 'full').totalCents);
+});
+
+test('an empty change order does not take the number off the real one behind it', () => {
+  const { d, b } = fixture();
+  const empty = { id: 'co1', name: 'Nothing yet', areas: [], labor: { crewIds: [], days: 0, tasks: null } };
+  const real = { id: 'co2', name: 'Disconnect at pump 4', areas: [],
+    labor: { crewIds: ['c1'], days: 2, tasks: null } };
+  b.status = 'won'; b.job = { weeks: [], surprises: [], changeOrders: [empty, real], completedAt: null };
+  const doc = D.build(b, d, 'full');
+  const cos = doc.sections.filter((s) => s.title.indexOf('Change order') === 0);
+  assert.strictEqual(cos.length, 1);
+  assert.strictEqual(cos[0].title, 'Change order 1: Disconnect at pump 4');
+});
+
+// A change order with days on it and nobody assigned still bills truck and gas,
+// so it holds real money and is not empty.
+test('changeOrderIsEmpty: items or days make it real, and nothing else does', () => {
+  const bare = { id: 'c', name: 'x', areas: [], labor: { crewIds: ['c1'], days: 0, tasks: null } };
+  assert.strictEqual(B.changeOrderIsEmpty(bare), true);
+  assert.strictEqual(B.changeOrderIsEmpty({ ...bare, areas: [{ id: 'a', name: 'A', items: [], photoIds: [] }] }), true);
+  assert.strictEqual(B.changeOrderIsEmpty({ ...bare, areas: [{ id: 'a', name: 'A', photoIds: [], items: [
+    { catalogId: null, name: 'Wire', unit: 'ft', qty: 10, costCents: 100, priceCents: null } ] }] }), false);
+  assert.strictEqual(B.changeOrderIsEmpty({ ...bare, labor: { crewIds: ['c1'], days: 1, tasks: null } }), false);
+  assert.strictEqual(B.changeOrderIsEmpty({ ...bare, labor: { crewIds: [], days: 2, tasks: null } }), false);
+  assert.strictEqual(B.changeOrderIsEmpty({ ...bare, labor: { crewIds: ['c1'], days: 0,
+    tasks: [{ name: 'Pull', crewIds: ['c1'], days: 1 }] } }), false);
+});
+
 // The bug that killed the cached co.priceCents: the price was written only by
 // the job screen's render, so editing a change order's labor and leaving by
 // any other route printed the old number on the customer's proposal.

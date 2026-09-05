@@ -252,6 +252,21 @@
     return costStack(changeOrderScratch(co, bid), settings);
   }
 
+  // A change order with nothing on it: no items in any of its areas, and no
+  // days of labor anywhere. It prices at $0 because there is nothing in it to
+  // price, which is a different thing from work he has not costed yet — so the
+  // paper leaves it out entirely and the job screen says "Nothing on it yet"
+  // rather than quoting a customer a $0.00 line for extra work.
+  //
+  // Days without a crew still count as something: those days bill truck and
+  // gas, so the change order has real money in it and is not empty.
+  function changeOrderIsEmpty(co) {
+    if (!co) return true;
+    const hasItems = (co.areas || []).some((a) => ((a && a.items) || []).length > 0);
+    if (hasItems) return false;
+    return !(truckDays(co) > 0);
+  }
+
   // What one change order sells for. DERIVED, never stored: the document, the
   // bids list and the job card all call this, so a day added on the change
   // order's labor screen moves the customer's price the instant it is typed
@@ -522,6 +537,6 @@
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,
-    resolveMarkup, itemPrice, rentalPrice, equipmentLine,
+    resolveMarkup, itemPrice, rentalPrice, equipmentLine, changeOrderIsEmpty,
   };
 });

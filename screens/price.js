@@ -347,7 +347,7 @@ function buildRentalLine(bid, x, markup) {
   const prints = BidMath.rentalPrice(x, markup);
   if (prints !== x.cents) line.appendChild(caption('Prints at ' + moneyText(prints)));
 
-  if (x.cents === 0) line.appendChild(inlineWarn('No price on this yet — tap the line and put one on it.'));
+  if (!(prints > 0)) line.appendChild(unpricedWarn());
 
   if (priceMenu === x) {
     line.appendChild(priceDeleteRow('Delete rental', () => priceDeleteRental(bid, x)));
@@ -449,6 +449,11 @@ function buildEquipmentLine(bid, x) {
   }
 
   line.sub.appendChild(priceMoreChip(x));
+
+  // The same amber a $0 rental gets. The chip above says how to fix it; this
+  // says what is wrong, in the words every other unpriced line on this bid
+  // uses, so one glance down the screen finds all of them.
+  if (!(BidMath.equipmentLine(x) > 0)) line.appendChild(unpricedWarn());
 
   if (priceMenu === x) {
     line.appendChild(priceDeleteRow('Delete equipment', () => priceDeleteEquipment(bid, x)));

@@ -526,3 +526,65 @@ function bidPriceText(bid, data) {
     return '—';
   }
 }
+
+// ---------------------------------------------------------------------------
+// UNPRICED LINES
+// ---------------------------------------------------------------------------
+// A line that will print at $0.00 on the customer's page. He walks a plant
+// counting things and prices them afterwards, so a bid legitimately holds
+// half-priced lines for a while — but the moment a PDF is made, every one of
+// them is a number he is giving away. The screens paint these amber and the
+// proposal refuses to build until they are gone.
+//
+// "Unpriced" is decided by what will PRINT, not by what it cost: an item with
+// a typed price override of $50 and no cost on the invoice yet is priced, and
+// a $0 override is not.
+
+const UNPRICED_WARN_TEXT = 'No price on this yet — tap it to put a price on it.';
+
+function unpricedWarn() { return inlineWarn(UNPRICED_WARN_TEXT); }
+
+// Every line on this bid that would print at nothing, in the order he would
+// find them: areas top to bottom, then rentals, then equipment, then change
+// orders. Each entry is { kind, name } — the name is what the banner puts in
+// quotes, so it is the words he gave the line, never an id.
+//
+// Misc is deliberately NOT here. A misc of $0 does not print at all (docmodel
+// only pushes the row when it has money in it), so it is not a $0 line on the
+// customer's page and must not stand between him and a PDF. The walk still
+// paints it amber, where it is a nudge and not a gate.
+//
+// A change order with nothing on it is skipped for the same reason: it does
+// not print either.
+function unpricedLines(bid, settings) {
+  const out = [];
+  const markup = BidMath.resolveMarkup(bid, settings);
+
+  (bid.areas || []).forEach((a) => {
+    (a.items || []).forEach((it) => {
+      if (!(BidMath.itemPrice(it, markup).cents > 0)) {
+        out.push({ kind: 'item', name: it.name || 'this item', area: a.name || '' });
+      }
+    });
+  });
+  (bid.rentals || []).forEach((x) => {
+    if (!(BidMath.rentalPrice(x, markup) > 0)) out.push({ kind: 'rental', name: x.name || 'this rental' });
+  });
+  (bid.equipment || []).forEach((x) => {
+    if (!(BidMath.equipmentLine(x) > 0)) out.push({ kind: 'equipment', name: x.name || 'this equipment' });
+  });
+  ((bid.job && bid.job.changeOrders) || []).forEach((co) => {
+    if (BidMath.changeOrderIsEmpty(co)) return;
+    if (!(BidMath.changeOrderPrice(co, bid, settings) > 0)) {
+      out.push({ kind: 'changeOrder', name: co.name || 'this change order' });
+    }
+  });
+  return out;
+}
+
+// The banner that stands between an unpriced line and a PDF. Names the first
+// one: a count ("3 lines have no price") sends him hunting, a name sends him
+// to the line.
+function unpricedBlockText(lines) {
+  return 'Put a price on "' + lines[0].name + '" first.';
+}

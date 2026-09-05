@@ -20,11 +20,16 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const sandbox = { document: undefined, console };
+const S = require('../storage.js');
+const B = require('../bidmath.js');
+
+// unpricedLines is the fourth: it is what stands between a $0.00 line and a
+// PDF in a customer's inbox, and it reads a whole bid rather than a string.
+const sandbox = { document: undefined, console, BidMath: B };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
-const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress } = sandbox;
+const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText } = sandbox;
 
 test('bidPdfPrefix and bidPdfParse are inverses over a UUID bid id', () => {
   const bidId = '8f1c2b34-5d6e-47a8-9012-3456789abcde';
@@ -208,4 +213,75 @@ test('a cap of zero sends nothing and moves nothing', () => {
   assert.deepEqual(sel.send, []);
   assert.equal(sel.truncated, 1);
   assert.equal(sel.nextSentThroughMs, null);
+});
+
+// ---------------------------------------------------------------------------
+// Unpriced lines
+// ---------------------------------------------------------------------------
+
+function pricedBid() {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Lights', jobType: 'service', dateISO: '2026-09-01' });
+  b.areas.push({ id: 'a1', name: 'Warehouse', items: [
+    { catalogId: null, name: 'LED high bay', unit: 'ea', qty: 4, costCents: 31800, priceCents: null } ], photoIds: [] });
+  b.labor.days = 2;
+  d.bids.push(b);
+  return { d, b };
+}
+
+test('a fully priced bid has no unpriced lines', () => {
+  const { d, b } = pricedBid();
+  assert.deepEqual(unpricedLines(b, d.settings), []);
+});
+
+test('items, rentals and equipment that would print at $0 are all found, in walking order', () => {
+  const { d, b } = pricedBid();
+  b.areas[0].items.push({ catalogId: null, name: 'Permits', unit: 'lot', qty: 1, costCents: 0, priceCents: null });
+  b.rentals.push({ name: 'Scissor lift', days: 8, cents: 0, markup: false });
+  b.equipment.push({ equipmentId: null, name: 'Threader', days: 1, dayCents: 0 });
+  const lines = unpricedLines(b, d.settings);
+  assert.deepEqual(lines.map((l) => l.name), ['Permits', 'Scissor lift', 'Threader']);
+  assert.deepEqual(lines.map((l) => l.kind), ['item', 'rental', 'equipment']);
+  assert.equal(unpricedBlockText(lines), 'Put a price on "Permits" first.');
+});
+
+test('unpriced is what will PRINT, not what it cost: a price override on a $0-cost item counts as priced', () => {
+  const { d, b } = pricedBid();
+  b.areas[0].items.push({ catalogId: null, name: 'Owner-supplied disconnect', unit: 'ea', qty: 1,
+    costCents: 0, priceCents: 12500 });
+  assert.deepEqual(unpricedLines(b, d.settings), []);
+  // ...and an override of $0 is still nothing on the page.
+  b.areas[0].items.push({ catalogId: null, name: 'Freebie', unit: 'ea', qty: 1, costCents: 900, priceCents: 0 });
+  assert.deepEqual(unpricedLines(b, d.settings).map((l) => l.name), ['Freebie']);
+});
+
+test('a misc of $0 is not an unpriced line: it never reaches the page', () => {
+  const { d, b } = pricedBid();
+  b.misc.cents = 0;
+  assert.deepEqual(unpricedLines(b, d.settings), []);
+});
+
+test('an empty change order is skipped; one with work and no money is named', () => {
+  const { d, b } = pricedBid();
+  b.status = 'won';
+  b.job = S.newJob();
+  const empty = S.newChangeOrder(d, 'Not written up yet');
+  b.job.changeOrders.push(empty);
+  assert.deepEqual(unpricedLines(b, d.settings), []);
+
+  const real = S.newChangeOrder(d, 'Extra receptacles');
+  real.areas.push({ id: 'co-a1', name: 'Line 3', items: [
+    { catalogId: null, name: 'Receptacle 20 A', unit: 'ea', qty: 6, costCents: 0, priceCents: null } ], photoIds: [] });
+  b.job.changeOrders.push(real);
+  // The change order prints as ONE row, so its own items are not separate
+  // lines on the page — the row's total is the thing that must not be $0.
+  const lines = unpricedLines(b, d.settings);
+  assert.deepEqual(lines.map((l) => l.name), ['Extra receptacles']);
+  assert.deepEqual(lines.map((l) => l.kind), ['changeOrder']);
+});
+
+test('a line with no name still gives the banner something to say', () => {
+  const { d, b } = pricedBid();
+  b.rentals.push({ name: '', days: 1, cents: 0, markup: false });
+  assert.equal(unpricedBlockText(unpricedLines(b, d.settings)), 'Put a price on "this rental" first.');
 });

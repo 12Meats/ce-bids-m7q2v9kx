@@ -248,6 +248,10 @@ function renderWalkAreas(bid, edit, host) {
       },
     });
   }));
+  // A nudge, not a gate: a misc of $0 never reaches the customer's page (the
+  // document only prints the row when it has money in it), so it is amber here
+  // and is not one of the lines that blocks a PDF.
+  if (!(bid.misc.cents > 0)) miscBox.appendChild(unpricedWarn());
   host.appendChild(miscBox);
 
   const forget = buildForgetCard(bid);
@@ -312,6 +316,10 @@ function renderWalkArea(bid, edit, area, host) {
   if (items.length === 0) {
     box.appendChild(emptyNote('Nothing counted here yet.'));
   } else {
+    // What the line will PRINT at, which is what decides whether it is still
+    // unpriced — a "Did you forget?" row lands here at $0 and has to say so
+    // until he puts a number on it.
+    const markup = BidMath.resolveMarkup(bid, state.data.settings);
     items.forEach((it) => {
       const line = walkRow(
         it.name,
@@ -321,6 +329,7 @@ function renderWalkArea(bid, edit, area, host) {
       );
       if (walkHighlightItem === it) line.classList.add('walk-row-new');
       box.appendChild(line);
+      if (!(BidMath.itemPrice(it, markup).cents > 0)) box.appendChild(unpricedWarn());
       if (walkItemMenu === it) box.appendChild(buildItemActions(area, it));
     });
     box.appendChild(walkRow('Area cost', null, BidMath.fmt(walkAreaCost(area)), null));

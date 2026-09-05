@@ -159,7 +159,14 @@
     // that did not pass back through that screen printed the old price on the
     // customer's proposal. bidmath.changeOrderPrice is the one definition, and
     // the paper, the bids list and the job card all call it.
-    const changeOrders = (bid.job && bid.job.changeOrders) || [];
+    //
+    // A change order with no items and no labor NEVER PRINTS. He can add one on
+    // the job screen the moment the customer says the word, before there is
+    // anything in it, and an already-sent bid re-shared that afternoon was
+    // printing a heading and a $0.00 line for work nobody has described yet.
+    // It prices at $0 either way, so dropping it moves no total.
+    const changeOrders = ((bid.job && bid.job.changeOrders) || [])
+      .filter((co) => !B.changeOrderIsEmpty(co));
     const coSections = changeOrders.map((co, i) => ({
       title: `Change order ${i + 1}: ${co.name}`,
       rows: [{ desc: co.name, qtyText: '', unitCents: null, cents: B.changeOrderPrice(co, bid, s) }],

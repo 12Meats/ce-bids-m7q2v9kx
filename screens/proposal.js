@@ -755,8 +755,21 @@ async function proposalAfterShare(bid, opts) {
 // transient activation, which on screen is a button that never comes back — so
 // nothing that can wait goes in front of it. The archive write is checked
 // afterwards, where a failure is a banner rather than a hung button.
+// Nothing leaves this phone with a $0.00 line on it. He walks a plant counting
+// things and prices them later, which is exactly right until the moment a PDF
+// is made — at that point every unpriced line is a number he is giving away,
+// and the customer's copy is the worst place to find that out. The banner
+// names the first one rather than counting them: a count sends him hunting.
+function proposalBlockedByUnpriced(bid) {
+  const lines = unpricedLines(bid, state.data.settings);
+  if (lines.length === 0) return false;
+  showBanner(unpricedBlockText(lines), 'danger');
+  return true;
+}
+
 async function proposalShare(bid) {
   if (proposalBusy) return;
+  if (proposalBlockedByUnpriced(bid)) return;
   proposalBusy = true;
   render();
 
@@ -817,6 +830,9 @@ async function proposalShare(bid) {
 // not a rebuild of it.
 async function proposalSaveToFiles(bid) {
   if (proposalBusy) return;
+  // Checked here too, not only on Share: this hands over bytes that were built
+  // before he added the line, and a copy in Files is a copy he will send.
+  if (proposalBlockedByUnpriced(bid)) return;
   const last = proposalLast && proposalLast.bidId === bid.id ? proposalLast : null;
   const newest = proposalPdfs && proposalPdfs.length ? proposalPdfs[0] : null;
   // Both candidates are already bytes in memory — nothing is read from
