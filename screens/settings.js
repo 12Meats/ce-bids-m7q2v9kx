@@ -1153,8 +1153,8 @@ function buildSetCounter() {
         s.nextNumber = v;
         settingsSaveAndRender(() => { s.nextNumber = prev; });
       });
-  }, 'The number the next new bid gets. Set this to your real next invoice number the first day '
-     + 'you use the app. It counts up on its own after that.');
+  }, 'The number the next new bid gets. It starts at 1. Set this to your real next invoice number '
+     + 'the first day you use the app. It counts up on its own after that.');
 
   if (Store.numberInUse(state.data, s.nextNumber)) {
     box.appendChild(inlineWarn('Bid #' + s.nextNumber + ' already exists. The next new bid would '

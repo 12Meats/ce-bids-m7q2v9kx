@@ -5,7 +5,7 @@
 // Delete is the one button in the app that destroys work, and the only thing
 // standing in front of it is a sentence. That sentence has to say which bid,
 // whose bid, what state it was in, and whether anything already left the
-// office — because "Delete bid #3053?" alone is a question he can answer yes
+// office — because "Delete bid #1?" alone is a question he can answer yes
 // to while looking at the wrong row. So it is asserted here character for
 // character, the way reports.js's sentences are.
 //
@@ -61,14 +61,14 @@ function bidWith(o) {
 test('a draft names the bid and says only that it is gone', () => {
   assert.strictEqual(
     bidsDeleteConfirmText(bidWith({ status: 'draft' })),
-    "Delete bid #3053 for Schreiber Foods? This can't be undone."
+    "Delete bid #1 for Schreiber Foods? This can't be undone."
   );
 });
 
 test('a sent bid says it HAPPENED, and that the customer keeps their copy', () => {
   assert.strictEqual(
     bidsDeleteConfirmText(bidWith({ status: 'sent', sentAt: '2026-09-05T17:00:00.000Z' })),
-    "Delete bid #3053 for Schreiber Foods? It was SENT; the customer's copy is not affected."
+    "Delete bid #1 for Schreiber Foods? It was SENT; the customer's copy is not affected."
       + " This can't be undone."
   );
 });
@@ -76,7 +76,7 @@ test('a sent bid says it HAPPENED, and that the customer keeps their copy', () =
 test('lost after it went out is something he MARKED, and the copy still stands', () => {
   assert.strictEqual(
     bidsDeleteConfirmText(bidWith({ status: 'lost', sentAt: '2026-09-05T17:00:00.000Z' })),
-    "Delete bid #3053 for Schreiber Foods? It was marked LOST; the customer's copy is not affected."
+    "Delete bid #1 for Schreiber Foods? It was marked LOST; the customer's copy is not affected."
       + " This can't be undone."
   );
 });
@@ -87,14 +87,14 @@ test('lost after it went out is something he MARKED, and the copy still stands',
 test('a won bid that never went out makes no promise about a customer copy', () => {
   assert.strictEqual(
     bidsDeleteConfirmText(bidWith({ status: 'won', sentAt: null })),
-    "Delete bid #3053 for Schreiber Foods? It was marked WON. This can't be undone."
+    "Delete bid #1 for Schreiber Foods? It was marked WON. This can't be undone."
   );
 });
 
 test('complete reads the same way, with its own status word', () => {
   assert.strictEqual(
     bidsDeleteConfirmText(bidWith({ status: 'complete', sentAt: '2026-09-05T17:00:00.000Z' })),
-    "Delete bid #3053 for Schreiber Foods? It was marked COMPLETE;"
+    "Delete bid #1 for Schreiber Foods? It was marked COMPLETE;"
       + " the customer's copy is not affected. This can't be undone."
   );
 });

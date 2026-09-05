@@ -141,12 +141,14 @@
         taxMode: 'included',
         equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false })),
         forgetList: SEED_FORGET.slice(), notePhrases: SEED_NOTES.slice(), clauses: SEED_CLAUSES.map((c) => ({ ...c, hidden: false })),
-        // Seeded past his real bids rather than at 1: his paper book is at
-        // #3052, and a fresh install handing out #1 would put a bid number on
-        // a customer's desk that collides with one he wrote by hand years ago.
-        // Settings has the field, and its caption tells him to set it to his
-        // real next invoice number on day one.
-        nextNumber: 3053, backupEmail: 'adriancantu95@gmail.com',
+        // ONE. It was seeded at 3053 — one past the last number in his paper
+        // book, read off a 2021 proposal — and that was a guess about a book
+        // nobody has looked in since. A wrong guess reads as a real number and
+        // he would never think to check it; #1 is plainly the app's own
+        // starting point and asks to be replaced. The Settings caption tells
+        // him to set it to his real next invoice number on day one, and the
+        // counter follows whatever he types from there.
+        nextNumber: 1, backupEmail: 'adriancantu95@gmail.com',
         // Two different questions. lastBackupAt is the day a backup file last
         // left the phone and it is what the home band nags off.
         // pdfsSentThroughMs is the archive stamp of the newest PROPOSAL PDF

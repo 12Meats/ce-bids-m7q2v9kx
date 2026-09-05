@@ -44,16 +44,16 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
     ['boxes', 'conduit', 'gear', 'lighting', 'rentals', 'wire']);
   assert.strictEqual(d.settings.equipment.length, 6);
   assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always').length, 19);
-  // Seeded past the bids he has already written by hand, not at 1.
-  assert.strictEqual(d.settings.nextNumber, 3053);
+  // One, not a guess at where his paper book left off.
+  assert.strictEqual(d.settings.nextNumber, 1);
 });
-test('a fresh install hands the first new bid #3053 and counts up from there', () => {
+test('a fresh install hands the first new bid #1 and counts up from there', () => {
   const d = S.emptyData();
   const first = S.newBid(d, { customerName: 'UDA', title: 'One', jobType: 'service' });
   const second = S.newBid(d, { customerName: 'UDA', title: 'Two', jobType: 'service' });
-  assert.strictEqual(first.number, 3053);
-  assert.strictEqual(second.number, 3054);
-  assert.strictEqual(d.settings.nextNumber, 3055);
+  assert.strictEqual(first.number, 1);
+  assert.strictEqual(second.number, 2);
+  assert.strictEqual(d.settings.nextNumber, 3);
 });
 test('jobIsEmpty: true for a job with nothing logged, false once anything is', () => {
   // No job block at all: a Won with nothing under it has nothing to lose.
