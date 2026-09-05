@@ -392,7 +392,7 @@ test('validateImport: table-driven negative mutations across every section rejec
     ['equipment dayCents negative', (dd) => { dd.bids[0].equipment[0].dayCents = -1; }],
     ['equipment equipmentId unknown', (dd) => { dd.bids[0].equipment[0].equipmentId = 'ghost-equip'; }],
     ['pricing rateCents non-integer', (dd) => { dd.bids[0].pricing.rateCents = 65.5; }],
-    ['pricing cushionPct negative', (dd) => { dd.bids[0].pricing.cushionPct = -1; }],
+    ['pricing cushionPct not a number', (dd) => { dd.bids[0].pricing.cushionPct = 'nope'; }],
     ['job.weeks hours negative', (dd) => { dd.bids[0].job.weeks[0].hours = -1; }],
     ['job.weeks weekISO invalid', (dd) => { dd.bids[0].job.weeks[0].weekISO = 'nope'; }],
     ['job.surprises cents negative', (dd) => { dd.bids[0].job.surprises[0].cents = -1; }],
@@ -452,4 +452,112 @@ test('load of corrupt text stashes the raw value and reports loadProblem "corrup
   } finally {
     delete globalThis.localStorage;
   }
+});
+
+// ---------------------------------------------------------------------------
+// WHAT IS STILL POINTED AT
+// ---------------------------------------------------------------------------
+// The four questions Settings asks before it offers a real Delete. Each one
+// counts BIDS, not references: the caption says "On 2 bids", and a tool on
+// three lines of one bid is still one bid.
+
+test('equipmentInUse counts the bids whose lines point at a tool, and nothing else', () => {
+  const { d } = buildFullData();
+  const used = d.settings.equipment[0];
+  const spare = d.settings.equipment[1];
+  assert.strictEqual(S.equipmentInUse(d, used.id), 1);
+  assert.strictEqual(S.equipmentInUse(d, spare.id), 0);
+  assert.strictEqual(S.equipmentInUse(d, 'nobody'), 0);
+});
+
+test('equipmentInUse counts each bid once however many lines it has', () => {
+  const { d, b } = buildFullData();
+  const used = d.settings.equipment[0];
+  b.equipment.push({ equipmentId: used.id, name: used.name, days: 2, dayCents: 500 });
+  assert.strictEqual(S.equipmentInUse(d, used.id), 1);
+});
+
+test('crewInUse sees the bid line, a task, and a change order', () => {
+  const d = S.emptyData();
+  const [shawn, george] = d.settings.crew;
+  const third = { id: 'c3', name: 'Ray', wageCents: 3000, hidden: false };
+  const fourth = { id: 'c4', name: 'Nobody', wageCents: 3000, hidden: false };
+  d.settings.crew.push(third, fourth);
+
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Crew', jobType: 'project' });
+  b.labor = { crewIds: [shawn.id], days: 1, tasks: [{ name: 'T', crewIds: [george.id], days: 1 }] };
+  b.job = S.newJob();
+  b.job.changeOrders.push({ id: 'co1', name: 'CO', areas: [],
+    labor: { crewIds: [third.id], days: 1, tasks: null } });
+  d.bids.push(b);
+
+  assert.strictEqual(S.crewInUse(d, shawn.id), 1);
+  assert.strictEqual(S.crewInUse(d, george.id), 1, 'a crew id on a task counts');
+  assert.strictEqual(S.crewInUse(d, third.id), 1, "a change order's crew counts");
+  assert.strictEqual(S.crewInUse(d, fourth.id), 0);
+});
+
+test('catalogInUse sees an item in the bid and one in a change order area', () => {
+  const d = S.emptyData();
+  const part = d.catalog[0];
+  const other = d.catalog[1];
+  const spare = d.catalog[2];
+  const item = (p) => ({ catalogId: p.id, name: p.name, unit: p.unit, qty: 1, costCents: 100, priceCents: null });
+
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Parts', jobType: 'service' });
+  b.areas.push({ id: 'a1', name: 'Room', items: [item(part)], photoIds: [] });
+  b.job = S.newJob();
+  b.job.changeOrders.push({ id: 'co1', name: 'CO', areas: [{ id: 'coa1', name: 'Room', items: [item(other)], photoIds: [] }],
+    labor: { crewIds: [], days: 0, tasks: null } });
+  d.bids.push(b);
+
+  assert.strictEqual(S.catalogInUse(d, part.id), 1);
+  assert.strictEqual(S.catalogInUse(d, other.id), 1, "a change order's items count");
+  assert.strictEqual(S.catalogInUse(d, spare.id), 0);
+});
+
+test('clauseInUse counts the bids that name a clause, and null clauseIds names none', () => {
+  const d = S.emptyData();
+  const clause = d.settings.clauses[0];
+  const b1 = S.newBid(d, { customerName: 'UDA', title: 'One', jobType: 'project' });
+  const b2 = S.newBid(d, { customerName: 'Schreiber', title: 'Two', jobType: 'project' });
+  b1.clauseIds = [clause.id];
+  d.bids.push(b1, b2);
+  assert.strictEqual(b2.clauseIds, null, 'a fresh bid has not been asked yet');
+  assert.strictEqual(S.clauseInUse(d, clause.id), 1);
+  assert.strictEqual(S.clauseInUse(d, d.settings.clauses[1].id), 0);
+});
+
+// ---------------------------------------------------------------------------
+// A TOOL BY NAME
+// ---------------------------------------------------------------------------
+
+test('findEquipmentByName matches case and surrounding whitespace blind', () => {
+  const d = S.emptyData();
+  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
+  assert.strictEqual(S.findEquipmentByName(d, 'bender'), bender);
+  assert.strictEqual(S.findEquipmentByName(d, '  BENDER '), bender);
+  assert.strictEqual(S.findEquipmentByName(d, 'Bender'), bender);
+});
+
+test('findEquipmentByName ignores hidden tools and anything blank', () => {
+  const d = S.emptyData();
+  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
+  bender.hidden = true;
+  assert.strictEqual(S.findEquipmentByName(d, 'Bender'), null, 'a put-away tool is not offered, so it is not a duplicate');
+  assert.strictEqual(S.findEquipmentByName(d, ''), null);
+  assert.strictEqual(S.findEquipmentByName(d, '   '), null);
+  assert.strictEqual(S.findEquipmentByName(d, null), null);
+});
+
+// ---------------------------------------------------------------------------
+// A NEGATIVE CUSHION
+// ---------------------------------------------------------------------------
+
+test('a bid quoted at fewer hours than it really takes still validates', () => {
+  const { d, b } = buildFullData();
+  b.pricing.cushionPct = -16.7;
+  assert.ok(S.validateImport(JSON.stringify(d)), 'a negative cushion is a decision, not corruption');
+  b.pricing.cushionPct = 'nope';
+  assert.strictEqual(S.validateImport(JSON.stringify(d)), null);
 });

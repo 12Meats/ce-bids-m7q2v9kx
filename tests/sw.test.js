@@ -138,6 +138,18 @@ test('catalog.js loads before storage.js', () => {
   assert.ok(catalog < storage, 'catalog.js must be loaded before storage.js');
 });
 
+test('APP_BUILT is an ISO date, bumped with the version', () => {
+  // The Settings line reads "CE Bids · v1 · built Sep 5, 2026", and the date
+  // half comes from here. Dates.fmtDate refuses anything that is not
+  // YYYY-MM-DD, so a typo would not print a wrong date, it would print no date
+  // at all and the line would trail off mid-sentence.
+  const m = APP_SRC.match(/^const APP_BUILT = '([^']+)';$/m);
+  assert.ok(m, 'app.js declares a top-level APP_BUILT string');
+  assert.match(m[1], /^\d{4}-\d{2}-\d{2}$/, 'APP_BUILT is a YYYY-MM-DD date');
+  const d = new Date(m[1] + 'T12:00:00');
+  assert.ok(!isNaN(d.getTime()), 'APP_BUILT is a real day');
+});
+
 test('the cache name is namespaced to this app', () => {
   // The sibling timesheet app uses 'ce-*'. Sharing a name across two apps on the
   // same origin would have one wipe the other's cache on activate.

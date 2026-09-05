@@ -287,6 +287,38 @@ function toggleRow(options, current, onPick) {
 // words in both places, or he will think they are two different settings.
 const DETAIL_OPTIONS = [['full', 'Full'], ['summary', 'Summary'], ['scope', 'Scope & price']];
 
+// One line under those three buttons saying what each one actually puts on the
+// customer's paper. Three words on a pill is not an explanation — he picked
+// "Scope & price" for a plant that wanted line items because nothing on the
+// screen said the line items were the thing it takes away.
+const DETAIL_CAPTIONS = {
+  full: 'Every line and your hourly rate print.',
+  summary: 'Three totals and the scope.',
+  scope: 'One price and the scope.',
+};
+
+function detailCaption(level) { return DETAIL_CAPTIONS[level] || ''; }
+
+// The handful of dollars nobody itemizes and everybody spends. ONE name for
+// it: the walk called it this and the Costs & price screen called the same
+// number "Misc hardware", which is how one line reads as two things. This is
+// the walk's wording, because it is the one he read standing in the plant, and
+// it is what Store.newBid writes into bid.misc.label on every new bid — the
+// label is his to edit, and this is only the fallback for a bid that has none.
+const MISC_LABEL = 'Supports, anchors, and hardware';
+
+// crewDaysText(crew, days, hours) -> '2 guys × 3 days = 48 hrs'
+//
+// The sentence he already says out loud, which the Labor screen never showed
+// him: the crew and the days are two rows he fills in and the hours were only
+// ever in a readout below the fold. Pure text — the hours come in already
+// worked out by BidMath.lineHours, so this can never quote a number the price
+// is not built on.
+function crewDaysText(crew, days, hours) {
+  const one = (n, single, plural) => numText(n) + ' ' + (n === 1 ? single : plural);
+  return one(crew, 'guy', 'guys') + ' × ' + one(days, 'day', 'days') + ' = ' + one(hours, 'hr', 'hrs');
+}
+
 // statusPill(status) -> the bid's state as a colored pill. Unknown values
 // still render (as themselves, in the neutral style) rather than disappearing.
 const STATUS_LABELS = { draft: 'Draft', sent: 'Sent', won: 'Won', lost: 'Lost', complete: 'Complete' };

@@ -357,7 +357,15 @@
           if (!isStr(e.name) || !isFiniteGte0(e.days) || !isIntGte0(e.dayCents)) return null;
         }
         if (!isObj(b.pricing) || !isFiniteNum(b.pricing.marginPct) || !isIntGte0(b.pricing.rateCents)) return null;
-        if (!isFiniteGte0(b.pricing.cushionPct) || !isFiniteGte0(b.pricing.markupPct)) return null;
+        // The cushion may be NEGATIVE. A cushion is normally hours he quotes
+        // and hopes not to work, but the price screen lets him type the bid
+        // hours directly, and typing FEWER hours than the job really takes is
+        // a decision he is allowed to make with his eyes open (the screen says
+        // so in red). BidMath.cushionForBidHours back-solves that to a
+        // negative percentage, and refusing it here would bounce the save of a
+        // number he can see on the glass. A widening of the old rule, so every
+        // file written before it still loads and no migration is needed.
+        if (!isFiniteNum(b.pricing.cushionPct) || !isFiniteGte0(b.pricing.markupPct)) return null;
         // OPTIONAL on purpose, so no version bump and no migration: a backup
         // written before the did-you-forget answers were saved has no such key
         // and must still restore, with every row simply reading as unanswered.
@@ -602,9 +610,74 @@
     d.settings.equipment.push(t);
     return t;
   }
+  // A tool Settings already has under this name. Case-insensitive and blind to
+  // the spaces either side of it, because the picker is a list of names and
+  // "bender", "Bender " and "Bender" are one tool in his head — he added five
+  // of them before this existed. Only the tools Settings still OFFERS count:
+  // the picker hides put-away ones, so "already exists" has to mean "already
+  // in the list you were just looking at", and typing the name of a tool he
+  // put away is how he asks for it back as a new one.
+  function findEquipmentByName(d, name) {
+    const key = String(name == null ? '' : name).trim().toLowerCase();
+    if (!key) return null;
+    return d.settings.equipment.find(
+      (e) => e.hidden === false && String(e.name == null ? '' : e.name).trim().toLowerCase() === key
+    ) || null;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT IS STILL POINTED AT
+  // -------------------------------------------------------------------------
+  // Settings soft-deletes everything because an old bid holds ids, and a bid
+  // holding an id nothing answers is a bid validateImport refuses to load —
+  // the whole file, not just that bid. But most of what he puts away is not on
+  // a single bid: a tool he bought and never used, a clause he wrote and never
+  // ticked, a part he added by mistake. Hiding those leaves a list that only
+  // ever grows.
+  //
+  // So each of these counts the BIDS that still point at one id. Zero means
+  // nothing anywhere refers to it and Settings can really delete it; anything
+  // else is the number the caption says out loud ("On 2 bids, so it can be
+  // hidden but not deleted"). A count rather than a boolean for exactly that
+  // reason — the sentence needs the number, and two functions that had to
+  // agree about the same question would be one too many.
+  //
+  // Change orders count. Their areas hold catalog ids and their labor holds
+  // crew ids, and they are inside a bid the validator walks.
+  function bidsReferencing(d, test) {
+    return (d.bids || []).filter((b) => {
+      try { return !!test(b); } catch (e) { return false; }
+    }).length;
+  }
+
+  function changeOrdersOf(b) { return (b.job && b.job.changeOrders) || []; }
+
+  function equipmentInUse(d, id) {
+    return bidsReferencing(d, (b) => (b.equipment || []).some((e) => e.equipmentId === id));
+  }
+
+  function crewInUse(d, id) {
+    const inLabor = (labor) => {
+      if (!labor) return false;
+      if ((labor.crewIds || []).indexOf(id) !== -1) return true;
+      return (labor.tasks || []).some((t) => (t.crewIds || []).indexOf(id) !== -1);
+    };
+    return bidsReferencing(d, (b) => inLabor(b.labor) || changeOrdersOf(b).some((co) => inLabor(co.labor)));
+  }
+
+  function catalogInUse(d, id) {
+    const inAreas = (areas) => (areas || []).some((a) => (a.items || []).some((it) => it.catalogId === id));
+    return bidsReferencing(d, (b) => inAreas(b.areas) || changeOrdersOf(b).some((co) => inAreas(co.areas)));
+  }
+
+  function clauseInUse(d, id) {
+    return bidsReferencing(d, (b) => (b.clauseIds || []).indexOf(id) !== -1);
+  }
+
   function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
-    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, recordCatalogUse, numberInUse };
+    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, findEquipmentByName, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
+    recordCatalogUse, numberInUse };
 });

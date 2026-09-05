@@ -29,7 +29,11 @@ const sandbox = { document: undefined, console, BidMath: B };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
-const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText } = sandbox;
+const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
+  crewDaysText, detailCaption } = sandbox;
+// A top-level const is lexical, not a property of the context object, so the
+// shared strings are read back the way the file itself would read them.
+const MISC_LABEL = vm.runInContext('MISC_LABEL', sandbox);
 
 test('bidPdfPrefix and bidPdfParse are inverses over a UUID bid id', () => {
   const bidId = '8f1c2b34-5d6e-47a8-9012-3456789abcde';
@@ -337,4 +341,32 @@ test('a line with no name still gives the banner something to say', () => {
   const { d, b } = pricedBid();
   b.rentals.push({ name: '', days: 1, cents: 0, markup: false });
   assert.equal(unpricedBlockText(unpricedLines(b, d.settings)), 'Put a price on "this rental" first.');
+});
+
+// ---------------------------------------------------------------------------
+// The sentence the Labor screen never showed him
+// ---------------------------------------------------------------------------
+
+test('crewDaysText says the job out loud the way he does', () => {
+  assert.equal(crewDaysText(2, 3, 48), '2 guys × 3 days = 48 hrs');
+});
+
+test('crewDaysText keeps its singulars and its half days', () => {
+  assert.equal(crewDaysText(1, 1, 8), '1 guy × 1 day = 8 hrs');
+  assert.equal(crewDaysText(1, 0.5, 4), '1 guy × 0.5 days = 4 hrs');
+  assert.equal(crewDaysText(2, 0.5, 1), '2 guys × 0.5 days = 1 hr');
+  // Nobody on the line is a real state, and it is worth saying plainly.
+  assert.equal(crewDaysText(0, 3, 0), '0 guys × 3 days = 0 hrs');
+});
+
+test('every detail level has one line saying what prints', () => {
+  assert.equal(detailCaption('full'), 'Every line and your hourly rate print.');
+  assert.equal(detailCaption('summary'), 'Three totals and the scope.');
+  assert.equal(detailCaption('scope'), 'One price and the scope.');
+  assert.equal(detailCaption('nonsense'), '');
+});
+
+test('the misc line has ONE name, and it is the one a new bid is created with', () => {
+  assert.equal(MISC_LABEL, 'Supports, anchors, and hardware');
+  assert.equal(S.newBid(S.emptyData(), { customerName: 'UDA' }).misc.label, MISC_LABEL);
 });

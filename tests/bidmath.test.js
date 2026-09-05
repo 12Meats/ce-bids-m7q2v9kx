@@ -60,6 +60,38 @@ test('bidHours rounds UP after cushion: 32 × 1.10 = 35.2 → 36', () => {
   assert.strictEqual(B.bidHours(32, 10), 36);
   assert.strictEqual(B.bidHours(32, 0), 32);
 });
+
+// cushionForBidHours is the INVERSE of bidHours, and the round trip is the
+// whole point: he types the hours he wants on the bid and the row has to come
+// back reading the number he typed.
+test('cushionForBidHours back-solves the cushion he never has to work out', () => {
+  assert.strictEqual(B.cushionForBidHours(40, 48), 20);
+  assert.strictEqual(B.cushionForBidHours(40, 40), 0);
+  assert.strictEqual(B.cushionForBidHours(32, 36), 12.5);
+});
+
+test('cushionForBidHours round-trips through bidHours, including the case that used to overshoot', () => {
+  // 7 real hours quoted at 8 is 14.2857...%, and 14.3% of 7 ceils to NINE.
+  // Rounding the cushion down to a tenth is what keeps the answer at 8.
+  assert.strictEqual(B.bidHours(7, B.cushionForBidHours(7, 8)), 8);
+  for (let real = 1; real <= 120; real += 1) {
+    for (let bid = 1; bid <= 200; bid += 7) {
+      assert.strictEqual(B.bidHours(real, B.cushionForBidHours(real, bid)), bid,
+        real + ' real hours quoted at ' + bid);
+    }
+  }
+});
+
+test('cushionForBidHours goes negative for hours under what the job takes', () => {
+  const pct = B.cushionForBidHours(48, 40);
+  assert.ok(pct < 0, 'selling 40 hours for 48 of work is a negative cushion');
+  assert.strictEqual(B.bidHours(48, pct), 40);
+});
+
+test('cushionForBidHours has nothing to divide by with no real hours', () => {
+  assert.strictEqual(B.cushionForBidHours(0, 8), 0);
+  assert.strictEqual(B.cushionForBidHours(-1, 8), 0);
+});
 // mergeTasks does NOT round: a merge is another way of looking at the same
 // job, so the person-hours that come out are the person-hours that went in.
 // mergedHours() below asserts exactly that on every case that merges at all —

@@ -158,6 +158,33 @@
     return Math.ceil(realHours * (1 + cushionPct / 100) - 1e-9) + 0;
   }
 
+  // The other direction: he types the hours he wants on the bid and this says
+  // what cushion that is. bidHours(realHours, cushionForBidHours(r, b)) === b
+  // is the property the price screen depends on — he types 8 and the row has
+  // to read 8, not 9 — so this is the inverse of bidHours and not merely a
+  // percentage difference.
+  //
+  // Which is why it rounds DOWN to a tenth of a percent rather than to the
+  // nearest one. bidHours CEILS, so a cushion even a hair over the exact one
+  // pushes the hours to the next whole number: 7 real hours quoted at 8 is
+  // 14.2857…%, and 14.3% of 7 is 8.001 hours, which ceils to 9. Rounded down
+  // to 14.2% it is 7.994, which ceils to 8. The give-away is at most a tenth
+  // of a percent of the real hours — under an hour for any job this app will
+  // ever see — so the ceiling still lands on the number he typed.
+  //
+  // Below the real hours the answer is NEGATIVE, and that is allowed on
+  // purpose: selling 40 hours for work he figured at 48 is a decision he is
+  // entitled to make with his eyes open, and the screen says so in red.
+  // Nothing to divide by with no real hours, so there is no cushion that
+  // makes any difference: 0.
+  function cushionForBidHours(realHours, bidHours2) {
+    if (!(realHours > 0)) return 0;
+    const exact = (bidHours2 / realHours - 1) * 100;
+    // The epsilon keeps a clean 20% off falling to 19.9 when the division
+    // lands at 19.999999999999996.
+    return Math.floor(exact * 10 + 1e-9) / 10;
+  }
+
   function costStack(bid, settings) {
     const p = bid.pricing;
     const mk = resolveMarkup(bid, settings);
@@ -560,7 +587,7 @@
   }
 
   return {
-    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, mergeTasks, crewlessTasks, costStack, solve,
+    unitPrice, equipmentDayRate, materialCost, materialPrice, laborReal, lineHours, truckDays, bidHours, cushionForBidHours, mergeTasks, crewlessTasks, costStack, solve,
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,
