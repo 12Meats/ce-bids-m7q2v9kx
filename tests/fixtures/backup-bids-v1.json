@@ -1,0 +1,1179 @@
+{
+  "version": 1,
+  "pin": "1234",
+  "settings": {
+    "company": {
+      "name": "Cantu Electric LLC",
+      "person": "Andy Cantu",
+      "phone": "(480) 329-5548",
+      "email": "cantuelectric@cox.net",
+      "address": "15708 E Chandler Heights Rd, Gilbert, AZ 85298",
+      "roc": "AZ ROC #276507",
+      "tagline": "Licensed, bonded, and insured",
+      "signName": "Andy Cantu",
+      "plainStyle": false
+    },
+    "crew": [
+      {
+        "id": "c1",
+        "name": "Shawn",
+        "wageCents": 3200,
+        "hidden": false
+      },
+      {
+        "id": "c2",
+        "name": "George",
+        "wageCents": 3000,
+        "hidden": false
+      }
+    ],
+    "hoursPerDay": 8,
+    "burdenPct": 25,
+    "rateCents": 6500,
+    "floorCents": 6500,
+    "marginPct": 25,
+    "markupPct": 18,
+    "consumablesPct": 3,
+    "truckDayCents": 9500,
+    "overheadPct": 10,
+    "cushionPct": {
+      "service": 10,
+      "project": 15
+    },
+    "equipmentPct": 4,
+    "validityDays": 30,
+    "taxMode": "included",
+    "equipment": [
+      {
+        "id": "b05a1a17-f2a5-4304-82cf-3429cd74baf7",
+        "name": "Threader",
+        "costCents": 120000,
+        "overrideDayCents": null,
+        "hidden": false
+      },
+      {
+        "id": "cb4e5d4d-01be-4e82-bbc3-0ddda804fe7f",
+        "name": "Generator",
+        "costCents": null,
+        "overrideDayCents": null,
+        "hidden": false
+      },
+      {
+        "id": "92f6af30-5830-42b9-b9e8-3ba10dd48315",
+        "name": "Tugger",
+        "costCents": null,
+        "overrideDayCents": null,
+        "hidden": false
+      },
+      {
+        "id": "e43f4eee-9d1c-4001-aaa5-158151cef43e",
+        "name": "Concrete saw",
+        "costCents": null,
+        "overrideDayCents": null,
+        "hidden": false
+      },
+      {
+        "id": "474737a4-0a05-4271-a685-b37d648f2fba",
+        "name": "Core drill",
+        "costCents": null,
+        "overrideDayCents": null,
+        "hidden": false
+      },
+      {
+        "id": "1c53f77a-0113-4532-a276-e14a8a0a3b0d",
+        "name": "Bender",
+        "costCents": null,
+        "overrideDayCents": null,
+        "hidden": false
+      }
+    ],
+    "forgetList": [
+      "Lift rental",
+      "Equipment",
+      "Permits",
+      "Disposal",
+      "Trenching",
+      "Travel days",
+      "Sub-contractor"
+    ],
+    "notePhrases": [
+      "Prices subject to change; final pricing based on actual material.",
+      "Disconnect to be supplied by customer.",
+      "Does not include lift rental.",
+      "Stainless supports and brackets to be installed by welders."
+    ],
+    "clauses": [
+      {
+        "id": "k01",
+        "group": "always",
+        "title": "Work",
+        "text": "Contractor will furnish all necessary labor, materials, and equipment to complete the work specified in the Contract (the \"Work\"). All surfaces to which material is to be applied shall be in a condition similar to the condition at the time the project was bid. Owner shall specify one representative to represent the Owner who has authority to accept the Work and authorize changes to the Work. Owner shall provide reasonable access to a water supply source. Owner grants Contractor permission to utilize photos and videos of the Work and the project site in the promotion of Contractor's business services.",
+        "hidden": false
+      },
+      {
+        "id": "k02",
+        "group": "always",
+        "title": "Payment",
+        "text": "Contractor shall be paid a monthly progress payment within 15 days after receipt of the payment by the Owner for the value of work performed. Final payment, including all retention, shall be due 15 days after the work described in the Proposal is substantially completed. No provision of this agreement shall serve to void the Contractor's entitlement to payment for properly performed work.",
+        "hidden": false
+      },
+      {
+        "id": "k03",
+        "group": "always",
+        "title": "Interest and expenses",
+        "text": "All sums not paid when due shall bear an interest rate of 1 1/2% per month or the maximum legal rate permitted by law, whichever is less, and all costs of collection, including a reasonable attorneys' fee, shall be paid by Owner.",
+        "hidden": false
+      },
+      {
+        "id": "k04",
+        "group": "always",
+        "title": "Attorneys' fees",
+        "text": "In the event of litigation regarding the Contract or collection efforts by Contractor, the prevailing party shall be awarded its reasonable attorneys' fees and costs, which shall include all costs that would normally be passed through to the client, specifically but not limited to research charges, travel costs, expert witness costs, copying costs, mailing costs, facsimile costs, hand-delivery costs, Federal Express or Express Mail costs, taxable costs and disbursements.",
+        "hidden": false
+      },
+      {
+        "id": "k05",
+        "group": "always",
+        "title": "Continued performance",
+        "text": "Nothing in this Contract shall require the Contractor to continue performance if timely payments are not made to Contractor for suitably performed work.",
+        "hidden": false
+      },
+      {
+        "id": "k06",
+        "group": "always",
+        "title": "Back charges",
+        "text": "No back charges or claim of the Owner for services shall be valid except by an agreement in writing by the Contractor before the work is executed, except in the case of the Contractor's failure to meet any requirement of the Contract. In such event, the Owner shall notify the Contractor of such default, in writing, and allow the Contractor reasonable time to correct any deficiency before incurring any cost chargeable to the Contractor.",
+        "hidden": false
+      },
+      {
+        "id": "k07",
+        "group": "always",
+        "title": "Work areas",
+        "text": "Owner is to prepare all work areas so as to be acceptable for Contractor to perform its work under the Contract. Owner shall notify Contractor in advance when the site will be ready for Contractor to perform its work and shall provide Contractor with free and unobstructed access so that the work can be commenced promptly and completed without delay. Contractor will not be called upon to start work until sufficient areas are ready to insure continued work.",
+        "hidden": false
+      },
+      {
+        "id": "k08",
+        "group": "always",
+        "title": "Time for performance",
+        "text": "Contractor shall be given a reasonable time in which to commence and complete the performance of the Contract. Contractor provides no assurances as to a complete date since the Work is subject to weather conditions, prior commitments, mechanical failures, and other cause beyond Contractor's control. Contractor shall not be responsible for delays or default where occasioned by any causes of any kind and extent beyond its control, including but not limited to: delay caused by Owner, architect and/or engineers, delays in transportation, shortages of raw materials, civil disorders, labor difficulties, vendor allocations, fires, floods, accident hazardous waste or controlled substances and acts of God. Contractor shall be entitled to equitable adjustment in the contract price for additional costs due to unanticipated project delays or accelerations. Contractor shall not be obligated to provide any labor or materials outside the scope of work unless Owner shall first agree in writing to equitably adjust the contract price to be paid Contractor.",
+        "hidden": false
+      },
+      {
+        "id": "k09",
+        "group": "always",
+        "title": "Workmanship",
+        "text": "All workmanship and materials are guaranteed against defects for a period of one (1) year from the date of substantial completion of installation. This warranty is in lieu of all other warranties, express or implied, including any warranties of merchantability or fitness for a particular purpose. The exclusive remedy shall be that Contractor will replace or repair any part of its work which is found to be defective. Contractor shall not be responsible for special, incidental or consequential damages. Contractor shall not be responsible for damage to its work by other parties or for improper use of equipment by other industry standard practices and will override strict compliance and strict performance. Contractor makes no warranty regarding drainage where the slope provided or allowable is less than two percent (2%). Contractor's warranty does not extend to or cover settlement or cracking of asphalt or pavement due to expansive soils, improperly compacted utility trenches, or for failures caused by the inadequate compaction of the subgrade.",
+        "hidden": false
+      },
+      {
+        "id": "k10",
+        "group": "always",
+        "title": "Work hours",
+        "text": "Work called for herein is to be performed during Contractor's regular working hours as agreed to by the Owner and the Contractor.",
+        "hidden": false
+      },
+      {
+        "id": "k11",
+        "group": "always",
+        "title": "Notice",
+        "text": "Any notice or written claim required by the Contract to be submitted to the Owner, on account of charges, extras, delays, acceleration, or otherwise, shall be furnished within a time period, and in a manner to permit the Owner to satisfy the requirements of the Contract, notwithstanding any shorter time period otherwise provided.",
+        "hidden": false
+      },
+      {
+        "id": "k12",
+        "group": "always",
+        "title": "Lien rights",
+        "text": "Nothing in this Contract shall serve to void Contractor's right to file a lien or claim on its behalf in the event that any payment to Contractor is not timely made.",
+        "hidden": false
+      },
+      {
+        "id": "k13",
+        "group": "always",
+        "title": "Labor",
+        "text": "Contractor shall not be bound by any of Owner's labor agreements (in whole or in part).",
+        "hidden": false
+      },
+      {
+        "id": "k14",
+        "group": "always",
+        "title": "Liquidated damages",
+        "text": "The Owner shall make no demand for liquidated damages for delays in any sum in excess of such amounts as may be specifically named in this Contract and no liquidated damages may be assessed against Contractor for more than the amount paid by the Owner for unexcused delays to the event actually caused by the Contractor.",
+        "hidden": false
+      },
+      {
+        "id": "k15",
+        "group": "always",
+        "title": "Schedule",
+        "text": "Contractor shall submit a schedule to Owner, Owner will review and notify Contractor of any schedule conflict. If Contractor finds it necessary to change his schedule, Owner will give his best effort to meet this change in schedule. Contractor shall not be penalized for non-performance and will be paid for work performed.",
+        "hidden": false
+      },
+      {
+        "id": "k16",
+        "group": "always",
+        "title": "Insurance restriction",
+        "text": "Notwithstanding any provision to the contrary, Contractor shall maintain the types and limitations on insurance as shown on the attached certificate of insurance. Contractor is not required to waive any claims or rights of subrogation against the Owner or any others for losses and claims covered or paid by Owner's workers compensation or general liability insurance. Acceptance of the Certificate of Insurance constitutes acceptance of the insurance of Contractor, including any additional insured requirements. In addition, Contractor shall not provide completed operations under an additional insured requirement.",
+        "hidden": false
+      },
+      {
+        "id": "k17",
+        "group": "always",
+        "title": "Indemnity, hold harmless",
+        "text": "To the fullest extent permitted by law, Contractor agrees to protect, defend, indemnify, and hold harmless Owner from and against all liability, loss, claims, demands, damages, suits, costs, fees, fines, penalties, expenses, and causes of action to the extent caused by Contractor or any of Contractor's employees, agents, representatives, subcontractors, or suppliers. Any indemnification or hold harmless obligation of the Contractor shall extend only to claims resulting to bodily injury and property damage and then only to that part or proportion of any claim damage, loss or defect that results from the negligence or intentional act of Contractor or someone for whom it is responsible. Nothing in this agreement shall require the Contractor to indemnify any other party from any damages including expenses and attorneys' fees to persons or property for any amount exceeding the degree Contractor directly caused such damages. Contractor shall not be responsible for fines or assessments made against Owner and Contractor. Contractor retains all rights of subrogation. Contractor will not indemnify anybody for any actions except for Contractor's own negligence and only in the proportional amount of its negligence.",
+        "hidden": false
+      },
+      {
+        "id": "k18",
+        "group": "always",
+        "title": "Right to rely",
+        "text": "Contractor shall rely on plans, drawings, specifications and other information provided by Owner, Owner, Architect or representatives of each. Contractor assumes no risk for unknown or unforeseen conditions not evident from the plans, drawings, specifications or other information provided to Contractor.",
+        "hidden": false
+      },
+      {
+        "id": "k19",
+        "group": "always",
+        "title": "Dispute resolution",
+        "text": "Final determination of contract compliance and all dispute resolutions shall be handled in the jurisdiction and venue of Maricopa County, Arizona, and be governed by the laws of Arizona.",
+        "hidden": false
+      },
+      {
+        "id": "k20",
+        "group": "trench",
+        "title": "Soils",
+        "text": "Contractor shall have no liability to Owner or any third-party relating to underlying soil conditions. Contractor will not sacrifice the quality or integrity by placing asphalt pavement on base course or subgrade that is unstable or subgrade containing frost, including top lifts or overlays when temperatures do not meet material specifications. Contractor's warranty shall be waived and have no effect should Owner direct or authorize Contractor to pave on unstable subgrade or subgrade containing frost and Owner shall be responsible for any and all resulting damage or required repairs. If Owner requests that the top lift of asphalt be placed at a later date, the cost for all clean up and remobilization is the Owner's responsibility.",
+        "hidden": false
+      },
+      {
+        "id": "k21",
+        "group": "trench",
+        "title": "Underground utilities",
+        "text": "Cantu Electric LLC. will not be held liable for any private underground utilities not marked by Arizona 811 including electric, water, sprinkler lines, etc.",
+        "hidden": false
+      },
+      {
+        "id": "k22",
+        "group": "trench",
+        "title": "Drainage",
+        "text": "Cantu Electric LLC. is not liable for drainage on projects with less than 1% fall. Due to existing conditions and matching elevations of concrete curbs, buildings and/or asphalt, we may not be able to raise or lower elevations to achieve proper slope to prevent standing water, therefore ponding of water may occur.",
+        "hidden": false
+      },
+      {
+        "id": "k23",
+        "group": "site",
+        "title": "Engineering services",
+        "text": "If Contractor provides subcontracted construction stakes and/or subcontracted engineering services, Owner agrees to indemnify and defend Contractor from and against any and all claims, demands, damages, costs or expenses, including attorneys' fees, resulting from or related to these services, including drainage of water as to direction and amount, both during and after performance of the Work. Owner shall indemnify, hold harmless, and defend Contractor from and against any and all damages, claims, costs or expenses, including attorneys' fees and costs, resulting from these services.",
+        "hidden": false
+      },
+      {
+        "id": "k24",
+        "group": "site",
+        "title": "Americans with Disabilities Act",
+        "text": "Owner is solely responsible for maintaining the subject property in full compliance with the ADA and agrees to indemnify and hold Contractor harmless from and against any and all liability, claims, damages or expenses, including attorneys' fees, relating in any way to ADA requirements or issues. Contractor recommends that Owner obtain the services of a certified ADA consultant for site evaluations and recommendations as required by Federal and State law. If directed by the Owner to obtain compliance, Owner may make recommendations for such work and additional charges may apply.",
+        "hidden": false
+      },
+      {
+        "id": "k25",
+        "group": "hazmat",
+        "title": "Hazardous waste",
+        "text": "Contractor shall have no obligation to handle (that is, to remove, treat or transport) any substance which is considered hazardous waste or substance under state or federal law (\"hazardous waste\"). Handling hazardous waste shall be outside the scope of work of this Contract. Title to all hazardous waste shall remain with others and shall not be property of Contractor.",
+        "hidden": false
+      },
+      {
+        "id": "k26",
+        "group": "subs",
+        "title": "Subcontractor coordination",
+        "text": "Contractor will coordinate the work of named subcontractors; each subcontractor's work is warranted by that subcontractor.",
+        "hidden": false
+      }
+    ],
+    "nextNumber": 3056,
+    "backupEmail": "adriancantu95@gmail.com",
+    "lastBackupAt": "2026-09-02",
+    "pdfsSentThroughMs": 1756800000000
+  },
+  "catalog": [
+    {
+      "id": "eee0e603-d5be-47eb-bcf1-d5d1dc80980f",
+      "category": "conduit",
+      "name": "1/2\" EMT",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "28d06272-e5df-4801-959d-006d5e5b79d2",
+      "category": "conduit",
+      "name": "3/4\" EMT",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "c45bb644-36ba-4c58-887b-9442c14beed9",
+      "category": "conduit",
+      "name": "1\" EMT",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "9b76c897-c57c-4e2e-887f-9f740b68e0f0",
+      "category": "conduit",
+      "name": "1-1/4\" EMT",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "05f58e8b-1663-4ab4-bc6d-af9a5a066353",
+      "category": "conduit",
+      "name": "3/4\" rigid",
+      "unit": "ft",
+      "lastCostCents": 241,
+      "uses": 1,
+      "hidden": false
+    },
+    {
+      "id": "8a89a9c0-7d95-4a0d-9958-b28d6df31959",
+      "category": "conduit",
+      "name": "1\" rigid",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "93d70c8e-9fbf-496a-8fb7-5ca3ee5579be",
+      "category": "conduit",
+      "name": "3/4\" S.S. conduit",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "33eea7a6-6089-4346-98b8-5ab8943604dd",
+      "category": "conduit",
+      "name": "1\" S.S. conduit",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "d5f86b63-5595-49ec-97f1-88e84f9a617a",
+      "category": "conduit",
+      "name": "3/4\" seal-tight",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "fc610bb8-ef5e-4444-8964-7937f41b848c",
+      "category": "conduit",
+      "name": "1\" seal-tight",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "0c4601b1-43ae-4c4b-976d-df8cc4912fde",
+      "category": "conduit",
+      "name": "3/4\" PVC",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "aa935ee0-188f-4d88-9078-3bbb2f00561f",
+      "category": "conduit",
+      "name": "1\" PVC",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "244185a0-71ec-4eb5-b247-fcbc31642098",
+      "category": "wire",
+      "name": "#12 THHN",
+      "unit": "roll",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "920001e0-c6dc-4a80-802d-238d356982cf",
+      "category": "wire",
+      "name": "#10 THHN",
+      "unit": "roll",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "5ffc381c-d6c4-4937-9268-002b01f71236",
+      "category": "wire",
+      "name": "#8 THHN",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "73399fd6-d006-407d-a875-d3f39ec9468d",
+      "category": "wire",
+      "name": "#6 THHN",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "8231084c-929f-40d1-b9de-0d4d19bda2e4",
+      "category": "wire",
+      "name": "#4 THHN",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "3c75bdfd-1ece-4db4-b656-87dad9151057",
+      "category": "wire",
+      "name": "#2 THHN",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "8a0f2298-6083-4dc4-8720-c171e2cf3784",
+      "category": "wire",
+      "name": "10/4 SO cord",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "199275ab-48a4-4ae8-8beb-e3f7cd4249ab",
+      "category": "wire",
+      "name": "12/4 SO cord",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "a3310a93-c7a6-406f-ba6b-230292e4ee9a",
+      "category": "wire",
+      "name": "10/4 VFD cable",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "39ac9f9c-cbbd-44b8-a83b-f3bf3fff3bd9",
+      "category": "wire",
+      "name": "Cat6",
+      "unit": "ft",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "28b621e0-ad88-423b-9944-868ab9377947",
+      "category": "boxes",
+      "name": "3/4\" hubs",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "434621ef-f9fd-45a7-917b-a1d2f3b11cc8",
+      "category": "boxes",
+      "name": "1\" hubs",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "796ad9f6-a3f9-4b05-85c1-a156f73db3fd",
+      "category": "boxes",
+      "name": "3/4\" S.S. hubs",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "3ad2974c-090d-48d8-a8fc-98951f8ea567",
+      "category": "boxes",
+      "name": "LB 3/4\"",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "2490a246-cd59-438c-8a3c-f767a42ff479",
+      "category": "boxes",
+      "name": "LB 1\"",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "a316339f-c1ed-48d7-8712-47210c59b1f1",
+      "category": "boxes",
+      "name": "3/4\" couplings",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "f13c7f64-f65e-45a7-900e-5e3db8402f85",
+      "category": "boxes",
+      "name": "3/4\" connectors",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "12fe3063-6648-4c3f-b31f-6a5cff56ddea",
+      "category": "boxes",
+      "name": "J-box 4x4",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "888cc084-bcc9-4832-b80c-2cdae1c21a4d",
+      "category": "boxes",
+      "name": "J-box 8x8x4",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "228603b3-cc93-4978-9f0b-18d00c384160",
+      "category": "boxes",
+      "name": "J-box 10x10x6",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "d1a7b4b7-57e4-491c-8755-a1d6e8e4dcea",
+      "category": "boxes",
+      "name": "Cord grips",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "3c6c5954-f559-4d5f-a65f-d18e3d9d3adf",
+      "category": "boxes",
+      "name": "S.S. cord grips",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "65ec8044-04b8-4f3b-ac10-3ed9f429abb1",
+      "category": "boxes",
+      "name": "Straps & supports",
+      "unit": "lot",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "26e16981-43c5-4dd6-a4de-31ab93870e45",
+      "category": "lighting",
+      "name": "LED high bay",
+      "unit": "ea",
+      "lastCostCents": 14900,
+      "uses": 1,
+      "hidden": false
+    },
+    {
+      "id": "b375012a-4b58-4fa7-98b6-034110124703",
+      "category": "lighting",
+      "name": "LED strip 4 ft",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "6cb9b6df-5628-4b89-9d61-76af9338febb",
+      "category": "lighting",
+      "name": "Emergency light fixture",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "9bd2684b-d00c-405a-8221-5a06d0d0d0f6",
+      "category": "lighting",
+      "name": "Exit sign",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "07e27805-d401-467d-8256-30cf7c7f5f69",
+      "category": "lighting",
+      "name": "T8 LED tube",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "da14ccd3-11fc-478a-87af-0bdffc392221",
+      "category": "lighting",
+      "name": "T5 bulb",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "84bb0c72-e922-49fb-87c1-f7fc4fde6231",
+      "category": "lighting",
+      "name": "Motion sensor",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "9a39005e-74f6-4a6d-b04d-1759b0a36914",
+      "category": "lighting",
+      "name": "Photocell",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "d4bec56f-f62b-4f1e-ab6a-c1451559d34f",
+      "category": "lighting",
+      "name": "Wall pack",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "a25f3d3f-e2b6-4693-b6fe-a384191a1a71",
+      "category": "gear",
+      "name": "20 A breaker",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "e0c3d6a8-7e2d-4076-bd1b-ad982cf371e2",
+      "category": "gear",
+      "name": "30 A breaker",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "5f860867-7e78-4dc4-9274-c2922139904b",
+      "category": "gear",
+      "name": "3-pole 480 V breaker",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "e098ea8d-4461-486d-ad95-4fb1a973e27c",
+      "category": "gear",
+      "name": "3-pole disconnect",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "12a4fc7f-e459-4565-a460-ec028e4a7842",
+      "category": "gear",
+      "name": "30 A disconnect",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "ada58127-e9e8-4d51-b342-a085f7f382a1",
+      "category": "gear",
+      "name": "60 A disconnect",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "7c552590-41ad-433b-a1d6-d5d50a0b8376",
+      "category": "gear",
+      "name": "Contactor",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "b3f2e761-8532-4e20-852d-0424181b7b39",
+      "category": "gear",
+      "name": "Motor starter",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "0ef88137-bbac-4573-b69c-ab0293e4e521",
+      "category": "gear",
+      "name": "VFD",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "0f0dcb63-74aa-428c-b98f-6638c93ebe29",
+      "category": "gear",
+      "name": "Pin & sleeve",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "a10b6a08-9cf4-40ad-a19c-7ba0b05de6ec",
+      "category": "gear",
+      "name": "Receptacle 20 A",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "c2dbee4f-65d5-4dc6-9cb2-727e1fecded7",
+      "category": "gear",
+      "name": "Switch 3-way",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "2361dd76-e414-45ad-97b1-38f5f8ffaa47",
+      "category": "gear",
+      "name": "Photo eye",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "43ae5b70-d57d-46d2-8886-214c9511ca38",
+      "category": "gear",
+      "name": "Shrink tube, tape, crimps",
+      "unit": "lot",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "96c4e4da-6df9-4b31-b7a0-bfefe7b12642",
+      "category": "rentals",
+      "name": "Boom lift",
+      "unit": "day",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "ac57be64-fbb3-4f41-bc5f-0c73a195b32b",
+      "category": "rentals",
+      "name": "Scissor lift",
+      "unit": "day",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "d541cecc-d3e4-4953-94e6-27e86ab0a666",
+      "category": "rentals",
+      "name": "Trencher",
+      "unit": "day",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    },
+    {
+      "id": "e9c6acba-ed84-4ead-916f-d2b80deae3a2",
+      "category": "rentals",
+      "name": "Dumpster",
+      "unit": "ea",
+      "lastCostCents": null,
+      "uses": 0,
+      "hidden": false
+    }
+  ],
+  "customers": [
+    {
+      "id": "6e47f77e-ed85-4fd3-8b90-3960c85532ba",
+      "name": "UDA",
+      "contact": "",
+      "email": "",
+      "phone": "",
+      "defaultDetail": "full"
+    },
+    {
+      "id": "bdbe729f-7670-4866-ac63-cf92995e12ce",
+      "name": "Shamrock Foods",
+      "contact": "",
+      "email": "",
+      "phone": "",
+      "defaultDetail": "full"
+    },
+    {
+      "id": "f487ab54-6342-4d4e-b1c2-eef225e081fb",
+      "name": "Fairlife",
+      "contact": "",
+      "email": "",
+      "phone": "",
+      "defaultDetail": "full"
+    }
+  ],
+  "bids": [
+    {
+      "id": "a2288857-f9ff-49bc-b50b-9332cda5a18b",
+      "number": 3053,
+      "customerId": "6e47f77e-ed85-4fd3-8b90-3960c85532ba",
+      "title": "Warehouse emergency lights",
+      "dateISO": "2026-08-24",
+      "status": "draft",
+      "detail": "full",
+      "jobType": "service",
+      "areas": [
+        {
+          "id": "7bba959f-6514-4296-b246-ef750497cb40",
+          "name": "Warehouse",
+          "photoIds": [],
+          "items": [
+            {
+              "catalogId": "05f58e8b-1663-4ab4-bc6d-af9a5a066353",
+              "name": "3/4\" rigid",
+              "unit": "ft",
+              "qty": 180,
+              "costCents": 241,
+              "priceCents": null
+            },
+            {
+              "catalogId": "26e16981-43c5-4dd6-a4de-31ab93870e45",
+              "name": "LED high bay",
+              "unit": "ea",
+              "qty": 6,
+              "costCents": 14900,
+              "priceCents": null
+            }
+          ]
+        },
+        {
+          "id": "59f33735-758f-4f9f-a44e-748f849ca88d",
+          "name": "General",
+          "photoIds": [],
+          "items": [
+            {
+              "catalogId": null,
+              "name": "Permits",
+              "unit": "lot",
+              "qty": 1,
+              "costCents": 0,
+              "priceCents": null
+            }
+          ]
+        }
+      ],
+      "misc": {
+        "label": "Supports, anchors, and hardware",
+        "cents": 4000
+      },
+      "labor": {
+        "crewIds": [
+          "c1",
+          "c2"
+        ],
+        "days": 2,
+        "tasks": null
+      },
+      "rentals": [
+        {
+          "name": "Scissor lift",
+          "days": 8,
+          "cents": 28500,
+          "markup": false
+        }
+      ],
+      "equipment": [
+        {
+          "equipmentId": "b05a1a17-f2a5-4304-82cf-3429cd74baf7",
+          "name": "Threader",
+          "days": 2,
+          "dayCents": 5000
+        }
+      ],
+      "pricing": {
+        "marginPct": 25,
+        "rateCents": 6500,
+        "cushionPct": 10,
+        "markupPct": 18
+      },
+      "scope": null,
+      "notes": [
+        "Prices subject to change; final pricing based on actual material."
+      ],
+      "clauseIds": null,
+      "validityDays": 30,
+      "sentAt": null,
+      "savedToFilesAt": null,
+      "lostReason": null,
+      "job": null
+    },
+    {
+      "id": "06e311e7-efd0-4315-b197-3ace370dd823",
+      "number": 3054,
+      "customerId": "bdbe729f-7670-4866-ac63-cf92995e12ce",
+      "title": "Line 3 disconnect",
+      "dateISO": "2026-08-17",
+      "status": "sent",
+      "detail": "full",
+      "jobType": "project",
+      "areas": [
+        {
+          "id": "9a3ec1a4-2eaa-4b2a-ba39-a0d581e32c49",
+          "name": "Pump room",
+          "photoIds": [],
+          "items": [
+            {
+              "catalogId": "ada58127-e9e8-4d51-b342-a085f7f382a1",
+              "name": "60 A disconnect",
+              "unit": "ea",
+              "qty": 2,
+              "costCents": 18000,
+              "priceCents": 24000
+            }
+          ]
+        }
+      ],
+      "misc": {
+        "label": "Supports, anchors, and hardware",
+        "cents": 0
+      },
+      "labor": {
+        "crewIds": [
+          "c1",
+          "c2"
+        ],
+        "days": 3,
+        "tasks": [
+          {
+            "name": "Demo old disconnect",
+            "crewIds": [
+              "c1"
+            ],
+            "days": 1
+          },
+          {
+            "name": "Set and wire new",
+            "crewIds": [
+              "c1",
+              "c2"
+            ],
+            "days": 2
+          }
+        ]
+      },
+      "rentals": [],
+      "equipment": [],
+      "pricing": {
+        "marginPct": 27.5,
+        "rateCents": 7000,
+        "cushionPct": 15,
+        "markupPct": 18
+      },
+      "scope": [
+        "Pump room: furnish and install 2 60 A disconnects"
+      ],
+      "notes": [
+        "Prices subject to change; final pricing based on actual material.",
+        "Disconnect to be supplied by customer."
+      ],
+      "clauseIds": [
+        "k01",
+        "k02",
+        "k03",
+        "k04",
+        "k05",
+        "k06",
+        "k07",
+        "k08",
+        "k09",
+        "k10",
+        "k11",
+        "k12",
+        "k13",
+        "k14",
+        "k15",
+        "k16",
+        "k17",
+        "k18",
+        "k19"
+      ],
+      "validityDays": 30,
+      "sentAt": "2026-08-18",
+      "savedToFilesAt": "2026-08-18",
+      "lostReason": null,
+      "job": null
+    },
+    {
+      "id": "e0e46a78-dbd0-47f9-9a5f-caa5a704edf0",
+      "number": 3055,
+      "customerId": "f487ab54-6342-4d4e-b1c2-eef225e081fb",
+      "title": "Pump feed",
+      "dateISO": "2026-07-06",
+      "status": "complete",
+      "detail": "full",
+      "jobType": "project",
+      "areas": [
+        {
+          "id": "c36e4219-032e-40a2-9fed-ddf6e462be49",
+          "name": "Filler room",
+          "photoIds": [],
+          "items": [
+            {
+              "catalogId": "5ffc381c-d6c4-4937-9268-002b01f71236",
+              "name": "#8 THHN",
+              "unit": "ft",
+              "qty": 400,
+              "costCents": 189,
+              "priceCents": null
+            }
+          ]
+        }
+      ],
+      "misc": {
+        "label": "Supports, anchors, and hardware",
+        "cents": 0
+      },
+      "labor": {
+        "crewIds": [
+          "c1",
+          "c2"
+        ],
+        "days": 5,
+        "tasks": null
+      },
+      "rentals": [],
+      "equipment": [],
+      "pricing": {
+        "marginPct": 25,
+        "rateCents": 6500,
+        "cushionPct": 15,
+        "markupPct": 18
+      },
+      "scope": null,
+      "notes": [
+        "Prices subject to change; final pricing based on actual material."
+      ],
+      "clauseIds": null,
+      "validityDays": 30,
+      "sentAt": null,
+      "savedToFilesAt": null,
+      "lostReason": null,
+      "job": {
+        "weeks": [
+          {
+            "weekISO": "2026-07-06",
+            "hours": 42
+          },
+          {
+            "weekISO": "2026-07-13",
+            "hours": 38
+          }
+        ],
+        "surprises": [
+          {
+            "cents": 22500,
+            "note": "Ten-inch wall, new bit",
+            "at": "2026-07-09"
+          }
+        ],
+        "changeOrders": [
+          {
+            "id": "84c55db9-4c59-4364-a982-322759b9128e",
+            "name": "Second feed to the filler",
+            "areas": [
+              {
+                "id": "077d0aa0-e183-4094-8986-a1e84e782b39",
+                "name": "Filler room",
+                "photoIds": [],
+                "items": [
+                  {
+                    "catalogId": "5ffc381c-d6c4-4937-9268-002b01f71236",
+                    "name": "#8 THHN",
+                    "unit": "ft",
+                    "qty": 120,
+                    "costCents": 189,
+                    "priceCents": null
+                  }
+                ]
+              }
+            ],
+            "labor": {
+              "crewIds": [
+                "c1",
+                "c2"
+              ],
+              "days": 1,
+              "tasks": null
+            }
+          }
+        ],
+        "completedAt": "2026-07-20"
+      }
+    }
+  ]
+}
