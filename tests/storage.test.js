@@ -38,8 +38,10 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
   assert.strictEqual(d.settings.company.roc, 'AZ ROC #276507');
   assert.strictEqual(d.settings.rateCents, 8500);
   assert.strictEqual(d.settings.floorCents, 8500);
-  assert.ok(d.catalog.length >= 180 && d.catalog.length <= 220,
-    'the standard parts list is about two hundred names, not two thousand');
+  // The exact count, not a range. A seed list that quietly loses a family
+  // still passes "about two hundred", and losing a family is the whole bug
+  // the size-complete list was written to fix.
+  assert.strictEqual(d.catalog.length, 210);
   assert.ok(d.catalog.every((p) => p.lastCostCents === null && p.uses === 0));
   assert.deepStrictEqual([...new Set(d.catalog.map((p) => p.category))].sort(),
     ['boxes', 'conduit', 'gear', 'lighting', 'rentals', 'wire']);
@@ -47,6 +49,7 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
   assert.strictEqual(d.settings.forgetList.length, 19);
   assert.strictEqual(d.settings.notePhrases.length, 14);
   // Eight on his own paper, and the subcontract language kept in its own group.
+  assert.strictEqual(d.settings.clauses.length, 27);
   assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always').length, 8);
   assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'gc').length, 12);
   // One, not a guess at where his paper book left off.

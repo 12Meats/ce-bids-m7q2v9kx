@@ -1011,15 +1011,16 @@ function priceSettingsMoves(bid, s) {
     out.push({ kind: 'pricing', key, text: label[key] + ' ' + say(key, own) + ' to ' + say(key, s[key]) });
   });
 
-  // The men on the bid and the men the map already names, so neither a wage
-  // that is missing nor one left behind by a crew change goes unlisted. A man
-  // Settings has forgotten is skipped: there is no wage to bring forward, and
-  // the bid keeps whatever it was written at.
+  // ONLY THE MEN ON THE BID. A wage left behind by a crew change is not a move:
+  // it prices nothing, so a bid that reads exactly like Settings was still
+  // being offered the confirm over a name that is no longer on the job, and the
+  // offer never went away because taking Settings did not clear the stale key.
+  // Use-them prunes those now, so what is listed here is what the bid costs.
+  // A man Settings has forgotten is skipped either way: there is no wage to
+  // bring forward, and the bid keeps whatever it was written at.
   const map = (bid.labor && bid.labor.wageCents && typeof bid.labor.wageCents === 'object'
     && !Array.isArray(bid.labor.wageCents)) ? bid.labor.wageCents : null;
-  const ids = priceBidCrewIds(bid);
-  Object.keys(map || {}).forEach((id) => { if (ids.indexOf(id) === -1) ids.push(id); });
-  ids.forEach((id) => {
+  priceBidCrewIds(bid).forEach((id) => {
     const c = s.crew.find((x) => x.id === id);
     if (!c || !Number.isInteger(c.wageCents)) return;
     const own = map ? map[id] : undefined;
@@ -1059,9 +1060,16 @@ async function priceUseSettings(bid, moves) {
     if (!hadWages || typeof bid.labor.wageCents !== 'object' || Array.isArray(bid.labor.wageCents)) {
       bid.labor.wageCents = {};
     }
-    priceBidCrewIds(bid).forEach((id) => {
+    const ids = priceBidCrewIds(bid);
+    ids.forEach((id) => {
       const c = s.crew.find((x) => x.id === id);
       if (c && Number.isInteger(c.wageCents)) bid.labor.wageCents[id] = c.wageCents;
+    });
+    // And the men who are NOT on it go. A wage for a crew id the bid dropped
+    // costs nothing and changes nothing, but it kept the freeze offer alive
+    // forever: the map never matched Settings, so the screen kept asking.
+    Object.keys(bid.labor.wageCents).forEach((id) => {
+      if (ids.indexOf(id) === -1) delete bid.labor.wageCents[id];
     });
   }
 

@@ -1019,9 +1019,10 @@ function buildSetNotePhrases() {
 // are collapsed until he opens one: twenty-six clauses laid flat is a wall,
 // and he comes here to change one of them, not to read all of them.
 //
-// Hidden is the only kind of delete: DocModel drops a hidden clause off the
-// paper even when a bid still names its id, and un-hiding brings it back
-// still ticked. Splicing it would break every bid that chose it.
+// Hidden is the only kind of delete: splicing a clause out would break every
+// bid that chose it. Hidden means "not offered on new bids" and nothing more
+// — DocModel still prints a hidden clause on a bid that NAMES it, so retiring
+// one here never goes back and shortens paper that is already out.
 
 function buildSetTerms() {
   const s = setS();

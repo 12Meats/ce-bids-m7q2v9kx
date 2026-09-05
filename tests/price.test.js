@@ -124,6 +124,38 @@ test('a wage that moved is named man by man, and one Settings has forgotten is l
     ['Shawn $32.00 to $34.00 an hour']);
 });
 
+// A MAN WHO CAME OFF THE JOB IS NOT A MOVE. The wage map outlives the crew
+// list: take George off the labor line and his old wage stays in the file,
+// priced into nothing. Listed as a move it kept the link on a bid that reads
+// exactly like Settings, and taking the link never made it go away, because
+// the tap wrote the men on the bid and left the stale key sitting there.
+test('a wage left behind by a crew change is not a move', () => {
+  const { d, bid } = fixture();
+  bid.labor.crewIds = ['c1'];                       // George came off this job
+  bid.labor.wageCents = { c1: d.settings.crew[0].wageCents, c2: 2900 };
+  assert.deepStrictEqual(moveKeys(bid, d), [],
+    'a bid on today Settings is offered nothing, whatever the map still remembers');
+});
+
+test('taking Settings clears the wage of a man the bid no longer pays, and the link goes', async () => {
+  const { d, bid } = fixture();
+  bid.labor.crewIds = ['c1'];
+  bid.labor.wageCents = { c1: 2900, c2: 2900 };     // c1 is behind, c2 is a ghost
+  d.settings.crew.push({ id: 'c3', name: 'Ruben', wageCents: 2800, hidden: false });
+
+  assert.deepStrictEqual(moveKeys(bid, d), ['wage:c1'], 'only the man on the bid is named');
+
+  await priceUseSettings(bid, priceSettingsMoves(bid, d.settings));
+
+  assert.deepStrictEqual(Object.assign({}, bid.labor.wageCents), { c1: 3200 },
+    'the stale key is gone, and nobody who is not on the bid was added');
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(bid.labor.wageCents, 'c2'), false);
+  // The link is offered only when something moves, so an empty list is the
+  // link being gone off the screen.
+  assert.deepStrictEqual(moveKeys(bid, d), []);
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
 // ---------------------------------------------------------------------------
 // Every crew id the bid pays
 // ---------------------------------------------------------------------------

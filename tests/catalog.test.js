@@ -181,10 +181,33 @@ test('sizeKey: wire gauges climb from #14 to 4/0', () => {
 test('sizeKey: a name with no size anywhere in it has no key', () => {
   ['Contactor', 'LED high bay', 'Cat6', 'T8 LED tube', 'Motor starter NEMA 0', 'Photo eye']
     .forEach((n) => assert.equal(C.sizeKey(n), null, n));
-  // A cable configuration is not a fraction of an inch: the inch mark is what
-  // makes a fraction a trade size.
-  assert.equal(C.sizeKey('10/4 SO cord'), null);
-  assert.equal(C.sizeKey('12/4 SO cord'), null);
+});
+
+// A CABLE CONFIGURATION IS A SIZE, JUST NOT AN INCH. '10/4 SO cord' is four
+// conductors of #10, and the gauge in front of the slash is what he picks it
+// by, so it runs the wire scale: 14 under 12 under 10, the same way #14 THHN
+// runs under #12 THHN.
+test('sizeKey: a cable configuration reads its gauge off the front, on the wire scale', () => {
+  assert.equal(C.sizeKey('10/4 SO cord'), C.sizeKey('#10 THHN'));
+  assert.equal(C.sizeKey('12/4 SO cord'), C.sizeKey('#12 THHN'));
+  assert.equal(C.sizeKey('14/4 VFD cable'), 986);
+  assert.equal(C.sizeKey('6/4 VFD cable'), 994);
+  const cord = ['14/4 VFD cable', '12/4 VFD cable', '10/4 VFD cable', '8/4 VFD cable', '6/4 VFD cable'];
+  const keys = cord.map(C.sizeKey);
+  keys.forEach((k, i) => { if (i) assert.ok(k > keys[i - 1], cord[i] + ' is bigger than ' + cord[i - 1]); });
+  // How many conductors is not how big it is: 12/2 and 12/3 are both #12, and
+  // the name breaks the tie.
+  assert.equal(C.sizeKey('12/2 MC cable'), C.sizeKey('12/3 MC cable'));
+  // The conductor count comes out of the family with the gauge, so the MC, the
+  // SOOW and the VFD stay three blocks and do not shuffle into each other.
+  assert.equal(C.familyKey('12/2 MC cable'), 'mc cable');
+  assert.equal(C.familyKey('10/3 SOOW cord'), 'soow cord');
+  assert.equal(C.familyKey('8/4 VFD cable'), 'vfd cable');
+  // And the pipe's own fractions are still inches, not gauges: nothing under
+  // #6 is a cable, and 1/2" and 3/4" are the two the pipe uses.
+  assert.equal(C.sizeKey('3/4" EMT'), 0.75);
+  assert.equal(C.sizeKey('3/4 EMT'), null);
+  assert.equal(C.sizeKey('1/2 EMT'), null);
 });
 
 // GEAR IS RATED, NOT MEASURED. Read as text the breakers came off the shelf
@@ -336,6 +359,22 @@ test('conduit browses one material at a time, smallest first', () => {
   ]);
 });
 
+// Wire is the list the cable rule was written for. Sorted as text it read
+// 10/2 MC, 10/3 MC, 10/3 SOOW, 10/4 SOOW, 10/4 VFD, 12/2 MC — every family
+// shuffled into every other, and the #10 cord above the #12 cord inside each.
+test('wire browses family by family, and each cable family climbs by gauge', () => {
+  const list = C.matches(SEED, { category: 'wire' }).map((p) => p.name);
+  assert.deepStrictEqual(list.slice(0, 20), [
+    '#6 bare copper ground', '#4 bare copper ground', '#2 bare copper ground',
+    '12/2 MC cable', '12/3 MC cable', '10/2 MC cable', '10/3 MC cable',
+    '12/3 SOOW cord', '12/4 SOOW cord', '10/3 SOOW cord', '10/4 SOOW cord',
+    '8/3 SOOW cord', '8/4 SOOW cord',
+    '#14 THHN', '#12 THHN', '#10 THHN', '#8 THHN', '#6 THHN', '#4 THHN', '#2 THHN',
+  ]);
+  assert.deepStrictEqual(list.filter((n) => n.indexOf('VFD') !== -1),
+    ['14/4 VFD cable', '12/4 VFD cable', '10/4 VFD cable', '8/4 VFD cable', '6/4 VFD cable']);
+});
+
 test('gear browses by rating, not by the first digit of the name', () => {
   const list = C.matches(SEED, { category: 'gear' }).map((p) => p.name);
   assert.deepStrictEqual(list.slice(0, 8), [
@@ -356,11 +395,12 @@ test('the seeded families size the way the rack does', () => {
     [0.5, 0.75, 1, 1.25, 1.5, 2]);
   assert.deepStrictEqual(['#14 THHN', '#2 THHN', '#1 THHN', '1/0 THHN', '4/0 THHN'].map(C.sizeKey),
     [986, 998, 999, 1001, 1004]);
-  // A cable configuration is not a size. '12/3 SOOW cord' is three conductors
-  // of #12, and reading it as four inches would file it with the pipe.
-  assert.strictEqual(C.sizeKey('12/3 SOOW cord'), null);
-  assert.strictEqual(C.sizeKey('10/4 VFD cable'), null);
-  assert.strictEqual(C.sizeKey('12/2 MC cable'), null);
+  // A cable configuration runs the wire scale, not the inches: '12/3 SOOW cord'
+  // is three conductors of #12, and reading it as four inches would file it
+  // with the pipe.
+  assert.deepStrictEqual(['14/4 VFD cable', '12/3 SOOW cord', '10/4 VFD cable', '8/3 SOOW cord',
+    '6/4 VFD cable'].map(C.sizeKey), [986, 988, 990, 992, 994]);
+  assert.strictEqual(C.sizeKey('12/2 MC cable'), 988);
 });
 
 // Every fitting family covers every conduit size. The point of the bigger list
@@ -393,7 +433,6 @@ test('nearDuplicates forgives the plural, the quotes and the word order, and not
     part('boxes', '1" hubs'),
     part('boxes', 'LB 3/4"'),
     part('boxes', '3/4" LB'),          // already the standard spelling
-    part('boxes', '3/4" connector'),   // a different fitting, not a spelling
     part('conduit', '3/4" EMT'),
     part('gear', 'Contactor'),
   ];
@@ -405,6 +444,40 @@ test('nearDuplicates forgives the plural, the quotes and the word order, and not
   ]);
   // It hands back the row itself, because hiding it is the caller's job.
   assert.strictEqual(hits[0].item, mine[0]);
+});
+
+// THE FITTING HE NEVER WROTE THE MATERIAL ON. His list says '3/4" connectors'
+// because for twenty years there was one kind in the van; the standard list
+// splits them by what they fit, so his name is now shorter than the one that
+// replaced it and no amount of plural-forgiving finds the pair.
+test('nearDuplicates offers a bare fitting noun against the standard that spells it out', () => {
+  const standard = Store.standardCatalogNames();
+  const mine = [
+    part('boxes', '3/4" connectors'),
+    part('boxes', '3/4" couplings'),
+    part('boxes', '1" straps'),
+    part('boxes', '3/4" EMT connectors'),   // his plural of the standard itself
+  ];
+  assert.deepStrictEqual(C.nearDuplicates(mine, standard).map((h) => h.name + ' -> ' + h.standard), [
+    '3/4" connectors -> 3/4" EMT connector (setscrew)',
+    '3/4" couplings -> 3/4" EMT coupling',
+    '1" straps -> 1" one-hole strap',
+    '3/4" EMT connectors -> 3/4" EMT connector (setscrew)',
+  ]);
+});
+
+// The guard, which is the half of the rule that matters. A name that ends in a
+// MATERIAL is the pipe itself, not a fitting spelled short, and folding '1" EMT'
+// into '1" EMT coupling' would take the conduit off his own walk.
+test('nearDuplicates never folds a bare family name into a longer one', () => {
+  const standard = Store.standardCatalogNames();
+  const mine = [
+    part('conduit', '3/4" rigid'),     // vs '3/4" rigid coupling'
+    part('conduit', '1" EMT'),         // vs '1" EMT coupling'
+    part('conduit', '3/4" seal-tight'),
+    part('boxes', 'hubs'),             // one word says nothing about the size
+  ];
+  assert.deepStrictEqual(C.nearDuplicates(mine, standard), []);
 });
 
 test('nearDuplicates skips what is already put away, and takes plain strings', () => {

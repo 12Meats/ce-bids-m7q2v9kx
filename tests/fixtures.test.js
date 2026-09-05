@@ -154,7 +154,7 @@ test('backup-bids-v1.json: resetting the terms library changes no bid on the pho
   assert.ok(D.build(d.bids[1], d, 'full').terms.some((t) => /^Pricing held \d+ days/.test(t)));
 });
 
-test('backup-bids-v1.json: adding the standard parts leaves five of his own spellings to ask about', () => {
+test('backup-bids-v1.json: adding the standard parts leaves seven of his own spellings to ask about', () => {
   const C = require('../catalog.js');
   const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v1.json'), 'utf8'));
   assert.ok(S.addStandardCatalog(d) > 0);
@@ -165,6 +165,10 @@ test('backup-bids-v1.json: adding the standard parts leaves five of his own spel
     '3/4" S.S. hubs -> 3/4" S.S. hub',
     'LB 3/4" -> 3/4" LB',
     'LB 1" -> 1" LB',
+    // The two he never wrote the material on. The standard list splits the
+    // connector by what it fits, so his one row is shorter than both of them.
+    '3/4" couplings -> 3/4" EMT coupling',
+    '3/4" connectors -> 3/4" EMT connector (setscrew)',
   ]);
   // Hiding them is the answer, never deleting: two of these are on his bids.
   dups.forEach((x) => { x.item.hidden = true; });

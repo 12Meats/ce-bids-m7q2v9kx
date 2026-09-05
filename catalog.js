@@ -75,8 +75,26 @@
   //             (1/0 -> 1001, 4/0 -> 1004). Ascending in conductor size, with
   //             no lookup table to keep in step with the seed list.
   //
-  // An inch mark is REQUIRED for the fraction forms: "10/4 SO cord" is a cable
-  // configuration, not two and a half inches of anything.
+  // An inch mark is REQUIRED for the fraction forms, because "10/4 SO cord" is
+  // not two and a half inches of anything. It is a CABLE CONFIGURATION — four
+  // conductors of #10 — and it has a size of its own: the gauge in front of the
+  // slash, on the same scale the building wire runs, so a family of cord reads
+  // 14, 12, 10, 8, 6 the way a family of THHN does. Read as text it came off
+  // the shelf 10/2, 10/3, 12/2, 12/3, which is the order a computer reads.
+  //
+  // Only from #6 up, which is where his cable starts and where a trade size
+  // stops: 1/2" and 3/4" are the two fractions the pipe uses, and no cord is
+  // built out of half a conductor. So a name that lost its inch mark still is
+  // not mistaken for a gauge.
+  const CABLE_CFG = /^(\d+)\/(\d+)\b/;
+  function cableKey(m) {
+    const gauge = Number(m[1]);
+    const conductors = Number(m[2]);
+    if (gauge < 6 || gauge > 40) return null;
+    if (conductors < 2 || conductors > 12) return null;
+    return 1000 - gauge;
+  }
+
   //
   // GEAR IS NOT SIZED IN INCHES. A breaker is amps, a VFD is horsepower, a
   // transformer is kVA, a light is watts, and an enclosure is the two numbers
@@ -103,6 +121,7 @@
     [/^(\d+)[-\s](\d+)\/(\d+)\s*"/, (m) => Number(m[1]) + Number(m[2]) / Number(m[3])],
     [/^(\d+)\/(\d+)\s*"/, (m) => Number(m[1]) / Number(m[2])],
     [/^(\d+(?:\.\d+)?)\s*"/, (m) => Number(m[1])],
+    [CABLE_CFG, cableKey],
     [BOX_DIMS, (m) => 6000 + Number(m[1]) + Number(m[2]) / 1000],
     [RATED, (m) => UNIT_BAND[m[2]] + Number(m[1])],
   ];
@@ -217,22 +236,51 @@
   //   the quotes  — 3/4" and 3/4 are one size
   //   the order   — 'LB 3/4"' and '3/4" LB' are one fitting
   //
-  // The words themselves have to match. '3/4" connector' is NOT offered
-  // against '3/4" EMT connector (setscrew)': that is a different fitting on
-  // the same size of pipe, and hiding it on a guess would take a part he uses
-  // off his own walk.
+  // AND THE FOURTH: the fitting he never wrote the material on.
+  //
+  // His own list says '3/4" connectors' and '3/4" couplings', because for
+  // twenty years there was one of each in the van. The standard list splits
+  // them by what they fit — '3/4" EMT connector (setscrew)' against the
+  // liquidtight one, '3/4" EMT coupling' against the rigid — so his name is
+  // now SHORTER than the name that replaced it, and nothing above catches it.
+  // Left alone it is the worst kind of pair: two rows that look unrelated,
+  // one of which he has been tapping for years.
+  //
+  // So a legacy name is offered against a standard one when every word of his
+  // is in it AND the noun on the end is a fitting: a connector, a coupling, a
+  // hub, an LB, a strap. That last clause is the whole guard. '3/4" rigid' and
+  // '1" EMT' are subsets of longer standard names too, but they end in a
+  // MATERIAL, not a fitting: they are the pipe itself, they are their own part,
+  // and folding them into a coupling would take the conduit off his walk.
+  //
+  // A one-word name is never a spelling of a longer one either: 'hubs' alone
+  // says nothing about what size, and picking one would be inventing a part.
+  //
+  // When his one name covers several standard ones, he is shown the EMT: it is
+  // what he runs most, so it is the likelier of the two to be the part behind
+  // the old row, and the answer is his either way.
   //
   // Pure, and it decides nothing. It hands back the rows and the standard name
   // each one looks like, and Settings asks him before anything is hidden.
-  function dupKey(name) {
+  const FITTING_NOUNS = new Set(['connector', 'coupling', 'hub', 'lb', 'strap',
+    'box', 'elbow', 'bushing', 'locknut', 'clamp', 'nipple']);
+
+  // 'hubs' is 'hub' and 'boxes' is 'box'. The bare -s rule made 'boxes' into
+  // 'boxe', which is not a word and never matched anything.
+  function singular(w) {
+    if (/(?:x|s|z|ch|sh)es$/.test(w)) return w.slice(0, -2);
+    return w.replace(/s$/, '');
+  }
+
+  function dupWords(name) {
     return normalizeName(name)
       .replace(/["']/g, '')
       .split(' ')
       .filter(Boolean)
-      .map((w) => w.replace(/s$/, ''))
-      .sort()
-      .join(' ');
+      .map(singular);
   }
+
+  function dupKey(name) { return dupWords(name).slice().sort().join(' '); }
 
   function nearDuplicates(list, standardNames) {
     const rows = Array.isArray(list) ? list : [];
@@ -240,6 +288,17 @@
     const exact = new Set(std.map(normalizeName));
     const byKey = new Map();
     std.forEach((n) => { const k = dupKey(n); if (!byKey.has(k)) byKey.set(k, n); });
+    // Each standard name as a set of its words, once, so the subset rule below
+    // is a scan of the library and not a scan per word per row.
+    const stdWords = std.map((n) => ({ name: n, set: new Set(dupWords(n)) }));
+
+    // Every standard name his words all appear in, EMT first.
+    function covering(words) {
+      const hits = stdWords.filter((e) => words.every((w) => e.set.has(w)));
+      if (!hits.length) return null;
+      const emt = hits.find((e) => e.set.has('emt'));
+      return (emt || hits[0]).name;
+    }
 
     const out = [];
     rows.forEach((item) => {
@@ -249,7 +308,13 @@
       // Already put away, or already spelled the standard way: nothing to ask.
       if (item && item.hidden === true) return;
       if (exact.has(normalizeName(name))) return;
-      const standard = byKey.get(dupKey(name));
+      let standard = byKey.get(dupKey(name));
+      if (!standard) {
+        const words = dupWords(name);
+        if (words.length < 2) return;
+        if (!FITTING_NOUNS.has(words[words.length - 1])) return;
+        standard = covering(words);
+      }
       if (!standard) return;
       out.push({ item, name, standard });
     });
