@@ -639,6 +639,18 @@
     ) || null;
   }
 
+  // The line for this tool that is ALREADY on this bid, if there is one. Days
+  // is the quantity on an equipment line, so a second line for the same tool is
+  // never the answer: two "Bender" rows on one bid bill twice, read as two
+  // benders, and are exactly the mistake the Settings-side name check was
+  // written for. The picker offers every tool whether or not it is on the bid,
+  // and it should — he taps it to CHANGE the days as often as to add it — so
+  // the check lives here, where both doors into the list can ask it.
+  function bidEquipmentLine(bid, equipmentId) {
+    if (!bid || !equipmentId) return null;
+    return (bid.equipment || []).find((e) => e && e.equipmentId === equipmentId) || null;
+  }
+
   // -------------------------------------------------------------------------
   // WHAT IS STILL POINTED AT
   // -------------------------------------------------------------------------
@@ -692,6 +704,6 @@
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, MISC_LABEL, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,
-    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, findEquipmentByName, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
+    findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     recordCatalogUse, numberInUse };
 });

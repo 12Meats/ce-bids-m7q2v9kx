@@ -1202,6 +1202,16 @@ function walkAddRental(bid, prefill, from, forgetRow) {
 // asked about HERE rather than quietly added at $0 — a $0 equipment line is a
 // day of his own gear given away, and it looks exactly like a priced one.
 function walkAddEquipment(bid, equip, from, forgetRow) {
+  // The same rule the Costs & price picker follows: one line per tool. Days is
+  // the quantity, and a second "Bender" row bills the tool twice. Answering the
+  // checklist row is still right — the bid does cover it — so the row is marked
+  // added the way walkForgetAdd marks one it found already there.
+  if (Store.bidEquipmentLine(bid, equip.id)) {
+    if (forgetRow) persistOr(walkForgetMark(bid, forgetRow, 'added'));
+    walkAfterPlaceholder(from, forgetRow, (equip.name || 'That tool') + ' is already on the bid.');
+    return;
+  }
+
   const settings = state.data.settings;
   const rate = equipmentDayCents(equip, settings.equipmentPct);
   if (rate != null) { walkPushEquipment(bid, equip, rate, from, forgetRow); return; }

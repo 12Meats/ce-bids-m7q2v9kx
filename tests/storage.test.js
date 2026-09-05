@@ -551,6 +551,38 @@ test('findEquipmentByName ignores hidden tools and anything blank', () => {
 });
 
 // ---------------------------------------------------------------------------
+// THE SAME TOOL, TWICE
+// ---------------------------------------------------------------------------
+//
+// He got five Benders in Settings before the name check existed. The same
+// mistake has a second door: pick Bender out of the picker on a bid that
+// already has Bender on it and the old code pushed a second line, which bills
+// the tool twice and prints as two benders.
+
+test('bidEquipmentLine finds the line a tool already has on this bid', () => {
+  const d = S.emptyData();
+  const bid = S.newBid(d, { customerName: 'UDA', title: 'Panel', jobType: 'service', dateISO: '2026-09-05' });
+  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
+  const line = { equipmentId: bender.id, name: 'Bender', days: 2, dayCents: 4000 };
+  bid.equipment.push(line);
+  assert.strictEqual(S.bidEquipmentLine(bid, bender.id), line);
+});
+
+test('bidEquipmentLine says no when the tool is not on the bid, and never throws', () => {
+  const d = S.emptyData();
+  const bid = S.newBid(d, { customerName: 'UDA', title: 'Panel', jobType: 'service', dateISO: '2026-09-05' });
+  const bender = d.settings.equipment.find((e) => e.name === 'Bender');
+  const threader = d.settings.equipment.find((e) => e.name === 'Threader');
+  bid.equipment.push({ equipmentId: threader.id, name: 'Threader', days: 1, dayCents: 1000 });
+  assert.strictEqual(S.bidEquipmentLine(bid, bender.id), null);
+  // A bid off an older backup can reach this with no equipment array at all,
+  // and the callers ask before they know anything.
+  assert.strictEqual(S.bidEquipmentLine({}, bender.id), null);
+  assert.strictEqual(S.bidEquipmentLine(bid, null), null);
+  assert.strictEqual(S.bidEquipmentLine(null, bender.id), null);
+});
+
+// ---------------------------------------------------------------------------
 // A NEGATIVE CUSHION
 // ---------------------------------------------------------------------------
 

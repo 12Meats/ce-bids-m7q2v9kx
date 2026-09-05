@@ -595,6 +595,21 @@ function buildEquipmentRateChip(x) {
 // day rate is worked out from that, and there is no honest way to ask "how
 // many days" before there is a number the days multiply.
 function pricePickEquipment(bid, equip) {
+  // Already on this bid. Days is the quantity on an equipment line, so a
+  // second row for the same tool is never what he meant — it bills the bender
+  // twice and reads as two benders. The picker still offers it, because tapping
+  // it to CHANGE the days is the commoner reason to tap it, so the tap lands on
+  // the line that is already there with its actions open.
+  const already = Store.bidEquipmentLine(bid, equip.id);
+  if (already) {
+    pricePicker = false;
+    priceMenu = already;
+    priceHoursMenu = false;
+    showBanner((equip.name || 'That tool') + ' is already on this bid. Change its days here');
+    render();
+    return;
+  }
+
   const s = priceSettings();
   const rate = equipmentDayCents(equip, s.equipmentPct);
   if (rate != null) { priceEquipmentDays(bid, equip, rate); return; }
