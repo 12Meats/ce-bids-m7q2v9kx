@@ -617,6 +617,9 @@
     .attached-strip .attached-strip-cancel {
       width: auto;
       min-height: 48px;
+      /* Auto width so it does not read as a second primary, but a four-letter
+         label ("Done") shrank it to 40px across, under what a thumb needs. */
+      min-width: 48px;
       margin-top: var(--space-1);
       color: var(--color-text-muted);
     }
@@ -661,6 +664,10 @@
     .stepstrip-step {
       flex: 0 0 auto;
       min-height: 48px;
+      /* "Price" is the shortest word in the strip and came out 43.94px wide,
+         which is under the 44px a thumb needs by a rounding hair. The floor is
+         cheaper than the word being a fraction narrower than the rule. */
+      min-width: 44px;
       padding: 0 6px;
       border: none;
       border-radius: 10px;
