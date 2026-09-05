@@ -33,7 +33,7 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
-  crewDaysText, detailCaption } = sandbox;
+  crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
 const MISC_LABEL = vm.runInContext('MISC_LABEL', sandbox);
@@ -375,4 +375,29 @@ test('the misc line has ONE name, and it is the one a new bid is created with', 
   // Store's, and Store.newBid stamps Store's onto the bid.
   assert.equal(MISC_LABEL, S.MISC_LABEL);
   assert.equal(S.newBid(S.emptyData(), { customerName: 'UDA' }).misc.label, MISC_LABEL);
+});
+
+// The two questions a keypad asks about a part, and the line that says how
+// many of it are on the bid. Pure string work, and every one of them is a
+// sentence he reads standing in a plant with one thumb free.
+test('a keypad asks about the part by name, in words', () => {
+  assert.equal(partQtyLabel('3/4" EMT', 'ft'), '3/4" EMT, how many feet?');
+  assert.equal(partCostLabel('3/4" EMT', 'ft'), '3/4" EMT, cost per foot');
+  assert.equal(partQtyLabel('Wire nuts', 'box'), 'Wire nuts, how many boxes?');
+  assert.equal(partCostLabel('Wire nuts', 'box'), 'Wire nuts, cost per box');
+  // 'ea' has no English form that reads: "how many each?" is not a question.
+  assert.equal(partQtyLabel('4-square', 'ea'), '4-square, how many?');
+  assert.equal(partCostLabel('4-square', 'ea'), '4-square, cost each');
+  // An unknown unit is passed through rather than dropped.
+  assert.equal(partQtyLabel('Thing', 'crate'), 'Thing, how many?');
+  assert.equal(partCostLabel('Thing', 'crate'), 'Thing, cost each');
+});
+
+test('an item line says its count in a plural and its price once', () => {
+  assert.equal(itemCountText(2, 'roll', 18500), '2 rolls at $185.00');
+  assert.equal(itemCountText(1, 'roll', 18500), '1 roll at $185.00');
+  // Feet and each are already what he says at any number.
+  assert.equal(itemCountText(120, 'ft', 340), '120 ft at $3.40');
+  assert.equal(itemCountText(3, 'ea', 950), '3 ea at $9.50');
+  assert.equal(itemCountText(0.5, 'day', 50000), '0.5 days at $500.00');
 });

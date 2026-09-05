@@ -102,12 +102,49 @@ function card(title) {
   return box;
 }
 
-// row(label, value, onTap) -> a label/value line. With onTap it is a real
+// ---------------------------------------------------------------------------
+// TAP AFFORDANCE
+// ---------------------------------------------------------------------------
+// One rule, applied by the builders rather than by nine screens' worth of CSS:
+// a thing that does something LOOKS like it does something, and a thing that is
+// only a fact looks like a fact.
+//
+//   .tap          press feedback — the background darkens for the length of the
+//                 press, so a tap that opened a keypad off-screen still says it
+//                 landed
+//   .tap-chevron  a right-hand ›, meaning "this opens something"
+//   .tap-value    the value in navy, meaning "this opens a keypad"
+//   .flat         no chevron, no press state: information, not a control
+//
+// Six of the eleven rows on the Costs & price screen used to be tappable and
+// the other five looked identical to them. Choosing between chevron and navy is
+// the caller's, and it is the only decision a screen makes about tap styling.
+function tapClasses(onTap, opts) {
+  const o = opts || {};
+  if (!onTap) return ' flat';
+  return ' tap' + (o.keypad ? ' tap-value' : ' tap-chevron');
+}
+
+// The › itself. A span, not a pseudo-element, so it sits in the flex row after
+// the value instead of overlapping it on a narrow phone.
+function chevron() {
+  const c = document.createElement('span');
+  c.className = 'chev';
+  c.setAttribute('aria-hidden', 'true');
+  c.textContent = '›';
+  return c;
+}
+
+// row(label, value, onTap, opts) -> a label/value line. With onTap it is a real
 // button (56px tall, the whole line is the target — no tiny pencil icons);
-// without one it is inert text.
-function row(label, value, onTap) {
+// without one it is inert text and wears .flat.
+//
+// opts.keypad: this row opens a number panel, so the value goes navy and there
+// is no chevron — a chevron promises another screen. Anything else that taps
+// gets the chevron.
+function row(label, value, onTap, opts) {
   const node = document.createElement(onTap ? 'button' : 'div');
-  node.className = 'row' + (onTap ? ' row-tap' : '');
+  node.className = 'row' + (onTap ? ' row-tap' : '') + tapClasses(onTap, opts);
   if (onTap) {
     node.type = 'button';
     node.addEventListener('click', onTap);
@@ -124,7 +161,253 @@ function row(label, value, onTap) {
 
   node.appendChild(l);
   node.appendChild(v);
+  if (onTap && !(opts && opts.keypad)) node.appendChild(chevron());
   return node;
+}
+
+// tapCard({ title, sub, value, onTap }) -> a whole card that is one button.
+// The areas on the walk are the reason: they were rows inside a shared card,
+// which made the most important list in the app read as a paragraph. A card
+// with a border and a › reads as a door, which is what it is.
+function tapCard(opts) {
+  const o = opts || {};
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'card card-tap tap tap-chevron';
+
+  const text = document.createElement('div');
+  text.className = 'card-tap-text';
+  const t = document.createElement('div');
+  t.className = 'card-tap-title';
+  t.textContent = o.title || '';
+  text.appendChild(t);
+  if (o.sub) {
+    const s = document.createElement('div');
+    s.className = 'card-tap-sub';
+    s.textContent = o.sub;
+    text.appendChild(s);
+  }
+  btn.appendChild(text);
+
+  if (o.value !== null && o.value !== undefined && o.value !== '') {
+    const v = document.createElement('div');
+    v.className = 'card-tap-value';
+    v.textContent = String(o.value);
+    btn.appendChild(v);
+  }
+  btn.appendChild(chevron());
+  if (o.onTap) btn.addEventListener('click', o.onTap);
+  return btn;
+}
+
+// attachedStrip(parentRowEl, buttons, opts) -> the strip, already inserted
+// directly under the row that opened it.
+//
+// Every inline menu in this app used to be its own shape: a flex row here, a
+// card there, an outlined red Cancel on the price screen and a block button on
+// the walk. Worse, they were appended after the row's CARD, so the answer to
+// "what do you want to do with this line?" appeared under a heading belonging
+// to something else, and the Cancel button touched the next section.
+//
+// One shape now: inside the parent card, indented past the row, a left border
+// in the accent, a light tint, 48px buttons, and 16px of clear space before
+// whatever comes next. Cancel is a text button — backing out of a menu is not
+// a destructive act and must not wear the color of one.
+//
+// buttons: [{ label, onTap, cls, disabled } | { node } | null]. A null entry is
+// skipped, so a caller can write `cond ? {...} : null` inline.
+// opts.label: a small heading over the buttons ("Which area?").
+// opts.content: any element to sit above the buttons (a row of chips).
+// opts.cancel: a function — renders the secondary Cancel. opts.cancelLabel
+// renames it ("Close" in the bid ⋯ menu).
+function attachedStrip(parentRowEl, buttons, opts) {
+  const o = opts || {};
+  const wrap = document.createElement('div');
+  wrap.className = 'attached-strip';
+
+  if (o.label) wrap.appendChild(fieldLabel(o.label));
+  if (o.content) wrap.appendChild(o.content);
+
+  const list = (buttons || []).filter(Boolean);
+  if (list.length) {
+    const btns = document.createElement('div');
+    btns.className = 'attached-strip-btns';
+    list.forEach((b) => {
+      if (b.node) { btns.appendChild(b.node); return; }
+      const node = textButton(b.label, 'btn' + (b.cls ? ' ' + b.cls : ''), b.onTap);
+      if (b.disabled) node.disabled = true;
+      btns.appendChild(node);
+    });
+    wrap.appendChild(btns);
+  }
+
+  if (typeof o.cancel === 'function') {
+    wrap.appendChild(textButton(o.cancelLabel || 'Cancel', 'link-btn attached-strip-cancel', o.cancel));
+  }
+
+  // Inserted for the caller when the row is already in the document; handed
+  // back unplaced when it is not, so a builder assembling a card off-screen can
+  // append it itself.
+  if (parentRowEl && parentRowEl.parentNode) {
+    parentRowEl.parentNode.insertBefore(wrap, parentRowEl.nextSibling);
+  }
+  return wrap;
+}
+
+// pinnedBar(host, label, onTap, opts) -> the one action this screen is for,
+// fixed above the tab bar so thirty rows of scrolling never puts it out of
+// reach. One per screen: two pinned buttons is two primary actions, which is
+// none.
+//
+// A spacer goes into the flow with it rather than a class on the host, because
+// every renderer clears its host with textContent = '' — which takes the spacer
+// with it and leaves no state for a screen that only sometimes has a bar.
+function pinnedBar(host, label, onTap, opts) {
+  const o = opts || {};
+  const bar = document.createElement('div');
+  bar.className = 'pinbar';
+  const btn = textButton(label, 'btn btn-block ' + (o.cls || 'btn-primary'), onTap);
+  if (o.disabled) btn.disabled = true;
+  bar.appendChild(btn);
+  if (host) {
+    const spacer = document.createElement('div');
+    spacer.className = 'pinbar-spacer';
+    host.appendChild(spacer);
+    host.appendChild(bar);
+  }
+  return bar;
+}
+
+// ---------------------------------------------------------------------------
+// THE STEP STRIP
+// ---------------------------------------------------------------------------
+// Walk · Labor · Price · Proposal, across the top of every screen inside a bid.
+// Four screens that lead one to the next had no way to say where he was or to
+// jump — the only route between them was Back, Back, Back and in again.
+//
+// A step is "done" when it has produced the thing it exists to produce, which
+// is deliberately generous: the strip is a map, not a checklist he has to
+// satisfy. Nothing here is used in any arithmetic.
+
+const BID_STEPS = [
+  ['walk', 'Walk'],
+  ['labor', 'Labor'],
+  ['price', 'Price'],
+  ['proposal', 'Proposal'],
+];
+
+function bidStepDone(bid, settings, key) {
+  if (!bid) return false;
+  if (key === 'walk') {
+    return (bid.areas || []).some((a) => (a.items || []).length > 0)
+      || (bid.rentals || []).length > 0
+      || (bid.equipment || []).length > 0;
+  }
+  if (key === 'labor') {
+    try { return BidMath.costStack(bid, settings).bidHours > 0; } catch (e) { return false; }
+  }
+  if (key === 'price') {
+    try {
+      const stack = BidMath.costStack(bid, settings);
+      return BidMath.solve(stack, 'rate', (bid.pricing && bid.pricing.rateCents) || 0).priceCents > 0;
+    } catch (e) { return false; }
+  }
+  if (key === 'proposal') return !!bid.sentAt;
+  return false;
+}
+
+function stepStrip(bid, settings, current) {
+  const wrap = document.createElement('div');
+  wrap.className = 'stepstrip';
+  BID_STEPS.forEach(([key, label], i) => {
+    if (i) {
+      const dot = document.createElement('span');
+      dot.className = 'stepstrip-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      dot.textContent = '·';
+      wrap.appendChild(dot);
+    }
+    const now = key === current;
+    const done = !now && bidStepDone(bid, settings, key);
+    const btn = textButton(
+      (done ? '✓ ' : '') + label,
+      'stepstrip-step' + (now ? ' stepstrip-now' : '') + (done ? ' stepstrip-done' : ''),
+      () => { if (!now) show(key, bid.id); }
+    );
+    if (now) btn.setAttribute('aria-current', 'step');
+    wrap.appendChild(btn);
+  });
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// FEWER WORDS ON THE GLASS
+// ---------------------------------------------------------------------------
+
+// whatsThis(text) -> a "What's this?" link with the long explanation folded
+// behind it. Every card keeps ONE caption line; the second and third sentences
+// live here. Session state only — it folds back up on the next render, which is
+// right: the explanation is for the day he wonders, not for every day after.
+function whatsThis(text, label) {
+  const wrap = document.createElement('div');
+  wrap.className = 'whats-this';
+  const body = document.createElement('div');
+  body.hidden = true;
+  // One line, or a list of them: Settings' rates card folds thirteen
+  // explanations behind a single link, and thirteen sentences run together
+  // into one paragraph is a wall he would not read once, let alone twice.
+  (Array.isArray(text) ? text : [text]).forEach((line) => body.appendChild(caption(line)));
+  const open = label || "What's this?";
+  const btn = textButton(open, 'link-btn whats-this-btn', () => {
+    body.hidden = !body.hidden;
+    btn.textContent = body.hidden ? open : 'Hide';
+    btn.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+  btn.setAttribute('aria-expanded', 'false');
+  wrap.appendChild(btn);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+// bigNumber(text, sub) -> the one number a screen exists to produce, at the
+// size of the answer it gives, with everything else on the screen stepped down
+// around it.
+function bigNumber(text, sub) {
+  const wrap = document.createElement('div');
+  wrap.className = 'big-number';
+  const n = document.createElement('div');
+  n.className = 'big-number-value';
+  n.textContent = String(text);
+  wrap.appendChild(n);
+  if (sub) {
+    const s = document.createElement('div');
+    s.className = 'big-number-sub';
+    s.textContent = sub;
+    wrap.appendChild(s);
+  }
+  return wrap;
+}
+
+// screenHead(title, sub, opts) -> the line at the top of a screen saying what
+// he is looking at. Four screens had grown four identical copies of this with
+// four class names; one drifts the moment anybody touches one of them.
+// opts.center: the area screen, where the room's name is the subject of the
+// whole screen rather than a label on the left.
+function screenHead(title, sub, opts) {
+  const o = opts || {};
+  const head = document.createElement('div');
+  head.className = 'screen-head' + (o.center ? ' screen-head-center' : '');
+  const t = document.createElement('div');
+  t.className = 'screen-head-title';
+  t.textContent = title || '';
+  head.appendChild(t);
+  if (sub) {
+    const c = document.createElement('div');
+    c.className = 'screen-head-cust';
+    c.textContent = sub;
+    head.appendChild(c);
+  }
+  return head;
 }
 
 // textButton(label, cls, onTap) -> a plain <button> with a caller-chosen
@@ -394,6 +677,42 @@ const CATALOG_CATEGORIES = [
 ];
 
 const CATALOG_UNITS = ['ft', 'ea', 'roll', 'lot', 'day', 'box', 'case'];
+
+// The catalog's units are abbreviations because they have to fit on a row. The
+// KEYPAD is not a row: it is one question filling a phone, and "How many ft?"
+// with no part named is the question he answers wrong when three parts in a row
+// look the same. So the panels ask in words — his words — and these three maps
+// are the whole of the translation.
+//
+// 'ea' is deliberately missing from both. "how many each?" and "cost per each"
+// are not English; the caller falls back to "how many?" and "cost each", which
+// is what he would say out loud.
+const UNIT_MANY = { ft: 'feet', roll: 'rolls', lot: 'lots', day: 'days', box: 'boxes', case: 'cases' };
+const UNIT_ONE = { ft: 'foot', roll: 'roll', lot: 'lot', day: 'day', box: 'box', case: 'case' };
+// What a COUNT of them is called on a line: '12 ft', '2 rolls'. Feet and each
+// are already what he says at any number.
+const UNIT_PLURAL = { roll: 'rolls', lot: 'lots', day: 'days', box: 'boxes', case: 'cases' };
+
+// '3/4" EMT, how many feet?'
+function partQtyLabel(name, unit) {
+  const w = UNIT_MANY[unit];
+  return w ? name + ', how many ' + w + '?' : name + ', how many?';
+}
+
+// '3/4" EMT, cost per foot'
+function partCostLabel(name, unit) {
+  const w = UNIT_ONE[unit];
+  return w ? name + ', cost per ' + w : name + ', cost each';
+}
+
+// '2 rolls at $185.00' — one unit, plural when there is more than one of it,
+// and the price said once. It used to read '2 roll · $185.00 each', which is
+// two things wrong in six words: a plural that isn't, and an "each" that made
+// the unit price look like the line total.
+function itemCountText(qty, unit, costCents) {
+  const plural = (qty === 1 ? unit : (UNIT_PLURAL[unit] || unit));
+  return numText(qty) + ' ' + plural + ' at ' + BidMath.fmt(costCents);
+}
 
 // Order matters: what goes on everything, then the three kinds of job that
 // carry their own risk, then subs. A clause whose group is not named here is
@@ -694,7 +1013,7 @@ function areaTallyText(area) {
 // a typed price override of $50 and no cost on the invoice yet is priced, and
 // a $0 override is not.
 
-const UNPRICED_WARN_TEXT = 'No price on this yet — tap it to put a price on it.';
+const UNPRICED_WARN_TEXT = 'No price on this yet. Tap it to put a price on it.';
 
 function unpricedWarn() { return inlineWarn(UNPRICED_WARN_TEXT); }
 

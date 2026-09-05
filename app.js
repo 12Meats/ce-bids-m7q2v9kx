@@ -162,6 +162,15 @@ const confirmCtx = { open: false, resolve: null };
 
 function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open; }
 
+// A panel is a full-screen question, and the pinned action bar under it belongs
+// to the screen he is no longer looking at. The overlay already covers it, but
+// a fixed element on iOS can still take a touch at the edge of a scrolling
+// sheet, so it is taken off the glass outright. One flag, set from the same
+// four places that open and close a panel.
+function syncPanelClass() {
+  try { document.body.classList.toggle('panel-open', anyPanelOpen()); } catch (e) { /* no body in a test DOM */ }
+}
+
 // Cancel whatever panel is up, exactly as its own Cancel button would: the
 // done callback never runs, so nothing is written. Returns true if there was
 // one. This is what a navigation goes through, because a panel is drawn OVER
@@ -213,6 +222,7 @@ function promptNumber(current, opts) {
 
   renderKeypad();
   el('panel-keypad').hidden = false;
+  syncPanelClass();
 }
 
 // What the thumb produces (leading zeros, the single decimal point, the digit
@@ -243,6 +253,7 @@ function closeKeypad() {
   keypadCtx.open = false;
   keypadCtx.buffer = null;
   keypadCtx.done = null;
+  syncPanelClass();
 }
 
 function keypadDone() {
@@ -321,6 +332,7 @@ function promptText(current, opts) {
   renderTextChips();
 
   el('panel-text').hidden = false;
+  syncPanelClass();
 
   // Focus twice: immediately (keeps the iOS keyboard inside the tap gesture)
   // and once more on the next tick, for browsers that ignore focus on an
@@ -379,6 +391,7 @@ function closeText() {
   textCtx.suggest = null;
   textCtx.field = null;
   textCtx.multiline = false;
+  syncPanelClass();
 }
 
 function textDone() {
@@ -406,12 +419,14 @@ function confirmPanel(message, opts) {
     ok.className = 'btn ' + (opts.danger ? 'btn-danger' : 'btn-primary');
     el('confirmCancel').textContent = opts.cancel || 'Cancel';
     el('panel-confirm').hidden = false;
+    syncPanelClass();
   });
 }
 
 function closeConfirm(answer) {
   el('panel-confirm').hidden = true;
   confirmCtx.open = false;
+  syncPanelClass();
   const resolve = confirmCtx.resolve;
   confirmCtx.resolve = null;
   if (resolve) resolve(answer);

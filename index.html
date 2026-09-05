@@ -40,7 +40,10 @@
       --space-5: 32px;
       --font-body: 1.1rem;
       --font-lg: 1.4rem;
-      --font-xl: 2rem;
+      /* The one number a screen exists to produce. 28px is the whole scale:
+         everything big in this app is this size, so two "big" numbers on one
+         screen can never quietly disagree about which of them is the answer. */
+      --font-xl: 1.75rem;
       /* Height reserved at the bottom of every screen for the tab bar. */
       --tabbar-height: 64px;
       /* The notch/status-bar inset, behind a variable so a test can inject a
@@ -181,8 +184,8 @@
     }
     .banner-text { flex: 1; }
     .banner-dismiss {
-      min-width: 44px;
-      min-height: 44px;
+      min-width: 48px;
+      min-height: 48px;
       border: none;
       background: transparent;
       color: inherit;
@@ -349,6 +352,9 @@
     .btn-confirm { background: var(--color-confirm); border-color: var(--color-confirm); color: #fff; }
     .btn-danger { background: var(--color-danger); border-color: var(--color-danger); color: #fff; }
     .btn-danger-outline { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
+    /* A real second choice: "Split into tasks" beside "Next: Costs & price",
+       where two identical grey blocks used to read as two ways forward. */
+    .btn-outline { background: transparent; border-color: var(--color-accent); color: var(--color-accent); }
     .btn-block { display: block; width: 100%; text-align: center; }
     /* A two-state button that is ON. Not a primary action — pressing it turns
        the thing OFF — so it wears the accent as a state, not as a promise. */
@@ -442,8 +448,24 @@
        Costs & price and Proposal both print it, so it is one rule and not two:
        the title, then the customer under it in muted type. */
     .screen-head { margin-bottom: var(--space-3); }
-    .screen-head-title { font-size: var(--font-lg); font-weight: 800; }
+    .screen-head-title { font-size: var(--font-lg); font-weight: 800; overflow-wrap: anywhere; }
     .screen-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
+    /* The area screen: the room's name is the subject of the whole screen
+       rather than a label sitting on the left of it. */
+    .screen-head-center { text-align: center; }
+    /* Sized to its own words and centered under the title: .link-btn is a
+       full-width left-aligned block everywhere else, and that width belongs to
+       a card rather than to a heading. */
+    .screen-head-center .screen-head-action {
+      display: inline-block;
+      width: auto;
+      min-height: 48px;
+      margin-top: 0;
+      padding: 0 12px;
+    }
+    /* Backing out of the walk's rental/equipment sheet. Secondary, like every
+       other Cancel in the app now. */
+    .link-btn.sheet-cancel { width: auto; min-height: 48px; color: var(--color-text-muted); }
 
     /* ---------- Shared components (built by ui.js) ---------- */
     .card {
@@ -483,12 +505,171 @@
       border-bottom: 1px solid var(--color-border);
     }
     .row:last-child { border-bottom: none; }
-    .row-tap:active { background: #eef2f7; }
     .row-label { color: var(--color-text-muted); }
     .row-value { font-weight: 700; text-align: right; }
 
+    /* ---------- Tap affordance ---------- */
+    /* One rule for the whole app, applied by the ui.js builders: a thing that
+       does something looks like it does something. Press feedback on every
+       control (a tap that opens a full-screen keypad still has to say it
+       landed), a chevron for "this opens something", the value in navy for
+       "this opens a keypad", and nothing at all on a row that is only a fact.
+       120ms is long enough to see and short enough not to lag the thumb. */
+    .tap { transition: background-color 120ms ease; }
+    .tap:active { background: #e2e8f0; }
+    .chev {
+      flex: 0 0 auto;
+      margin-left: 2px;
+      color: var(--color-text-muted);
+      font-size: 1.4rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    /* Navy on its own is not enough: #041E42 next to the body's #0f172a is two
+       near-blacks, and the whole point is that a value he can change looks
+       different from one he cannot. The dotted rule under it is the same thing
+       a fillable field wears on paper. */
+    .tap-value .row-value {
+      color: var(--color-accent);
+      text-decoration: underline dotted rgba(4, 30, 66, 0.4);
+      text-underline-offset: 5px;
+      text-decoration-thickness: 2px;
+    }
+    /* On the navy job card the same rule has to be light, not dark. */
+    .job-actual .tap-value .row-value {
+      color: #fff;
+      text-decoration-color: rgba(255, 255, 255, 0.5);
+    }
+    /* Not a control: no press state, no chevron, and the value stays in body
+       colour so it is never mistaken for a navy one that opens a keypad. */
+    .row.flat { cursor: default; }
+    /* The one number a screen exists to produce, when it is a row rather than
+       a block. Exactly one row per screen wears this. */
+    .row-big .row-value { font-size: var(--font-xl); font-weight: 800; }
+    /* A value that opens a keypad, on the two rows that are not .row. */
+    .tap-value .walk-row-value,
+    .tap-value .price-line-value { color: var(--color-accent); }
+
+    /* A whole card that is one button — the areas on the walk. */
+    .card-tap {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      width: 100%;
+      min-height: 72px;
+      text-align: left;
+      font-family: inherit;
+      font-size: var(--font-body);
+      color: var(--color-text);
+    }
+    .card-tap-text { flex: 1; min-width: 0; }
+    .card-tap-title { font-weight: 700; overflow-wrap: anywhere; }
+    .card-tap-sub { margin-top: 2px; font-size: 0.9rem; color: var(--color-text-muted); }
+    .card-tap-value { flex: 0 0 auto; font-weight: 700; white-space: nowrap; }
+
+    /* ---------- Attached strips ---------- */
+    /* The one shape every inline menu in this app wears: inside the parent
+       card, indented 12px past the row that opened it, a 3px accent edge and a
+       light tint tying it to that row, and 16px of clear space before whatever
+       comes next — the Cancel button used to touch the following section, which
+       read as the next card having a stray button on top of it. */
+    .attached-strip {
+      margin: var(--space-1) 0 var(--space-3) var(--space-2);
+      padding: var(--space-2);
+      border-left: 3px solid var(--color-accent);
+      border-radius: 0 10px 10px 0;
+      background: #eef2f7;
+    }
+    .attached-strip .field-label { margin-top: 0; }
+    .attached-strip-btns { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+    /* Sized off its own label and then grown into what the row has left, so a
+       three-word button gets a line and the strip still fills the card. */
+    .attached-strip-btns .btn { flex: 1 1 auto; min-height: 48px; padding: 0 12px; font-size: 0.95rem; }
+    /* Backing out of a menu is not a destructive act and must not wear the
+       colour of one: a text button, not an outlined red one. */
+    .attached-strip .attached-strip-cancel {
+      width: auto;
+      min-height: 48px;
+      margin-top: var(--space-1);
+      color: var(--color-text-muted);
+    }
+
+    /* ---------- The pinned action ---------- */
+    /* One per screen, above the tab bar: the single thing this screen is for,
+       never a scroll away. The spacer is a sibling in the flow rather than a
+       class on the host, so a screen that only sometimes has a bar cannot leave
+       80px of dead space behind on the render that drops it. */
+    .pinbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+      z-index: 15;
+      padding: var(--space-2) 20px;
+      background: var(--color-bg);
+      border-top: 1px solid var(--color-border);
+    }
+    .pinbar .btn { min-height: 56px; font-size: 1.15rem; }
+    .pinbar-spacer { height: 80px; }
+    /* A panel is a full-screen question. The bar underneath it is covered
+       anyway (z-index 100 over 15), but a fixed element on iOS can still catch
+       a stray touch at the edge of a scrolling overlay. */
+    body.panel-open .pinbar { display: none; }
+
+    /* ---------- The step strip ---------- */
+    /* Walk · Labor · Price · Proposal across the top of every screen inside a
+       bid. nowrap with an overflow scroll rather than wrapping: two lines of
+       breadcrumb at the top of every screen is a header, not a hint. */
+    .stepstrip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      margin-bottom: var(--space-3);
+    }
+    .stepstrip::-webkit-scrollbar { display: none; }
+    .stepstrip-step {
+      flex: 0 0 auto;
+      min-height: 48px;
+      padding: 0 6px;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+    .stepstrip-step:active { background: #e2e8f0; }
+    .stepstrip-done { color: var(--color-accent); }
+    .stepstrip-now { color: var(--color-accent); font-weight: 800; }
+    .stepstrip-dot { flex: 0 0 auto; color: var(--color-border); }
+
+    /* ---------- What's this? ---------- */
+    /* One caption line per card; the rest of the explanation folds behind this.
+       Left-aligned and sized to its own words, because .link-btn is a
+       full-width block everywhere else and that width belongs to a card. */
+    .whats-this { margin-bottom: var(--space-1); }
+    .whats-this-btn {
+      width: auto;
+      min-height: 48px;
+      margin-top: 0;
+      padding: 0;
+      font-size: 0.9rem;
+    }
+    .whats-this .caption { margin-top: 0; }
+
+    /* ---------- The one number ---------- */
+    .big-number { margin: var(--space-1) 0 var(--space-2); }
+    .big-number-value { font-size: var(--font-xl); font-weight: 800; line-height: 1.15; }
+    .big-number-sub { margin-top: 2px; font-size: 0.9rem; color: var(--color-text-muted); }
+
     .chip {
-      min-height: 44px;
+      min-height: 48px;
       padding: 0 18px;
       border-radius: 999px;
       border: 1.5px solid var(--color-border);
@@ -624,29 +805,17 @@
       font-size: 1.5rem;
     }
     .bid-more:active { background: #eef2f7; }
-    .bid-actions {
-      flex: 1 0 100%;
-      display: flex;
-      gap: var(--space-2);
-      padding: 0 var(--space-3) var(--space-2);
+    /* The ⋯ menu takes the whole width of the card, on its own line under the
+       row it belongs to. */
+    /* flex-basis 100% PLUS margins overflows a flex row, which put the menu's
+       tinted block 8px past the card's own rounded edge. max-width takes the
+       margins back out of the basis. */
+    .bid-card > .attached-strip {
+      flex: 1 1 100%;
+      box-sizing: border-box;
+      max-width: calc(100% - var(--space-2) - var(--space-2));
+      margin: 0 var(--space-2) var(--space-2) var(--space-2);
     }
-    .bid-actions .btn { flex: 1; }
-
-    /* Pinned above the tab bar: with thirty bids in the list, the one button
-       the owner reaches for must never be a scroll away. */
-    .bids-newbar {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
-      z-index: 15;
-      padding: var(--space-2) 20px;
-      background: var(--color-bg);
-      border-top: 1px solid var(--color-border);
-    }
-    .bids-newbar .btn { min-height: 56px; font-size: 1.15rem; }
-    /* Clears the tab bar AND the pinned button sitting above it. */
-    #bidsContent { padding-bottom: calc(var(--space-4) + var(--tabbar-height) + 84px + env(safe-area-inset-bottom)); }
 
     /* ---------- Bid screen and header form ---------- */
     .field-label {
@@ -674,9 +843,6 @@
       color: var(--color-warn-text);
     }
 
-    .bid-head-name { font-size: var(--font-lg); font-weight: 800; }
-    .bid-head-title { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
-    .bid-head-price { margin-top: var(--space-2); font-size: var(--font-xl); font-weight: 800; }
     .bid-head-meta {
       display: flex;
       align-items: center;
@@ -691,7 +857,7 @@
     .link-btn {
       display: block;
       width: 100%;
-      min-height: 44px;
+      min-height: 48px;
       margin-top: var(--space-2);
       padding: 0;
       border: none;
@@ -717,10 +883,6 @@
        rental-or-equipment sheet. Both sit above the tab bar at z-index 90 and
        below the shell's panels at 100, so a keypad opened from a sheet still
        covers it. */
-    .walk-head { margin-bottom: var(--space-3); }
-    .walk-head-title { font-size: var(--font-lg); font-weight: 800; }
-    .walk-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
-
     /* A two-line version of .row: a name and its money on the first line, the
        counts underneath. The whole block is the tap target. */
     .walk-row {
@@ -751,14 +913,6 @@
       from { background: rgba(21, 128, 61, 0.22); }
       to { background: transparent; }
     }
-
-    .walk-item-actions {
-      display: flex;
-      gap: var(--space-1);
-      padding: 0 0 var(--space-2);
-      border-bottom: 1px solid var(--color-border);
-    }
-    .walk-item-actions .btn { flex: 1; min-height: 48px; padding: 0 8px; font-size: 0.95rem; }
 
     .walk-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
     .walk-tile {
@@ -857,8 +1011,6 @@
       font-weight: 700;
       color: var(--color-confirm);
     }
-    /* "Which area?" hangs under the row that asked it, indented and tinted so
-       it reads as part of that row and not as the next one. */
     /* The answered rows folded into one line. Left-aligned and wrapping,
        because it is a list of words rather than a button label. */
     .walk-forget-fold {
@@ -870,27 +1022,12 @@
       font-size: 0.95rem;
     }
 
-    .walk-forget-areas {
-      padding: var(--space-2) 0 var(--space-2) var(--space-2);
-      margin-bottom: var(--space-2);
-      border-left: 3px solid var(--color-border);
-      background: var(--color-bg);
-    }
-    .walk-forget-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-
     /* ---------- Labor ---------- */
     /* One line — crew chips and a day count — or the same pair once per task.
        The readout under it is the only place on the screen that is not a
        control, so it is deliberately plain. */
-    .labor-head { margin-bottom: var(--space-3); }
-    .labor-head-title { font-size: var(--font-lg); font-weight: 800; }
-    .labor-head-cust { margin-top: 2px; font-size: var(--font-body); color: var(--color-text-muted); }
-
     /* Chips wrap: a five-man crew must not push the fifth name off the edge. */
     .labor-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-
-    /* The number he came here to type, at the size of the answer it gives. */
-    .labor-days .row-value { font-size: var(--font-xl); font-weight: 800; }
 
     /* The captions sit between the rows, so :last-child never lands on the
        bottom row and its divider would otherwise hang under nothing. */
@@ -952,21 +1089,11 @@
       background: transparent;
       border: none;
     }
-    .price-line-tap:active { background: #eef2f7; }
     .price-line-name { font-weight: 700; min-width: 0; }
     .price-line-value { font-weight: 700; white-space: nowrap; }
     .price-line-sub { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 4px; }
-    /* Wraps, because three or four of these will not sit on one 390px line and
-       a button squeezed to four characters is a button he cannot read. The
-       basis is the LABEL, not a fixed share: two equal 40% halves gave "Day
-       rate, this bid" 123px for 130px of words and broke it over two lines
-       while "Days" sat in the same box with 86px spare. Sized off its own text
-       and then grown into whatever the row has left, each label gets a line
-       and the row still fills the card. Same shape as the Settings strip. */
-    .price-line-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
-    .price-line-actions .btn { flex: 1 1 auto; min-height: 48px; padding: 0 12px; }
-
-    /* The tool picker's chips, shared with the walk's rental/equipment sheet. */
+    /* The tool picker's chips, shared with the walk's rental/equipment sheet
+       and with every set of chips that rides inside an attached strip. */
     .equip-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
     /* A yellow chip is a line that is not priced yet: it is the same warning
@@ -1001,8 +1128,9 @@
     .price-truecost { font-size: 1.2rem; }
     .price-truecost .row-label, .price-truecost .row-value { font-weight: 800; color: var(--color-text); }
 
-    /* The three handles, at the size of the answer they give. */
-    .price-handles .row-value { font-size: var(--font-xl); font-weight: 800; }
+    /* Margin and the labor rate are two other ways of saying the price, so
+       they sit at body size and only the price itself wears .row-big. One
+       screen, one number in the biggest type on it. */
     /* Off means "you can't move this yet", not "you can't read this": the
        label and the tap affordance go quiet, the money stays fully legible —
        it is still the price of the job. */
@@ -1037,12 +1165,6 @@
     .job-weeknav-label { flex: 1; min-width: 0; text-align: center; font-weight: 700; }
     .job-weeknav-btn { min-width: 64px; padding: 0; font-size: 1.2rem; }
     .job-weeknav-btn:disabled { opacity: .35; }
-
-    /* The number he came here to type, at the size of the answer it gives. */
-    .job-hours .row-value { font-size: var(--font-xl); font-weight: 800; }
-
-    .job-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: var(--space-1) 0 var(--space-2); }
-    .job-actions .btn { flex: 1 1 auto; min-height: 52px; }
 
     .job-done { margin-bottom: var(--space-3); font-weight: 700; color: var(--color-confirm); }
 
@@ -1266,8 +1388,8 @@
     .set-list-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
     .set-list-btns { flex: 0 0 auto; display: flex; gap: 6px; }
     .set-mini {
-      min-width: 44px;
-      min-height: 44px;
+      min-width: 48px;
+      min-height: 48px;
       padding: 0;
       border-radius: 10px;
       border: 1px solid var(--color-border);
@@ -1303,7 +1425,10 @@
        this strip to the right. Not a tap target — pointer-events off, or it
        would eat the tap on the chip beneath it. */
     .set-jump-wrap { position: relative; }
-    .set-jump-wrap::after {
+    /* Only when there is really more of it to the right: settings.js measures
+       scrollWidth against clientWidth after the render and puts this class on.
+       Unconditional, it greyed out the last chip on a wide phone for nothing. */
+    .set-jump-wrap.set-jump-over::after {
       content: '';
       position: absolute;
       top: 0;
@@ -1343,9 +1468,6 @@
     .set-hidden .row-label,
     .set-hidden .row-value,
     .set-hidden .set-list-text { opacity: .55; }
-
-    .set-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: 0 0 var(--space-2); }
-    .set-actions .btn { flex: 1 1 40%; min-height: 48px; padding: 0 12px; }
 
     /* Off-screen but still focusable/clickable — the camera input, which is
        opened by a button rather than shown. display:none would stop the click
