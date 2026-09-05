@@ -161,6 +161,43 @@ test('newBid: takes the next number, increments the counter, creates the custome
   assert.strictEqual(d.customers.length, 1);              // case-insensitive match
   assert.strictEqual(b2.pricing.cushionPct, 15);
 });
+// area.notes is the walk's own notebook: optional, so every bid written
+// before the field still restores, and never printed, so nothing downstream
+// has to strip it. The validator's job here is only to refuse a shape that
+// would break a reader, not to require the field.
+test('validateImport: area notes are optional, and a string when present', () => {
+  const { d } = buildFullData();
+  assert.ok(S.validateImport(JSON.stringify(d)));               // absent
+
+  const withNote = JSON.parse(JSON.stringify(d));
+  withNote.bids[0].areas[0].notes = 'Panel is behind the pallet racking.\nBring the 6 ft ladder.';
+  withNote.bids[0].job.changeOrders[0].areas[0].notes = 'Moved eight feet, conduit stays.';
+  assert.ok(S.validateImport(JSON.stringify(withNote)));        // a change order's areas too
+
+  const empty = JSON.parse(JSON.stringify(d));
+  empty.bids[0].areas[0].notes = '';
+  assert.ok(S.validateImport(JSON.stringify(empty)));
+
+  const bad = JSON.parse(JSON.stringify(d));
+  bad.bids[0].areas[0].notes = 42;
+  assert.strictEqual(S.validateImport(JSON.stringify(bad)), null);
+
+  const badCo = JSON.parse(JSON.stringify(d));
+  badCo.bids[0].job.changeOrders[0].areas[0].notes = { text: 'no' };
+  assert.strictEqual(S.validateImport(JSON.stringify(badCo)), null);
+});
+test('duplicateBid: the area notes travel to the copy', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });
+  b.areas.push({ id: 'a1', name: 'Mezz', items: [], photoIds: [], notes: 'Panel behind the racking.' });
+  b.areas.push({ id: 'a2', name: 'Dock', items: [], photoIds: [] });
+  d.bids.push(b);
+  const c = S.duplicateBid(d, b.id, '2026-09-20');
+  // The same building, walked again: what he wrote about the room is still
+  // true, unlike the did-you-forget answers, which are about the job.
+  assert.strictEqual(c.areas[0].notes, 'Panel behind the racking.');
+  assert.strictEqual('notes' in c.areas[1], false);
+});
 test('duplicateBid: copies content, fresh number/date/status, no job data or sent flags', () => {
   const d = S.emptyData(); d.settings.nextNumber = 10;
   const b = S.newBid(d, { customerName: 'UDA', title: 'Orig', jobType: 'service' });

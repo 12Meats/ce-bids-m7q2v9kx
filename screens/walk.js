@@ -465,6 +465,10 @@ function renderWalkArea(bid, edit, area, host) {
   // change order is written after the fact, so the camera stays off it.
   if (!co) host.appendChild(buildPhotoCard(area));
 
+  // Notes, on a change order as much as on the bid: "the panel they want moved
+  // is behind the pallet racking" is worth writing down either way.
+  host.appendChild(buildAreaNotesCard(area));
+
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
   nav.appendChild(textButton('+ Item', 'btn btn-primary btn-block', () => {
@@ -859,6 +863,45 @@ function walkCommitItem(bid, area, part, qty, costCents) {
     if (state.screen === 'walk') render();
   }, WALK_HIGHLIGHT_MS);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// AREA NOTES
+// ---------------------------------------------------------------------------
+// What he writes about a room while he is standing in it, so the walkthrough
+// needs nothing but the phone. It is HIS note, not the customer's: nothing in
+// docmodel.js reads area.notes, and the wording a customer sees lives on the
+// proposal screen in Notes & exclusions and in the scope of work.
+//
+// One row, because that is all a note is worth on a screen whose job is
+// counting: the first line of it muted under the word Notes, or "Add a note"
+// when there is none.
+
+function buildAreaNotesCard(area) {
+  const box = card();
+  const line = areaNoteLine(area.notes);
+  box.appendChild(walkRow('Notes', line || 'Add a note', null, () => {
+    promptText(area.notes || '', {
+      label: 'Notes for this area',
+      caption: 'For you, not the customer. Tap the mic to talk.',
+      placeholder: 'What you saw in here',
+      multiline: true,
+      done: (text) => {
+        const prev = area.notes;
+        // A note cleared to nothing loses the field rather than keeping an
+        // empty string: absent is what every bid older than this looks like,
+        // and one shape for "no note" is one shape to read.
+        if (text) area.notes = text;
+        else delete area.notes;
+        persistOr(() => {
+          if (prev === undefined) delete area.notes;
+          else area.notes = prev;
+        });
+        render();
+      },
+    });
+  }));
+  return box;
 }
 
 // ---------------------------------------------------------------------------

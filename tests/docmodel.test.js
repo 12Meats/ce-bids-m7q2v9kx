@@ -505,3 +505,30 @@ test('draftScope is pure: it does not touch the bid it reads', () => {
   D.draftScope(b);
   assert.strictEqual(JSON.stringify(b), before);
 });
+
+// The walk's per-area notes are HIS: what he saw standing in the room, the
+// ladder he needs, the panel behind the pallet racking. The customer's wording
+// lives in Notes & exclusions and in the scope of work, and this field is
+// never any part of it — so no level of the document, and no draft scope, may
+// contain one word of it.
+test('area notes never reach the document, at any level', () => {
+  const { d, b } = fixture();
+  const secret = 'ZZQX panel is behind the pallet racking and the disconnect is seized';
+  b.areas[0].notes = secret;
+  b.areas.push({ id: 'a2', name: 'Dock', items: [], photoIds: [], notes: secret });
+
+  ['full', 'summary', 'scope'].forEach((level) => {
+    const doc = D.build(b, d, level);
+    assert.strictEqual(JSON.stringify(doc).indexOf('pallet racking'), -1, level);
+    assert.strictEqual(JSON.stringify(doc).indexOf('ZZQX'), -1, level);
+  });
+  assert.strictEqual(D.draftScope(b).join(' ').indexOf('ZZQX'), -1);
+
+  // And the note changes nothing else about the paper: the same totals, the
+  // same rows, with and without it.
+  const withNote = D.build(b, d, 'full');
+  delete b.areas[0].notes;
+  delete b.areas[1].notes;
+  const without = D.build(b, d, 'full');
+  assert.deepStrictEqual(withNote, without);
+});

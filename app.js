@@ -310,7 +310,7 @@ function promptMoney(cents, opts) {
 
 // --- Text prompt -----------------------------------------------------------
 
-// promptText(current, { label, placeholder, suggestions | suggest, multiline, done })
+// promptText(current, { label, caption, placeholder, suggestions | suggest, multiline, done })
 // A real <input type="text"> — words are not scroll wheels. done(string) fires
 // on Done (or Enter) with the trimmed value; Cancel calls nothing.
 //
@@ -340,6 +340,10 @@ function promptText(current, opts) {
   textCtx.multiline = !!opts.multiline;
 
   el('textLabel').textContent = opts.label || '';
+  // An optional sentence under the question, the same one promptNumber takes.
+  const cap = el('textCaption');
+  cap.textContent = opts.caption || '';
+  cap.hidden = !opts.caption;
   const input = el('textInput');
   const area = el('textArea');
   input.hidden = textCtx.multiline;
@@ -403,6 +407,7 @@ function closeText() {
   // shape the last one asked for.
   el('textInput').hidden = false;
   el('textArea').hidden = true;
+  el('textCaption').hidden = true;
   el('textChips').textContent = '';
   el('textChips').hidden = true;
   textCtx.open = false;

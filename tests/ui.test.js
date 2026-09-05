@@ -34,7 +34,7 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
-  crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText } = sandbox;
+  crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText, areaNoteLine } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
 const MISC_LABEL = vm.runInContext('MISC_LABEL', sandbox);
@@ -576,4 +576,35 @@ test('the blocked banner points at the screen that holds the line', () => {
   // A change order is scoped in its own walk, inside the job.
   assert.deepEqual(unpricedTarget({ kind: 'changeOrder', name: 'CO 1', id: 'co-9' }, b),
     { screen: 'walk', arg: { bidId: 'bid-1', changeOrderId: 'co-9' } });
+});
+
+const NEWLINE = String.fromCharCode(10);
+const CRLF = String.fromCharCode(13, 10);
+
+// areaNoteLine is what stands between a dictated paragraph and a card on the
+// walk that is supposed to be a row of doors. Two callers share it — the area
+// card and the Notes row inside the area — so one line means one line in both.
+test('areaNoteLine takes the first line and nothing else', () => {
+  assert.equal(areaNoteLine('Panel behind the racking.@@Bring the 6 ft ladder.'.replace('@@', NEWLINE)),
+    'Panel behind the racking.');
+  assert.equal(areaNoteLine('Windows line ending@@second'.replace('@@', CRLF)), 'Windows line ending');
+  assert.equal(areaNoteLine('   padded   @@more'.replace('@@', NEWLINE)), 'padded');
+});
+test('areaNoteLine reads nothing at all as no note', () => {
+  ['', '   ', NEWLINE + NEWLINE, null, undefined].forEach((v) => {
+    assert.equal(areaNoteLine(v), '', JSON.stringify(v));
+  });
+});
+test('areaNoteLine cuts a long first line to 60 characters, ellipsis included', () => {
+  const long = 'x'.repeat(80);
+  const cut = areaNoteLine(long);
+  assert.equal(cut.length, 60);
+  assert.equal(cut.endsWith('…'), true);
+  // Exactly 60 is not cut at all: the ellipsis costs a character, so cutting
+  // a line that already fits would lose one for nothing.
+  assert.equal(areaNoteLine('y'.repeat(60)), 'y'.repeat(60));
+  assert.equal(areaNoteLine('z'.repeat(61)).length, 60);
+  // A caller can ask for less, which the Notes row does not, but the shape
+  // has to hold if one ever does.
+  assert.equal(areaNoteLine('abcdefghij', 5), 'abcd…');
 });

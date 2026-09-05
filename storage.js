@@ -569,6 +569,11 @@
           if (!isObj(a) || !isStr(a.id) || a.id === '' || areaIds.has(a.id)) return false;
           areaIds.add(a.id);
           if (!isStr(a.name)) return false;
+          // OPTIONAL: what he wrote about this room standing in it. Absent on
+          // every bid older than the field, which is why a missing one is not
+          // a broken file — and why the v1 and v2 fixtures still load. It is
+          // his note, never the customer's: nothing in docmodel.js reads it.
+          if (a.notes !== undefined && a.notes !== null && !isStr(a.notes)) return false;
           if (!isArr(a.items) || !a.items.every(validAreaItem)) return false;
           if (!strArr(a.photoIds)) return false;
         }

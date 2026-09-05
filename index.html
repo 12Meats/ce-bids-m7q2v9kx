@@ -1852,8 +1852,13 @@
   </div>
 
   <!-- ---------- Text panel ---------- -->
-  <div id="panel-text" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="textLabel" hidden>
+  <div id="panel-text" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="textLabel" aria-describedby="textCaption" hidden>
     <h2 id="textLabel" class="panel-title"></h2>
+    <!-- The same optional sentence the keypad panel has, for the prompts where
+         the question alone leaves the answer ambiguous: "Notes for this area"
+         does not say who ends up reading them. Hidden, not blank, so a
+         caption-less prompt keeps its old spacing exactly. -->
+    <p id="textCaption" class="panel-caption" hidden></p>
     <!-- Names the owner has already used, when the caller passes any. Tapping
          one fills the input: typing the same customer twice, slightly
          differently, is how one customer becomes two. -->
