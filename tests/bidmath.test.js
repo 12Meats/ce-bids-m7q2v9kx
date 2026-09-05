@@ -255,6 +255,62 @@ test('solve guards bidHours === 0 (no labor on the job): rateCents 0, price = fi
   assert.strictEqual(byMargin.rateCents, 0);
   assert.strictEqual(byMargin.priceCents, s3.fixedPrice);
 });
+// ---------------------------------------------------------------------------
+// A TYPED PRICE ROUNDS DOWN
+// ---------------------------------------------------------------------------
+// The price is always fixedPrice + a whole-cent rate x bidHours, so most typed
+// totals are not reachable exactly. Adrian's call (9/05): land UNDER, never
+// over, so the number he says out loud is never more than the number he typed.
+
+test('a typed price that fits exactly comes back exactly', () => {
+  const s = B.costStack(bid, settings);
+  const exact = s.fixedPrice + s.bidHours * 7123;
+  const out = B.solve(s, 'price', exact);
+  assert.strictEqual(out.rateCents, 7123);
+  assert.strictEqual(out.priceCents, exact);
+});
+
+test('a typed price that does not fit rounds DOWN, by less than one cent per bid hour', () => {
+  const s = B.costStack(bid, settings);
+  assert.strictEqual(s.bidHours, 36);
+  // One cent above an exactly reachable price: nearest-rounding used to walk
+  // this up to the next whole cent per hour and hand back MORE than he typed.
+  const typed = s.fixedPrice + s.bidHours * 7123 + 1;
+  const out = B.solve(s, 'price', typed);
+  assert.strictEqual(out.rateCents, 7123);
+  assert.ok(out.priceCents < typed, 'a price that does not fit must come back under');
+  assert.strictEqual(typed - out.priceCents, 1);
+  // The worst case is one cent per bid hour, less one.
+  const worst = s.fixedPrice + s.bidHours * 7123 + (s.bidHours - 1);
+  const outWorst = B.solve(s, 'price', worst);
+  assert.strictEqual(outWorst.rateCents, 7123);
+  assert.strictEqual(worst - outWorst.priceCents, s.bidHours - 1);
+});
+
+test('no typed price ever comes back above what was typed', () => {
+  const s = B.costStack(bid, settings);
+  for (let i = 0; i < 400; i += 1) {
+    const typed = s.fixedPrice + 1 + i * 37;
+    const out = B.solve(s, 'price', typed);
+    assert.ok(out.priceCents <= typed, 'typed ' + typed + ' came back ' + out.priceCents);
+    assert.ok(Number.isInteger(out.rateCents));
+  }
+});
+
+test('a typed price under the fixed cost floors the rate at 0, and that is not rounding', () => {
+  const s = B.costStack(bid, settings);
+  const out = B.solve(s, 'price', s.fixedPrice - 100);
+  assert.strictEqual(out.rateCents, 0);
+  // The one case where the answer is ABOVE the typed number: the screen must
+  // call this floored, not rounded, because it is a refusal and not a cent.
+  assert.strictEqual(out.priceCents, s.fixedPrice);
+  assert.ok(out.priceCents > s.fixedPrice - 100);
+  // Exactly the fixed price is not a floor case: it fits, at $0 an hour.
+  const exact = B.solve(s, 'price', s.fixedPrice);
+  assert.strictEqual(exact.rateCents, 0);
+  assert.strictEqual(exact.priceCents, s.fixedPrice);
+});
+
 test('belowFloor', () => {
   assert.strictEqual(B.belowFloor(6400, 6500), true);
   assert.strictEqual(B.belowFloor(6500, 6500), false);

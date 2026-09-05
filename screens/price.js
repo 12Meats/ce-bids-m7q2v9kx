@@ -714,9 +714,11 @@ function buildCostStack(bid, stack, markup) {
 // going to say out loud are the same fact said three ways, and moving any one
 // of them is a question for BidMath.solve: given this stack, what triple does
 // that make? Whatever comes back is what goes on the bid AND what goes on the
-// glass — the typed number is never echoed. A price typed as $22,000 can come
-// back $21,996, because the price is re-derived from a rate rounded to whole
-// cents an hour, and the screen says so rather than pretending.
+// glass — the typed number is never echoed. A price typed as $13,000 can come
+// back $12,999.78, because the price is re-derived from a rate rounded DOWN to
+// whole cents an hour, and the screen says so rather than pretending. Down and
+// never up: the number he reads off the glass is never more than the number he
+// typed.
 //
 // With no labor on the bid there are no hours for a rate to multiply. solve()
 // guards the division, but a handle that silently does nothing is worse than
@@ -747,7 +749,9 @@ function priceApply(bid, handle, value) {
   // two reasons and they are not the same news:
   //
   //   rounded — the rate landed on whole cents an hour and the price was
-  //             re-derived from it. A few cents either way, nothing to decide.
+  //             re-derived from it. The rate rounds DOWN, so the price only
+  //             ever comes back at or under what he typed, by less than one
+  //             cent per bid hour. Nothing to decide, but he should see it.
   //   floored — he typed less than the materials, rentals and equipment cost.
   //             solve() clamps the labor rate to $0 rather than going negative,
   //             so the price came back at the fixed cost and the difference is
@@ -820,7 +824,7 @@ function buildHandles(bid, stack, solved) {
       + '. A price under that means paying to work, so the labor rate is $0/hr.');
     box.appendChild(note);
   } else if (priceWhy) {
-    box.appendChild(caption('Rounded to whole cents per hour: ' + moneyText(priceWhy.priceCents) + '.'));
+    box.appendChild(caption('Closest price at whole cents per hour: ' + moneyText(priceWhy.priceCents) + '.'));
   }
 
   return box;

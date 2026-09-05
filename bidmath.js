@@ -189,12 +189,22 @@
 
   // The returned {rateCents, priceCents, marginPct} triple is authoritative; callers must display
   // these values, never echo the typed input (e.g. a typed price below fixedPrice clamps the rate to 0).
+  //
+  // A TYPED PRICE ROUNDS THE RATE DOWN, not to nearest (Adrian's call, 9/05).
+  // The price is always fixedPrice + rate x bidHours off a whole-cent rate, so
+  // a typed total that is not reachable at whole cents has to land on one side
+  // of itself or the other. Rounding to nearest could put the number he says
+  // out loud ABOVE the number he typed — $13,000 came back $13,000.30 — and a
+  // price that grew after he set it is the one direction this app may never
+  // move. Flooring gives up at most (bidHours - 1) cents and guarantees
+  // priceCents <= value. Below fixedPrice the floor goes negative, the clamp
+  // below takes the rate to 0, and the caller says so in different words.
   function solve(stack, handle, value) {
     let rateCents;
     if (handle === 'rate') {
       rateCents = r(value);
     } else if (handle === 'price') {
-      rateCents = stack.bidHours === 0 ? 0 : r((value - stack.fixedPrice) / stack.bidHours);
+      rateCents = stack.bidHours === 0 ? 0 : Math.floor((value - stack.fixedPrice) / stack.bidHours);
     } else if (handle === 'margin') {
       if (stack.bidHours === 0) {
         rateCents = 0;
