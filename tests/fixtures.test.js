@@ -16,6 +16,10 @@
 //   * New bid fields are OPTIONAL with a fallback, which is what lets an old
 //     fixture keep loading with no version bump at all.
 //
+// backup-bids-v2.1.json is this release's own: two bids whose snapshots
+// disagree with the Settings sitting beside them, a multi-line area note, a
+// checklist with answers on it, and a supply-house link he typed himself.
+//
 // backup-bids-v1.json is the file the shipped v1 wrote: $65 rate and floor,
 // three bids (a draft mid-walk, a sent bid with clauses and a scope, a
 // complete one with a job, a surprise and a change order), and — deliberately
@@ -26,6 +30,7 @@ const fs = require('fs');
 const path = require('path');
 const S = require('../storage.js');
 const D = require('../docmodel.js');
+const BidMath = require('../bidmath.js');
 
 const dir = path.join(__dirname, 'fixtures');
 const files = fs.readdirSync(dir).filter((f) => /^backup-.*\.json$/.test(f)).sort();
@@ -106,6 +111,12 @@ test('backup-bids-v2.json really is a v2 file', () => {
 const FIXTURE_TOTALS = {
   'backup-bids-v1.json': { 3053: 433112, 3054: 370000, 3055: 837460 },
   'backup-bids-v2.json': { 3053: 516992, 3054: 371000, 3055: 1220960 },
+  // v2.1's own photograph, priced by the build that wrote it. #1 is a won job
+  // with a surprise and a change order on it; #2 is a sent bid at a ten-hour
+  // day. Both carry snapshots that DISAGREE with the Settings in the same
+  // file, which is the whole point of the file: if the snapshot ever stops
+  // being read, these two numbers move.
+  'backup-bids-v2.1.json': { 1: 4402070, 2: 547600 },
 };
 
 for (const file of Object.keys(FIXTURE_TOTALS)) {
@@ -122,6 +133,62 @@ for (const file of Object.keys(FIXTURE_TOTALS)) {
     });
   });
 }
+
+// The photograph of THIS release, by name. Every field v2.1 added is OPTIONAL,
+// which is exactly why one file has to be on record carrying all of them: an
+// optional field that quietly stops being read breaks nothing a test can see
+// until a phone that has one loads wrong.
+test('backup-bids-v2.1.json really is a v2.1 file', () => {
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v2.1.json'), 'utf8'));
+  assert.ok(d, 'the v2.1 fixture does not load');
+
+  // Settings never change an existing bid: both bids were written when burden
+  // was 30% and the file's Settings say 25% now, and one of them works a
+  // ten-hour day while Settings says eight.
+  assert.strictEqual(d.settings.burdenPct, 25);
+  assert.strictEqual(d.settings.hoursPerDay, 8);
+  assert.ok(d.bids.every((b) => b.pricing.burdenPct === 30),
+    'both bids keep the burden they were figured at');
+  assert.deepStrictEqual(d.bids.map((b) => b.pricing.hoursPerDay).sort((a, b) => a - b), [8, 10],
+    'a bid at ten hours a day sits next to one at eight');
+  BidMath.SNAPSHOT_KEYS.forEach((k) => {
+    assert.ok(d.bids.every((b) => b.pricing[k] !== undefined),
+      'every bid carries the ' + k + ' it was figured at');
+  });
+
+  // A wage is stamped on the bid the first time a man lands on it.
+  assert.ok(d.bids.every((b) => b.labor.wageCents && Object.keys(b.labor.wageCents).length > 0),
+    'every bid carries the wages it was figured at');
+  // Three men on one bid, so a crew that grew mid-file is in the photograph.
+  assert.ok(d.bids.some((b) => Object.keys(b.labor.wageCents).length === 3));
+
+  // The walk's own writing, which never prints.
+  assert.ok(d.bids.some((b) => (b.areas || []).some((a) => typeof a.notes === 'string' && a.notes.indexOf('\n') !== -1)),
+    'a multi-line area note is in the photograph');
+  d.bids.forEach((b) => {
+    ['full', 'summary', 'scope'].forEach((level) => {
+      const doc = D.build(b, d, level);
+      assert.strictEqual(JSON.stringify(doc).indexOf('Ceiling is 28 ft'), -1,
+        'an area note reached the paper at ' + level);
+    });
+  });
+
+  // The checklist: rows that know what they are, and answers on the bid.
+  assert.ok(d.settings.forgetList.every((r) => r && typeof r === 'object' && typeof r.name === 'string'
+    && (r.kind === 'item' || r.kind === 'rental')), 'every checklist row carries its kind');
+  assert.ok(d.bids.every((b) => b.forgetAnswers && typeof b.forgetAnswers === 'object'));
+  assert.ok(d.bids.some((b) => Object.values(b.forgetAnswers).indexOf('added') !== -1));
+
+  // Where "Check price" goes, once he has typed his own supply house in.
+  assert.match(d.settings.company.priceSearchUrl, /^https:\/\/.*\{q\}/);
+
+  // The v2.1 seeds, whole.
+  assert.strictEqual(d.catalog.length, 210);
+  assert.strictEqual(d.settings.equipment.length, 30);
+  assert.strictEqual(d.settings.forgetList.length, 19);
+  assert.strictEqual(d.settings.notePhrases.length, 14);
+  assert.strictEqual(d.settings.clauses.length, 27);
+});
 
 // ---------------------------------------------------------------------------
 // THE TWO LIBRARY MOVES, RUN AGAINST A REAL PHONE
