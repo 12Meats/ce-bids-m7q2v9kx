@@ -782,6 +782,24 @@
     return () => { delete map[crewId]; };
   }
 
+  // The one note a new bid arrives with, and only on the bids that need it.
+  // "Prices subject to change; final pricing based on actual material." is the
+  // sentence that keeps a jump in copper from being his to eat, and it is true
+  // of every job he writes. A Scope & price bid starts with NO notes: that
+  // paper carries the terms page, and the terms page already says how long the
+  // price is good for.
+  //
+  // The phrase is looked up in his own list rather than pushed in blind, so a
+  // bid never prints a sentence that is not a chip he can tap off. If he has
+  // deleted it, the first phrase he does have stands in, and an empty list
+  // seeds nothing.
+  function seedNotes(s, detail) {
+    if (detail === 'scope') return [];
+    const list = s.notePhrases || [];
+    if (list.indexOf(SEED_DEFAULT_NOTE) !== -1) return [SEED_DEFAULT_NOTE];
+    return list.length ? [list[0]] : [];
+  }
+
   function newBid(d, { customerName, title, jobType, dateISO }) {
     const cust = findOrCreateCustomer(d, customerName); const s = d.settings;
     const jt = JOB_TYPE.indexOf(jobType) !== -1 ? jobType : 'service';
@@ -823,7 +841,7 @@
       // clauseIds starts null, not empty: "not chosen yet" is what lets the
       // proposal screen offer the Always group once and never argue with him
       // about it again. [] is his answer, and it sticks.
-      scope: null, notes: s.notePhrases.length ? [s.notePhrases[0]] : [], clauseIds: null, validityDays: s.validityDays,
+      scope: null, notes: seedNotes(s, detail), clauseIds: null, validityDays: s.validityDays,
       sentAt: null, savedToFilesAt: null, lostReason: null, job: null };
     s.nextNumber += 1; return b;
   }

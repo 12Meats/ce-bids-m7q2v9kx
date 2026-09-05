@@ -28,10 +28,16 @@
 //                       ask the two questions only he can answer. Plus the
 //                       archive copy and the customer's address to paste.
 //   Notes & exclusions— the sentences that keep him out of an argument later.
-//                       Chips are his own phrases; a new one can join them.
-//   Terms & conditions— the clause library, by group. Project bids start with
-//                       the Always group ticked; a service call can turn them
-//                       on and doesn't have to.
+//                       Chips are his own phrases; a new one can join them. A
+//                       new Full or Summary bid arrives with one of them on:
+//                       the price-good-for-30-days line, which is true of
+//                       every job he writes.
+//   Terms & conditions— the clause library, by group. SCOPE & PRICE bids start
+//                       with the Always group ticked, because that is the
+//                       shape of the one proposal he ever put an addendum on;
+//                       Full and Summary start with none and are one tap away.
+//                       Trenching, core drilling and a sub-contractor on the
+//                       bid are PROMPTED for, never ticked behind him.
 //   Valid for         — how long the price is good.
 //   Scope of work     — drafted from the walk, edited or dictated by him.
 //                       Optional on Full, which prints one only if he wrote
@@ -68,6 +74,17 @@ const PROPOSAL_PDF_KEEP = 10;        // previous PDFs listed for one bid
 let proposalClausesOpen = false;  // the clause library, expanded
 let proposalRevealClauses = false; // one render long, after the tap that opened them
 let proposalTermsOn = false;      // a service bid that wants terms anyway
+// He has ticked or un-ticked something in the library this session, so an
+// empty list is his answer and not merely the shape a Full bid was seeded in.
+let proposalClausesEdited = false;
+// A Full or Summary bid he has just switched to Scope & price, which is the
+// one shape that normally carries the Always group. Offered, never ticked
+// behind him: one line in the terms card with Add and Not now.
+let proposalOfferAlways = false;
+// The nudges he has waved off this session, by group. Session-only on purpose:
+// it is a prompt, not an answer, and it must not become a third thing the bid
+// has to remember.
+const proposalNudgesOff = new Set();
 let proposalBusy = false;         // a PDF is being built / the sheet is open
 let proposalPdfs = null;          // [{ id, at }] newest first; null = still loading
 let proposalToken = 0;            // async list fills from an older render are dropped
@@ -100,6 +117,9 @@ function proposalCustomer(bid) {
 function enterProposal(bidId) {
   if (typeof bidId === 'string' && bidId) state.bidId = bidId;
   proposalClausesOpen = false;
+  proposalClausesEdited = false;
+  proposalOfferAlways = false;
+  proposalNudgesOff.clear();
   proposalBusy = false;
   proposalPdfs = null;
 
@@ -123,24 +143,31 @@ function enterProposal(bidId) {
 // he walked to.
 function proposalLeave() { proposalToken += 1; }
 
-// A project bid arrives with the Always clauses ticked. They are the terms he
-// puts on every project he has ever bid, and starting from an empty list means
-// the one bid he forgets is the one that goes to court. A service call gets
-// nothing: a two-hour troubleshoot does not need nineteen numbered clauses.
+// WHICH BIDS ARRIVE WITH TERMS ON THEM. Scope & price, and only Scope & price.
+//
+// It used to be every project bid, and that was wrong about his own history:
+// the line-item bids he has actually written (UDA, Sun Orchard) went out with
+// no terms page at all, and the one proposal that carried the addendum was the
+// $980K lump sum. A Scope & price bid is that shape — a price, a paragraph of
+// scope, and the conditions it is good under — so that is the one that starts
+// with the Always group ticked. Full and Summary start with none, and the
+// terms card is still one tap away on both.
 //
 // Once, and only once. null on the bid is the question "has he been asked?",
 // and this is the only thing that answers it — so un-ticking every clause
 // leaves [], which is HIS answer, and reopening the bid (or the app) never
-// argues with it. The seed is written like every other mutation on this
-// screen, so a refused save puts the bid back to unasked rather than to a
-// choice he never made.
+// argues with it. Full and Summary answer the question with [] for the same
+// reason: asked, none wanted, and nothing seeds them later behind his back.
+// The seed is written like every other mutation on this screen, so a refused
+// save puts the bid back to unasked rather than to a choice he never made.
 function proposalSeedClauses(bid) {
-  if (!bid || bid.jobType !== 'project' || bid.clauseIds !== null) return;
-  const ids = state.data.settings.clauses.filter((c) => c.group === 'always' && !c.hidden).map((c) => c.id);
-  if (!ids.length) return;
+  if (!bid || bid.clauseIds !== null) return;
+  const ids = bid.detail === 'scope'
+    ? state.data.settings.clauses.filter((c) => c.group === 'always' && !c.hidden).map((c) => c.id)
+    : [];
   bid.clauseIds = ids;
   if (!persistOr(() => { bid.clauseIds = null; })) return;
-  proposalTermsOn = true;
+  if (ids.length) proposalTermsOn = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +403,16 @@ function buildDetail(bid) {
       bid.detail = prevBid;
       if (cust) cust.defaultDetail = prevCust;
     });
+    // Scope & price is the shape that normally carries his standard terms, and
+    // this bid was written in a shape that does not. Nothing is ticked behind
+    // him: the terms card offers it, once, and only while the list is still
+    // empty AND he has not touched it himself. A bid he deliberately stripped
+    // stays stripped.
+    if (value === 'scope' && Array.isArray(bid.clauseIds) && bid.clauseIds.length === 0
+      && !proposalClausesEdited) {
+      proposalOfferAlways = true;
+      proposalTermsOn = true;
+    }
     render();
   }));
   // What the button he is looking at actually puts on the paper, in ui.js's
@@ -495,6 +532,13 @@ function proposalWriteClauses(bid, next) {
   const prev = bid.clauseIds;
   bid.clauseIds = next;
   if (!persistOr(() => { bid.clauseIds = prev; })) { render(); return; }
+  // Everything that reaches here is HIS tap: a clause ticked, a group turned
+  // on or off, the library opened on a service bid. The seed does not come
+  // through here. That is what lets an empty list mean two different things
+  // and be told apart — seeded empty on a Full bid, or emptied on purpose —
+  // and only the first one is ever offered the Always group back.
+  proposalClausesEdited = true;
+  proposalOfferAlways = false;
   render();
 }
 
@@ -565,10 +609,88 @@ function proposalClauseGroup(bid, title, list) {
   return wrap;
 }
 
+// THE ONE-LINE PROMPTS ON THE TERMS CARD.
+//
+// Both are the same shape and the same rule: a sentence about this bid, and
+// two buttons. Neither ever ticks a clause behind him, because a clause on a
+// proposal is a promise he is making and the app does not make promises for
+// him. Waving one off is a session thing, not an answer written on the bid:
+// come back tomorrow and the bid still has trenching in it.
+function proposalPrompt(box, text, onAdd, onNo) {
+  const wrap = document.createElement('div');
+  wrap.className = 'prop-prompt';
+  const line = document.createElement('p');
+  line.className = 'prop-prompt-text';
+  line.textContent = text;
+  wrap.appendChild(line);
+  const btns = document.createElement('div');
+  btns.className = 'attached-strip-btns';
+  btns.appendChild(textButton('Add', 'btn btn-outline', onAdd));
+  btns.appendChild(textButton(onNo.label || 'Not now', 'btn btn-outline', onNo.tap));
+  wrap.appendChild(btns);
+  box.appendChild(wrap);
+}
+
+// The clauses in one group that are not on this bid yet.
+function proposalGroupIdsOff(bid, group) {
+  const on = proposalClauseIds(bid);
+  return proposalClauseList(bid).filter((c) => c.group === group && on.indexOf(c.id) === -1).map((c) => c.id);
+}
+
+function proposalAddGroup(bid, group) {
+  const add = proposalGroupIdsOff(bid, group);
+  if (!add.length) { render(); return; }
+  proposalWriteClauses(bid, proposalClauseIds(bid).concat(add));
+}
+
+// WHAT THE WALK SAYS THIS BID HAS IN IT. Two places carry that: the
+// did-you-forget answers, where 'added' means the line is on the bid, and the
+// item names themselves, because a trench he typed as a line is still a
+// trench. Trenching and core drilling both land in "Trenching & underground";
+// a sub-contractor lands in "Subcontractors".
+const PROPOSAL_NUDGES = [
+  { group: 'trench', label: 'trenching', test: /trench/i },
+  { group: 'trench', label: 'core drilling', test: /core.?drill/i },
+  { group: 'subs', label: 'a sub-contractor', test: /sub-?contract/i },
+];
+
+function proposalBidMentions(bid, re) {
+  const answers = bid.forgetAnswers || {};
+  if (Object.keys(answers).some((name) => answers[name] === 'added' && re.test(name))) return true;
+  return (bid.areas || []).some((a) => (a.items || []).some((it) => re.test(it.name || '')));
+}
+
+// The nudges this bid has earned and he has not waved off: at most one line
+// per group, because "This bid has trenching" and "This bid has core drilling"
+// both end in the same clauses and two prompts for one answer is noise.
+function proposalNudges(bid) {
+  const out = [];
+  const groups = new Set();
+  PROPOSAL_NUDGES.forEach((n) => {
+    if (groups.has(n.group) || proposalNudgesOff.has(n.group)) return;
+    if (!proposalBidMentions(bid, n.test)) return;
+    if (!proposalGroupIdsOff(bid, n.group).length) return;   // already on the bid
+    groups.add(n.group);
+    out.push(n);
+  });
+  return out;
+}
+
 function buildClauses(bid) {
   const box = card('Terms & conditions');
   const list = proposalClauseList(bid);
   const count = proposalPrintingClauses(bid).length;
+
+  if (proposalOfferAlways) {
+    proposalPrompt(box, 'A Scope & price bid usually carries your standard terms. Add them?',
+      () => proposalAddGroup(bid, 'always'),
+      { label: 'Not now', tap: () => { proposalOfferAlways = false; render(); } });
+  }
+  proposalNudges(bid).forEach((n) => {
+    proposalPrompt(box, 'This bid has ' + n.label + '. Add the ' + n.label + ' terms?',
+      () => proposalAddGroup(bid, n.group),
+      { label: 'Not this time', tap: () => { proposalNudgesOff.add(n.group); render(); } });
+  });
 
   box.appendChild(row('On this bid', count + ' clause' + (count === 1 ? '' : 's')));
 
@@ -610,6 +732,14 @@ function buildClauses(bid) {
 // if the job type ever changes to project.
 function buildTermsToggle(bid) {
   const box = card('Terms & conditions');
+  // The nudges belong here too: a service call that turned into a day of
+  // trenching is exactly the bid that needs the trenching terms, and this is
+  // the card that bid is looking at.
+  proposalNudges(bid).forEach((n) => {
+    proposalPrompt(box, 'This bid has ' + n.label + '. Add the ' + n.label + ' terms?',
+      () => { proposalTermsOn = true; proposalAddGroup(bid, n.group); },
+      { label: 'Not this time', tap: () => { proposalNudgesOff.add(n.group); render(); } });
+  });
   box.appendChild(caption('Service bids go out without the clause library. Add it if this one needs it.'));
   box.appendChild(textButton('Add terms & conditions', 'btn btn-block', () => {
     proposalTermsOn = true;

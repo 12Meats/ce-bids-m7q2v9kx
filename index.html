@@ -1338,6 +1338,20 @@
 
     .prop-actions { display: flex; gap: var(--space-1); margin-top: var(--space-2); }
 
+    /* A one-line prompt at the top of the terms card: a sentence about this
+       bid and two ways to answer it. Same shape as an attached strip, because
+       it is the same idea — something offered, tied to the card it is about —
+       but it belongs to the card rather than to a row he tapped, so it has no
+       row to hang off. It never ticks anything on its own. */
+    .prop-prompt {
+      margin: 0 0 var(--space-2);
+      padding: var(--space-2);
+      border-left: 3px solid var(--color-accent);
+      border-radius: 0 10px 10px 0;
+      background: #eef2f7;
+    }
+    .prop-prompt-text { margin: 0 0 var(--space-2); font-size: 0.95rem; color: var(--color-text); }
+
     .prop-group { margin-top: var(--space-2); }
     .prop-group-head {
       display: flex;
