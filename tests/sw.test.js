@@ -157,7 +157,7 @@ test('catalog.js loads before storage.js', () => {
 });
 
 test('APP_BUILT is an ISO date, bumped with the version', () => {
-  // The Settings line reads "CE Bids · v2.1 · built Sep 5, 2026", and the date
+  // The Settings line reads "CE Bids · v2.2 · built Sep 5, 2026", and the date
   // half comes from here. Dates.fmtDate refuses anything that is not
   // YYYY-MM-DD, so a typo would not print a wrong date, it would print no date
   // at all and the line would trail off mid-sentence.

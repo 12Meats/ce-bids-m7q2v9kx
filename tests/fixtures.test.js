@@ -16,7 +16,12 @@
 //   * New bid fields are OPTIONAL with a fallback, which is what lets an old
 //     fixture keep loading with no version bump at all.
 //
-// backup-bids-v2.1.json is this release's own: two bids whose snapshots
+// backup-bids-v2.2.json is this release's own: Schreiber's cooler room, won,
+// with a surprise and a change order on it, and a sent bid at a ten-hour day
+// that quotes fewer hours than it takes. Both snapshots disagree with the
+// Settings sitting beside them.
+//
+// backup-bids-v2.1.json is the release before it: two bids whose snapshots
 // disagree with the Settings sitting beside them, a multi-line area note, a
 // checklist with answers on it, and a supply-house link he typed himself.
 //
@@ -117,6 +122,12 @@ const FIXTURE_TOTALS = {
   // file, which is the whole point of the file: if the snapshot ever stops
   // being read, these two numbers move.
   'backup-bids-v2.1.json': { 1: 4402070, 2: 547600 },
+  // v2.2's own. #1 is Schreiber's cooler room: three men, two rooms, a scissor
+  // lift, a threader, and a 12% cushion on a job that was won and then grew a
+  // surprise and a change order. #2 is a sent bid worked at a ten-hour day
+  // with a NEGATIVE cushion — he is quoting fewer hours than the job takes to
+  // get the work, which is allowed and has to survive a backup.
+  'backup-bids-v2.2.json': { 1: 2607636, 2: 591060 },
 };
 
 for (const file of Object.keys(FIXTURE_TOTALS)) {
@@ -188,6 +199,81 @@ test('backup-bids-v2.1.json really is a v2.1 file', () => {
   assert.strictEqual(d.settings.forgetList.length, 19);
   assert.strictEqual(d.settings.notePhrases.length, 14);
   assert.strictEqual(d.settings.clauses.length, 27);
+});
+
+// The photograph of THIS release. v2.2 added no field to the file — it is a
+// keypad rule, a shorter Settings index and an order over the wire families —
+// so what this asserts is that a real export from the v2.2 build still carries
+// everything v2.1 put in one, and that the new order is visible in it.
+test('backup-bids-v2.2.json really is a v2.2 file', () => {
+  const C = require('../catalog.js');
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v2.2.json'), 'utf8'));
+  assert.ok(d, 'the v2.2 fixture does not load');
+
+  // Settings never change an existing bid, still: both bids were figured at a
+  // 30% burden and the file's Settings say 25% now, and one of them works a
+  // ten-hour day while Settings says eight.
+  assert.strictEqual(d.settings.burdenPct, 25);
+  assert.strictEqual(d.settings.hoursPerDay, 8);
+  assert.ok(d.bids.every((b) => b.pricing.burdenPct === 30),
+    'both bids keep the burden they were figured at');
+  assert.deepStrictEqual(d.bids.map((b) => b.pricing.hoursPerDay).sort((a, b) => a - b), [8, 10]);
+  BidMath.SNAPSHOT_KEYS.forEach((k) => {
+    assert.ok(d.bids.every((b) => b.pricing[k] !== undefined),
+      'every bid carries the ' + k + ' it was figured at');
+  });
+
+  // Three men on one bid, wages stamped where they landed.
+  assert.ok(d.bids.every((b) => b.labor.wageCents && Object.keys(b.labor.wageCents).length > 0));
+  assert.ok(d.bids.some((b) => Object.keys(b.labor.wageCents).length === 3));
+
+  // Bid hours under real hours is a negative cushion, and it is on this file.
+  assert.ok(d.bids.some((b) => b.pricing.cushionPct < 0));
+  assert.ok(d.bids.every((b) => b.pricing.touched === true));
+
+  // The walk's own writing, which never prints.
+  assert.ok(d.bids.some((b) => (b.areas || []).some((a) => typeof a.notes === 'string'
+    && a.notes.indexOf('\n') !== -1)), 'a multi-line area note is in the photograph');
+  d.bids.forEach((b) => {
+    ['full', 'summary', 'scope'].forEach((level) => {
+      assert.strictEqual(JSON.stringify(D.build(b, d, level)).indexOf('Washdown daily'), -1,
+        'an area note reached the paper at ' + level);
+    });
+  });
+
+  // A rental named on the walk carries the room he was standing in, the
+  // checklist carries answers, and a won job carries what happened to it.
+  assert.ok(d.bids.some((b) => (b.rentals || []).some((r) => typeof r.areaId === 'string')));
+  assert.ok(d.bids.some((b) => Object.values(b.forgetAnswers).indexOf('added') !== -1));
+  assert.ok(d.bids.some((b) => Object.values(b.forgetAnswers).indexOf('no') !== -1));
+  const job = d.bids.map((b) => b.job).find(Boolean);
+  assert.ok(job && job.surprises.length === 1 && job.changeOrders.length === 1,
+    'the won job carries a surprise and a change order');
+
+  // Where "Check price" goes, once he has typed his own supply house in.
+  assert.match(d.settings.company.priceSearchUrl, /^https:\/\/.*\{q\}/);
+
+  // The seeds, whole and unchanged by this release.
+  assert.strictEqual(d.catalog.length, 210);
+  assert.strictEqual(d.settings.equipment.length, 30);
+  assert.strictEqual(d.settings.forgetList.length, 19);
+  assert.strictEqual(d.settings.notePhrases.length, 14);
+  assert.strictEqual(d.settings.clauses.length, 27);
+
+  // AND THE THING v2.2 IS: the wire tile on this real file opens on THHN.
+  const wire = C.matches(d.catalog, { category: 'wire' });
+  assert.ok(/THHN$/.test(wire[0].name), 'the wire tile opens on ' + wire[0].name + ', not a THHN');
+
+  // Under the four rows he has actually pulled off this phone — which float
+  // to the top on uses, MC cable included, and are supposed to — the rest of
+  // the tile is in the standing order this release gave it.
+  const families = [];
+  wire.filter((p) => !p.uses).forEach((p) => {
+    const f = C.familyKey(p.name);
+    if (families.indexOf(f) === -1) families.push(f);
+  });
+  assert.deepStrictEqual(families, ['thhn', 'xhhw', 'mc cable', 'soow cord', 'vfd cable',
+    'bare copper ground', 'cat6', 'wire nuts, tape, crimps']);
 });
 
 // ---------------------------------------------------------------------------
