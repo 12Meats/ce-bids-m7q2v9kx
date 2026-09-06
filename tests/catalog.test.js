@@ -362,17 +362,62 @@ test('conduit browses one material at a time, smallest first', () => {
 // Wire is the list the cable rule was written for. Sorted as text it read
 // 10/2 MC, 10/3 MC, 10/3 SOOW, 10/4 SOOW, 10/4 VFD, 12/2 MC — every family
 // shuffled into every other, and the #10 cord above the #12 cord inside each.
-test('wire browses family by family, and each cable family climbs by gauge', () => {
+//
+// AND THE TILE OPENS ON THE THHN. Alphabetically 'bare copper ground' comes
+// first, and for one release that is what a phone nobody had used yet showed
+// him: three rows of ground wire, then the MC, then the cord, with the wire he
+// pulls on nearly every job eighteen rows down. The first twelve rows of a
+// fresh wire tile are now the THHN, whole, #14 up to 4/0.
+test('the wire tile opens on the THHN, #14 up to 4/0', () => {
   const list = C.matches(SEED, { category: 'wire' }).map((p) => p.name);
-  assert.deepStrictEqual(list.slice(0, 20), [
-    '#6 bare copper ground', '#4 bare copper ground', '#2 bare copper ground',
-    '12/2 MC cable', '12/3 MC cable', '10/2 MC cable', '10/3 MC cable',
-    '12/3 SOOW cord', '12/4 SOOW cord', '10/3 SOOW cord', '10/4 SOOW cord',
-    '8/3 SOOW cord', '8/4 SOOW cord',
-    '#14 THHN', '#12 THHN', '#10 THHN', '#8 THHN', '#6 THHN', '#4 THHN', '#2 THHN',
+  assert.deepStrictEqual(list.slice(0, 12), [
+    '#14 THHN', '#12 THHN', '#10 THHN', '#8 THHN', '#6 THHN', '#4 THHN',
+    '#2 THHN', '#1 THHN', '1/0 THHN', '2/0 THHN', '3/0 THHN', '4/0 THHN',
   ]);
+});
+
+test('wire browses family by family, in the order he reaches for them', () => {
+  const list = C.matches(SEED, { category: 'wire' }).map((p) => p.name);
+  // The families themselves, in the order they come off the list: the two
+  // building wires, the cable, the cord, the VFD, the ground, and then the odd
+  // ones with no size on them at all.
+  const families = [];
+  list.forEach((n) => {
+    const f = C.familyKey(n);
+    if (families[families.length - 1] !== f) families.push(f);
+  });
+  assert.deepStrictEqual(families, ['thhn', 'xhhw', 'mc cable', 'soow cord',
+    'vfd cable', 'bare copper ground', 'cat6', 'wire nuts, tape, crimps']);
+
+  assert.deepStrictEqual(list.slice(12, 18),
+    ['#4 XHHW', '#2 XHHW', '1/0 XHHW', '2/0 XHHW', '3/0 XHHW', '4/0 XHHW']);
+  assert.deepStrictEqual(list.filter((n) => n.indexOf('MC') !== -1),
+    ['12/2 MC cable', '12/3 MC cable', '10/2 MC cable', '10/3 MC cable']);
   assert.deepStrictEqual(list.filter((n) => n.indexOf('VFD') !== -1),
     ['14/4 VFD cable', '12/4 VFD cable', '10/4 VFD cable', '8/4 VFD cable', '6/4 VFD cable']);
+});
+
+// The family order is a TIEBREAK. It decides nothing on a phone that has been
+// used, which is the whole reason the taps are counted.
+test('uses still beats the family order outright', () => {
+  const seed = Store.emptyData().catalog;
+  const mc = seed.find((p) => p.name === '10/3 MC cable');
+  mc.uses = 40;
+  const list = C.matches(seed, { category: 'wire' }).map((p) => p.name);
+  assert.strictEqual(list[0], '10/3 MC cable');
+  assert.strictEqual(list[1], '#14 THHN', 'and everything untouched keeps the standing order');
+});
+
+// A category with no order of its own falls straight through to the alphabet,
+// so nothing outside the wire tile moved.
+test('familyRank is wire-only, and every other category is left alphabetical', () => {
+  assert.strictEqual(C.familyRank('conduit', '1/2" EMT'), 0);
+  assert.strictEqual(C.familyRank('conduit', '4x4 box'), 0);
+  assert.strictEqual(C.familyRank('gear', 'VFD 10 HP'), 0, 'a gear VFD is not ranked as wire');
+  // and inside wire, the order the map names, with everything else last
+  assert.deepStrictEqual(['#12 THHN', '4/0 XHHW', '12/2 MC cable', '10/3 SOOW cord',
+    '12/4 SO cord', '8/4 VFD cable', '#6 bare copper ground', 'Cat6']
+    .map((n) => C.familyRank('wire', n)), [0, 1, 2, 3, 3, 4, 5, 6]);
 });
 
 test('gear browses by rating, not by the first digit of the name', () => {

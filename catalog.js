@@ -165,6 +165,43 @@
     return rest.replace(/\s+/g, ' ').trim();
   }
 
+  // -------------------------------------------------------------------------
+  // WHICH FAMILY COMES FIRST
+  // -------------------------------------------------------------------------
+  // Alphabetical is a fair tiebreak between two families nobody has an opinion
+  // about. Wire is not that. On a phone nobody has used yet, every uses count
+  // still at zero, codepoint order opened the wire tile on the bare ground,
+  // then the MC, then the cord, and put THHN — the wire on nearly every job he
+  // writes — eighteen rows down. A rack does not start with the ground wire.
+  //
+  // So a category may carry an order of its own, and wire is the one that
+  // does: THHN, XHHW, MC, SO/SOOW, VFD, bare ground, and then everything else
+  // (Cat6, the wire nuts) in the alphabetical order it always had. Written as
+  // patterns against the FAMILY, not as whole names, so '#12 THHN stranded'
+  // typed on the phone lands with the THHN and not at the bottom.
+  //
+  // This is a tiebreak and nothing else. uses still wins outright: the month
+  // he taps the MC cable forty times it is at the top of the tile wherever
+  // this list would have put it, which is the whole reason the taps are
+  // counted. And it is applied only BETWEEN TWO PARTS IN THE SAME CATEGORY —
+  // a search crosses all six, and where a wire sits in the wire tile says
+  // nothing about where it belongs beside a coupling.
+  const FAMILY_ORDER = {
+    wire: [/\bthhn\b/, /\bxhhw\b/, /\bmc\b/, /\bso[ow]*\b/, /\bvfd\b/, /\bbare\b/],
+  };
+
+  // familyRank(category, name) -> 0-based place in that category's order, or
+  // one past the end for a family the order does not name. A category with no
+  // order gives every name the same rank, so the comparison below falls
+  // straight through to the alphabet the way it always did.
+  function familyRank(category, name) {
+    const order = FAMILY_ORDER[category];
+    if (!order) return 0;
+    const f = familyKey(name);
+    for (let i = 0; i < order.length; i += 1) if (order[i].test(f)) return i;
+    return order.length;
+  }
+
   // matches(catalog, { category, query, includeRentals })
   //
   //   query empty     — the parts in `category`
@@ -175,9 +212,11 @@
   // stopped carrying stays in the file (old bids reference it by id and must
   // keep validating) without being in his way.
   //
-  // Order: most-used first, then family, then size, then alphabetical. His own
-  // history still wins — the part he reaches for forty times a month is at the
-  // top wherever the alphabet would have put it — and everything under it is
+  // Order: most-used first, then family, then size, then alphabetical — with
+  // the category's own family order (familyRank, above) taking the first word
+  // on family where it has one. His own history still wins — the part he
+  // reaches for forty times a month is at the top wherever the alphabet would
+  // have put it — and everything under it is
   // in the order the parts sit on the rack: all the EMT in 1/2", 3/4", 1",
   // 1-1/4", 1-1/2", 2", then all the PVC the same way, and wire from #14 up to
   // 4/0. A family that has sizes comes before one that has none, so the pipe
@@ -210,6 +249,13 @@
       const ka = sizeKey(a.name);
       const kb = sizeKey(b.name);
       if ((ka === null) !== (kb === null)) return ka === null ? 1 : -1;
+      // The category's own opinion about its families, where it has one, and
+      // only between two parts that are in the same category.
+      if (a.category === b.category) {
+        const ra = familyRank(a.category, a.name);
+        const rb = familyRank(b.category, b.name);
+        if (ra !== rb) return ra - rb;
+      }
       // Codepoint order on the normalized family, not localeCompare: the
       // collator ignores the dots in "S.S. conduit" and files it under "ss",
       // which is not where he would look for it.
@@ -339,5 +385,6 @@
     };
   }
 
-  return { matches, straighten, normalizeName, sizeKey, familyKey, nearDuplicates, fitWithin, RENTALS };
+  return { matches, straighten, normalizeName, sizeKey, familyKey, familyRank,
+    nearDuplicates, fitWithin, RENTALS };
 });
