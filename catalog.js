@@ -216,12 +216,11 @@
   // the category's own family order (familyRank, above) taking the first word
   // on family where it has one. His own history still wins — the part he
   // reaches for forty times a month is at the top wherever the alphabet would
-  // have put it — and everything under it is
-  // in the order the parts sit on the rack: all the EMT in 1/2", 3/4", 1",
-  // 1-1/4", 1-1/2", 2", then all the PVC the same way, and wire from #14 up to
-  // 4/0. A family that has sizes comes before one that has none, so the pipe
-  // and the breakers sit above the odds and ends; alphabetical is the last
-  // word, for two names inside one family.
+  // have put it — and everything under it is in the order the parts sit on the
+  // rack: all the EMT in 1/2", 3/4", 1", 1-1/4", 1-1/2", 2", then all the PVC
+  // the same way, and wire from #14 up to 4/0. A family that has sizes comes
+  // before one that has none, so the pipe and the breakers sit above the odds
+  // and ends; alphabetical is the last word, for two names inside one family.
   //
   // Matching is on normalized names both sides, so a curly quote off the iOS
   // keyboard finds the straight one in the file, and "1 in" finds 1".

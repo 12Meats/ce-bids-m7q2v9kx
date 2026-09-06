@@ -32,6 +32,8 @@ let saved = true;                 // what persistOr is told the disk did
 let answer = true;                // what he taps on the confirm
 let confirmText = null;           // what the confirm asked him
 let banner = null;
+let persists = 0;                 // how many times the screen went to the disk
+let saves = 0;                    // and how many of those reached Store.save
 
 const sandbox = {
   console,
@@ -44,7 +46,7 @@ const sandbox = {
   DocModel: require('../docmodel.js'),
   registerScreen: () => {},
   render: () => {},
-  persistOr: (revert) => { if (!saved) { revert(); return false; } return true; },
+  persistOr: (revert) => { persists += 1; if (!saved) { revert(); return false; } return true; },
   showBanner: (text) => { banner = text; },
   confirmPanel: async (text) => { confirmText = text; return answer; },
 };
@@ -57,7 +59,11 @@ vm.runInContext(fs.readFileSync(path.join(root, 'ui.js'), 'utf8'), sandbox, { fi
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'price.js'), 'utf8'), sandbox,
   { filename: 'price.js' });
 
-const { priceSettingsMoves, priceUseSettings, priceUseSettingsText, priceBidCrewIds } = sandbox;
+const { priceSettingsMoves, priceUseSettings, priceUseSettingsText, priceBidCrewIds, priceApply } = sandbox;
+
+// The one call that would write to real storage if a screen ever reached past
+// persistOr. Counted, never performed: node has no localStorage.
+S.save = () => { saves += 1; return true; };
 
 function fixture() {
   const d = S.emptyData();
@@ -67,6 +73,7 @@ function fixture() {
   d.bids.push(bid);
   state.bidId = bid.id;
   saved = true; answer = true; confirmText = null; banner = null;
+  persists = 0; saves = 0;
   return { d, bid };
 }
 
@@ -227,4 +234,41 @@ test('saying no writes nothing', async () => {
   await priceUseSettings(bid, priceSettingsMoves(bid, d.settings));
   assert.strictEqual(bid.pricing.overheadPct, undefined);
   assert.strictEqual(banner, null);
+});
+
+// ---------------------------------------------------------------------------
+// A handle that does not move
+// ---------------------------------------------------------------------------
+// Done on an untouched keypad hands back the number the panel opened with, and
+// typing today's rate in by hand comes to the same thing. Both used to run the
+// whole write anyway: a save, a fresh margin snapshot over the one the bid was
+// created with, and the touched mark on a bid he had only looked at. Nothing
+// about the bid moved, so nothing may be written.
+
+test('Done with nothing typed, on any of the three handles, writes nothing at all', () => {
+  const { d, bid } = fixture();
+  const stack = B.costStack(bid, d.settings);
+  assert.ok(stack.bidHours > 0, 'the handles are live only where there are hours to price');
+
+  // What the three panels open on, which is what an untouched Done hands back.
+  const solved = B.solve(stack, 'rate', bid.pricing.rateCents);
+  const before = JSON.stringify(bid.pricing);
+
+  priceApply(bid, 'margin', solved.marginPct);
+  priceApply(bid, 'rate', solved.rateCents);
+  priceApply(bid, 'price', solved.priceCents);
+
+  assert.strictEqual(JSON.stringify(bid.pricing), before,
+    'a handle that lands on the rate it opened on may not rewrite the bid');
+  assert.strictEqual(persists, 0, 'nothing was handed to the disk');
+  assert.strictEqual(saves, 0, 'Store.save was never called');
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(bid.pricing, 'touched'), false,
+    'looking at a handle is not pricing the bid');
+
+  // And a REAL move still goes through, or the guard has broken the screen.
+  priceApply(bid, 'margin', solved.marginPct + 5);
+  assert.strictEqual(persists, 1);
+  assert.notStrictEqual(bid.pricing.rateCents, solved.rateCents);
+  assert.strictEqual(bid.pricing.touched, true);
+  assert.ok(S.validateImport(JSON.stringify(d)));
 });

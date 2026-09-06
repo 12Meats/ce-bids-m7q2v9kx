@@ -557,7 +557,12 @@ function buildEquipmentRateChip(x) {
   }
 
   const c = chip('tap to set a day rate', false, () => {
-    promptMoney(tool.costCents, {
+    // $0 is not a cost this prompt will take, so it is not a value Done may
+    // hand back either: offered as the prior, an empty Done returns the same 0,
+    // the answer is refused, and the panel closes on a tap that did nothing.
+    // A tool with no real cost on it opens with no prior and Done shakes — the
+    // same rule the wage panel in Settings follows.
+    promptMoney(tool.costCents > 0 ? tool.costCents : null, {
       label: 'What does a ' + (tool.name || x.name) + ' cost new?',
       done: (cents) => {
         if (cents === null || !(cents > 0)) return;
@@ -686,7 +691,10 @@ async function priceExistingTool(bid, tool) {
   );
   if (!update) { pricePickEquipment(bid, tool); return; }
 
-  promptMoney(tool.costCents, {
+  // Same as the day-rate chip: a stored $0 offered as the prior turns an empty
+  // Done into a refused answer, so a tool that has never really been priced
+  // opens with none and Done shakes for a number.
+  promptMoney(tool.costCents > 0 ? tool.costCents : null, {
     label: 'What does a ' + name + ' cost new?',
     done: (cents) => {
       if (cents === null || !(cents > 0)) { pricePickEquipment(bid, tool); return; }
@@ -1110,24 +1118,34 @@ function priceApply(bid, handle, value) {
   const stack = BidMath.costStack(bid, priceSettings());
   const out = BidMath.solve(stack, handle, value);
 
-  const prevRate = bid.pricing.rateCents;
-  const prevMargin = bid.pricing.marginPct;
-  const untouch = priceTouch(bid);
-  bid.pricing.rateCents = out.rateCents;
-  // bid.pricing.marginPct is a SNAPSHOT of the margin at this handle move, not
-  // a live figure: any cost-side edit afterwards (a rental, overhead, another
-  // hour of labor) moves the real margin and leaves this number where it was.
-  // The live margin is always BidMath.solve(stack, 'rate', rateCents).marginPct
-  // — which is what this screen displays. Reports must compute it the same way
-  // and never read this field.
-  bid.pricing.marginPct = out.marginPct;
+  // A HANDLE THAT LANDS BACK ON THE RATE IT OPENED ON IS NOT AN EDIT. Done on
+  // an untouched panel hands back the number the panel came up with, and typing
+  // today's rate in by hand comes to the same thing: the answer solves to the
+  // rate the bid already carries. That is a man agreeing with his own bid, and
+  // it writes nothing — no save, no fresh margin snapshot, and no touched mark
+  // on a bid he only looked at. The sentence under a typed PRICE is still
+  // worked out below: it explains the figure on the glass, and the figure on
+  // the glass is exactly where it was.
+  if (out.rateCents !== bid.pricing.rateCents) {
+    const prevRate = bid.pricing.rateCents;
+    const prevMargin = bid.pricing.marginPct;
+    const untouch = priceTouch(bid);
+    bid.pricing.rateCents = out.rateCents;
+    // bid.pricing.marginPct is a SNAPSHOT of the margin at this handle move, not
+    // a live figure: any cost-side edit afterwards (a rental, overhead, another
+    // hour of labor) moves the real margin and leaves this number where it was.
+    // The live margin is always BidMath.solve(stack, 'rate', rateCents).marginPct
+    // — which is what this screen displays. Reports must compute it the same way
+    // and never read this field.
+    bid.pricing.marginPct = out.marginPct;
 
-  if (!persistOr(() => {
-    bid.pricing.rateCents = prevRate; bid.pricing.marginPct = prevMargin; untouch();
-  })) {
-    priceWhy = null;
-    render();
-    return;
+    if (!persistOr(() => {
+      bid.pricing.rateCents = prevRate; bid.pricing.marginPct = prevMargin; untouch();
+    })) {
+      priceWhy = null;
+      render();
+      return;
+    }
   }
 
   // Which of the three sentences below to show, if any. The classification is
