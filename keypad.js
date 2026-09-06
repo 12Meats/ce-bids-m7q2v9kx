@@ -8,15 +8,21 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // createBuffer({ allowDecimal, maxChars, maxDecimals }) -> { press, backspace, clear, text, value }
+  // createBuffer({ allowDecimal, maxChars, maxDecimals, prior })
+  //   -> { press, backspace, clear, text, value, submit }
   //
   // press(key) takes '0'-'9' or '.'; anything else is ignored.
   // text() is the raw string under the big digits.
-  // value() is the Number the caller receives on Done, or null when nothing
-  // has been typed — Done refuses on null rather than storing a guess.
+  // value() is what he TYPED, or null when he typed nothing.
+  // submit() is what Done hands back, which is not always the same thing.
   function createBuffer(opts) {
     opts = opts || {};
     const allowDecimal = !!opts.allowDecimal;
+    // THE VALUE THE PANEL OPENED ON — the "was $32.00" over the digits, or
+    // null on a line that has none. It is never preloaded into the buffer
+    // (retyping beats editing on a phone), and it is the whole of what
+    // submit() adds: see below.
+    const prior = (typeof opts.prior === 'number' && isFinite(opts.prior)) ? opts.prior : null;
     // Counts every CHARACTER in the buffer, decimal point included — which is
     // why it is not called maxDigits. A cap of 3 on a decimal field allows
     // "22." and then refuses the 5, which is how a percentage keypad once
@@ -67,7 +73,24 @@
       return isFinite(n) ? n : null;
     }
 
-    return { press, backspace, clear, text, value };
+    // WHAT DONE HANDS BACK.
+    //
+    // He opens the wage that already says $32.00, looks at it, decides it is
+    // right, and taps Done. Typing nothing is an answer there — "that one" —
+    // and the panel used to shake at him for it, which is the app arguing with
+    // a man who is agreeing with it. So Done on an untouched buffer keeps the
+    // value the panel opened with, and the edit the caller sees is a no-op.
+    //
+    // On a NEW line there is no prior and nothing to keep, so submit() is
+    // still null and Done still refuses rather than storing a guess. Clear is
+    // untouched by any of this: it means "leave it", and it never comes
+    // through here.
+    function submit() {
+      const v = value();
+      return v === null ? prior : v;
+    }
+
+    return { press, backspace, clear, text, value, submit };
   }
 
   return { createBuffer };

@@ -211,13 +211,20 @@ function closeAnyPanel() {
 // overrides that line for callers that format their own (see promptMoney).
 // done(value) fires with a Number on Done and with null on Clear. Cancel calls
 // nothing. There is no native number input anywhere in this app.
+//
+// Done with nothing typed hands back `current` unchanged when there is one —
+// looking at a number and agreeing with it is an answer. A caller that would
+// REFUSE its own current value (a wage of $0, say) must not pass it as
+// current, or Done would re-ask the same question forever.
 function promptNumber(current, opts) {
   opts = opts || {};
   if (anyPanelOpen()) return;
 
   const allowDecimal = !!opts.allowDecimal;
   keypadCtx.open = true;
-  keypadCtx.buffer = Keypad.createBuffer({ allowDecimal, maxChars: opts.maxChars, maxDecimals: opts.maxDecimals });
+  keypadCtx.buffer = Keypad.createBuffer({
+    allowDecimal, maxChars: opts.maxChars, maxDecimals: opts.maxDecimals, prior: current,
+  });
   keypadCtx.done = typeof opts.done === 'function' ? opts.done : null;
 
   el('keypadLabel').textContent = opts.label || '';
@@ -278,8 +285,11 @@ function keypadBackspace() {
   renderKeypad();
 }
 
+// What Done hands back: what he typed, or — when he typed nothing on a panel
+// that opened with a value — that value. Keypad.submit decides which, and is
+// tested there.
 function keypadValue() {
-  return keypadCtx.buffer ? keypadCtx.buffer.value() : null;
+  return keypadCtx.buffer ? keypadCtx.buffer.submit() : null;
 }
 
 function closeKeypad() {
@@ -295,6 +305,9 @@ function closeKeypad() {
 
 function keypadDone() {
   const v = keypadValue();
+  // Null here means nothing typed AND nothing to keep — a brand new line. The
+  // panel stays up and shakes, because closing it would look like it had
+  // written something.
   if (v === null) { shake(el('keypadDigits')); return; }
   const done = keypadCtx.done;
   closeKeypad();

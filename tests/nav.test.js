@@ -111,8 +111,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), sandbox, { f
 
 const {
   registerScreen, show, goBack, onPopState, anyPanelOpen,
-  promptNumber, promptText, confirmPanel, keypadPress, keypadDone, textDone, closeAnyPanel,
-  attachedStrip, closeAnyStrip,
+  promptNumber, promptMoney, promptText, confirmPanel, keypadPress, keypadDone, keypadClear,
+  textDone, closeAnyPanel, attachedStrip, closeAnyStrip,
 } = sandbox;
 
 // A function declaration lands on the context's global object; a top-level
@@ -358,4 +358,72 @@ test('a strip with no Cancel is not something the gesture can close', () => {
   // nothing at all.
   attachedStrip(null, [{ label: 'Days', onTap: () => {} }], {});
   assert.strictEqual(closeAnyStrip(), false);
+});
+
+// ---------------------------------------------------------------------------
+// DONE WITH NOTHING TYPED
+// ---------------------------------------------------------------------------
+// The panel half of the rule Keypad.submit decides. What matters here is what
+// the OWNER sees: whether the panel closes, and what number reaches the caller.
+
+test('Done with nothing typed keeps the value the panel opened with', () => {
+  standInTheWalk();
+  const seen = [];
+  promptNumber(32, { label: 'Hours per day', done: (v) => seen.push(v) });
+  keypadDone();
+  assert.strictEqual(anyPanelOpen(), false, 'the panel closes: he answered the question');
+  assert.deepStrictEqual(seen, [32], 'the caller sees the value it already had');
+});
+
+test('Done with nothing typed on a NEW line shakes and stays up', () => {
+  standInTheWalk();
+  const seen = [];
+  promptNumber(null, { label: 'How many ft?', done: (v) => seen.push(v) });
+  keypadDone();
+  assert.strictEqual(anyPanelOpen(), true, 'nothing to keep, so the question is still on screen');
+  assert.deepStrictEqual(seen, [], 'and nothing reached the caller');
+  closeAnyPanel();
+});
+
+test('money keeps its prior to the cent, with no float dust on the way back', () => {
+  standInTheWalk();
+  const seen = [];
+  // $32.00 and a price with an odd number of cents on it: the panel speaks
+  // dollars, so a kept value goes out to dollars and back to cents, and a
+  // rounding slip there would write a different number than the one on screen.
+  promptMoney(3200, { label: 'Wage', done: (c) => seen.push(c) });
+  keypadDone();
+  promptMoney(1234567, { label: 'Bid price', done: (c) => seen.push(c) });
+  keypadDone();
+  assert.deepStrictEqual(seen, [3200, 1234567]);
+});
+
+test('typing over the prior still wins, and a typed zero is not the prior', () => {
+  standInTheWalk();
+  const seen = [];
+  promptMoney(3200, { label: 'Wage', done: (c) => seen.push(c) });
+  keypadPress('4'); keypadPress('0');
+  keypadDone();
+  promptMoney(3200, { label: 'Wage', done: (c) => seen.push(c) });
+  keypadPress('0');
+  keypadDone();
+  assert.deepStrictEqual(seen, [4000, 0]);
+});
+
+test('Clear still means leave it, on a panel that has a prior', () => {
+  standInTheWalk();
+  const seen = [];
+  promptNumber(32, { label: 'Hours per day', done: (v) => seen.push(v) });
+  keypadClear();
+  assert.strictEqual(anyPanelOpen(), false);
+  assert.deepStrictEqual(seen, [null], 'Clear is its own answer and is not the prior');
+});
+
+test('a keypad cancelled by the back gesture keeps nothing either', () => {
+  standInTheWalk();
+  const seen = [];
+  promptNumber(32, { label: 'Hours per day', done: (v) => seen.push(v) });
+  onPopState({ state: { ceb: 2 } });
+  keypadDone();
+  assert.deepStrictEqual(seen, [], 'a cancel commits nothing, prior or not');
 });

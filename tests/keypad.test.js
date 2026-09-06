@@ -156,3 +156,64 @@ test('a full buffer has no room for the decimal point either', () => {
   assert.strictEqual(c.text(), '123.');
   assert.strictEqual(c.value(), 123);
 });
+
+// ---------------------------------------------------------------------------
+// DONE ON A BUFFER HE NEVER TOUCHED
+// ---------------------------------------------------------------------------
+// He opens the wage that already reads $32.00, decides it is right, and taps
+// Done. value() is null — he typed nothing — but the answer is not "nothing",
+// it is "that one". submit() is the difference, and it is the only thing that
+// knows about the value the panel opened with.
+
+test('submit() keeps the prior value when nothing was typed', () => {
+  const b = K.createBuffer({ allowDecimal: true, prior: 32 });
+  assert.strictEqual(b.value(), null, 'nothing was typed, and value() still says so');
+  assert.strictEqual(b.submit(), 32);
+  assert.strictEqual(b.text(), '', 'the prior is never preloaded into the digits');
+});
+
+test('submit() is what he typed as soon as he types anything', () => {
+  const b = K.createBuffer({ allowDecimal: true, prior: 32 });
+  b.press('4');
+  assert.strictEqual(b.submit(), 4);
+  b.press('5');
+  assert.strictEqual(b.submit(), 45);
+  // and backspacing all the way out puts him back on "that one"
+  b.backspace(); b.backspace();
+  assert.strictEqual(b.submit(), 32);
+});
+
+test('a typed zero is his zero, not the prior', () => {
+  const b = K.createBuffer({ allowDecimal: true, prior: 32 });
+  b.press('0');
+  assert.strictEqual(b.value(), 0);
+  assert.strictEqual(b.submit(), 0, 'zero is an answer, and it is not 32');
+});
+
+test('with no prior there is nothing to keep, and submit() still refuses', () => {
+  assert.strictEqual(K.createBuffer({ allowDecimal: true }).submit(), null);
+  assert.strictEqual(K.createBuffer({ allowDecimal: true, prior: null }).submit(), null);
+  assert.strictEqual(K.createBuffer({ allowDecimal: true, prior: undefined }).submit(), null);
+  // A prior that is not a real number is no prior at all: NaN or Infinity in
+  // the "was" line would come back out of Done and be written to the bid.
+  assert.strictEqual(K.createBuffer({ allowDecimal: true, prior: NaN }).submit(), null);
+  assert.strictEqual(K.createBuffer({ allowDecimal: true, prior: Infinity }).submit(), null);
+  assert.strictEqual(K.createBuffer({ allowDecimal: true, prior: '32' }).submit(), null);
+});
+
+test('a prior of zero is a prior — a rental line already at $0 keeps its $0', () => {
+  const b = K.createBuffer({ allowDecimal: true, prior: 0 });
+  assert.strictEqual(b.submit(), 0);
+});
+
+test('clear() puts him back on the prior, because Clear is a separate answer', () => {
+  // clear() only empties the digits. "Leave it" is the CLEAR BUTTON, which
+  // calls done(null) itself and never asks the buffer anything — so a buffer
+  // emptied by clear() is a buffer with nothing typed, and Done on it keeps
+  // the prior like any other untouched panel.
+  const b = K.createBuffer({ allowDecimal: true, prior: 32 });
+  b.press('9'); b.press('9');
+  b.clear();
+  assert.strictEqual(b.value(), null);
+  assert.strictEqual(b.submit(), 32);
+});

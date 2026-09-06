@@ -618,7 +618,12 @@ function buildSetCrewRow(box, c) {
 // reason is in the label. Not a banner: the keypad panel covers the banner
 // area, so the only feedback he can see is the one line above the digits.
 function settingsEditWage(c, again) {
-  promptMoney(c.wageCents, {
+  // A wage of $0 is the one answer this prompt refuses, so it is not a value
+  // Done can hand back: offered as the prior it would re-ask the same question
+  // on every empty Done, forever. A man with no wage on him opens a panel with
+  // no prior, which is honest — $0 an hour is not a wage he set.
+  const has = typeof c.wageCents === 'number' && c.wageCents > 0;
+  promptMoney(has ? c.wageCents : null, {
     label: (c.name || 'Worker') + ', paid an hour on new bids' + (again ? '. Enter more than $0' : ''),
     done: (cents) => {
       if (cents === null) return;
