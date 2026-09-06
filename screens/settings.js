@@ -1670,9 +1670,8 @@ function settingsCreatePart(unit) {
 // about, so it checks the number that is actually about to be used — not the
 // one he just typed and not the one after it.
 
-function buildSetCounter() {
+function buildSetCounterRow(box) {
   const s = setS();
-  const box = card('Bid numbers');
 
   const line = settingRow(box, 'Next bid number', '#' + s.nextNumber, () => {
     settingsPromptWhole(s.nextNumber, 'The next bid number', line, 1, SET_NUMBER_MAX,
@@ -1682,15 +1681,15 @@ function buildSetCounter() {
         s.nextNumber = v;
         settingsSaveAndRender(() => { s.nextNumber = prev; });
       });
-  }, 'The number the next new bid gets. It starts at 1. Set this to your real next invoice number '
-     + 'the first day you use the app. It counts up on its own after that.');
+  });
 
+  // The warning stays standing. Everything else on this card explains itself
+  // once and then never again; this one is about two pieces of paper in one
+  // customer's hands, and it is only ever on screen when it is true.
   if (Store.numberInUse(state.data, s.nextNumber)) {
     box.appendChild(inlineWarn('Bid #' + s.nextNumber + ' already exists. The next new bid would '
       + 'carry the same number as one you have already written.'));
   }
-
-  return box;
 }
 
 // ---------------------------------------------------------------------------
@@ -1705,27 +1704,28 @@ function buildSetCounter() {
 // for a new one next time", and the caption says that rather than promising an
 // app that opens straight to the bids list.
 
-function buildSetLock() {
-  const box = card('PIN');
-  box.appendChild(row('Current', state.data.pin === null ? 'Not set yet' : '••••'));
-  box.appendChild(textButton('Change PIN', 'btn btn-block mt-3', startPinChange));
+// The two answers the PIN row has, in the strip every other row with two
+// answers wears. It opens no screen — changing a PIN happens on the lock screen
+// itself and forgetting one is a confirm — so the row carries no chevron.
+function buildSetPinActions(line) {
+  const buttons = [['Change PIN', '', startPinChange]];
 
   if (state.data.pin !== null) {
-    // Last on the card and muted, like every other way of taking something
+    // Last in the strip and muted, like every other way of taking something
     // away in this app. It used to be an outlined red button directly under
     // Change PIN, which is one thumb-width from the button he actually wanted.
-    box.appendChild(textButton('Forget this PIN', 'link-btn link-btn-quiet', async () => {
+    buttons.push(['Forget this PIN', 'quiet', async () => {
       const ok = await confirmPanel('Forget this PIN? The next time you open the app it will ask you '
         + 'to pick a new one.', { ok: 'Forget', danger: true });
       if (!ok) { render(); return; }
       const prev = state.data.pin;
       state.data.pin = null;
+      settingsMenu = null;
       settingsSaveAndRender(() => { state.data.pin = prev; });
-    }));
+    }]);
   }
 
-  box.appendChild(caption('Four digits. There is no way to look it up, so pick one you will not lose.'));
-  return box;
+  settingActions(line, buttons);
 }
 
 // ---------------------------------------------------------------------------
@@ -1795,28 +1795,52 @@ function settingsCrewSummary(crew) {
   return list.length + ' · ' + names.join(', ') + (rest ? ' +' + rest : '');
 }
 
-// The company door, on its own down between the two lists and the PIN. What is
-// behind it was typed once and is read off the paper, not off this screen, so
-// the row says who the paper is from and nothing else.
-function buildSetCompanyDoor() {
+// THE FOUR SHORT ANSWERS, IN ONE CARD.
+//
+// The next bid number, who the paper is from, the four digits that open the
+// app, and the reports. Four cards once, each with a heading of its own and a
+// standing grey line of explanation under it — eight lines he reads on the
+// first morning and scrolls past for the rest of the year, wrapped in four
+// sets of card margins, around four rows of actual answer. They are four rows
+// now, and the four sentences are behind the one "What's this?" at the bottom.
+//
+// The bid number comes down here from the top of the index with them. It is
+// the one number on this screen he sets on day one and then never touches, and
+// putting it above the two lists he edits every month said the opposite.
+function buildSetMore() {
   const co = setS().company;
   const box = card();
+
+  buildSetCounterRow(box);
+
   box.appendChild(row('Company', co.name, () => show('settings-company')));
-  box.appendChild(caption('What prints at the top of a proposal, how it looks, what it says about '
-    + 'tax, and where "Check price" goes.'));
+
+  const pin = settingRow(box, 'PIN', state.data.pin === null ? 'Not set yet' : '••••',
+    () => settingsToggleMenu('pin'), null, { strip: true });
+
+  // What the reports have to work with. A phone with no bids on it has nothing
+  // to report, and the row says so before he opens it.
+  box.appendChild(row('Reports', settingsCountText(state.data.bids.length, 'bid', 'bids'),
+    () => show('reports')));
+
+  // After the Reports row is in, so the strip lands under the PIN row it
+  // belongs to rather than at the bottom of the card.
+  if (settingsMenuOpen('pin')) buildSetPinActions(pin);
+
+  box.appendChild(whatsThis([
+    'Next bid number: the number the next new bid gets. It starts at 1. Set this to your real '
+      + 'next invoice number the first day you use the app. It counts up on its own after that.',
+    'Company: what prints at the top of a proposal, how it looks, what it says about tax, '
+      + 'and where "Check price" goes.',
+    'PIN: four digits. There is no way to look it up, so pick one you will not lose.',
+    'Reports: win rate, job history, and what the jobs really cost.',
+  ]));
   return box;
 }
 
 // ---------------------------------------------------------------------------
 // ELSEWHERE
 // ---------------------------------------------------------------------------
-
-function buildSetReports() {
-  const box = card('Reports');
-  box.appendChild(textButton('Open reports', 'btn btn-block', () => show('reports')));
-  box.appendChild(caption('Win rate, job history, and what the jobs really cost.'));
-  return box;
-}
 
 // ---------------------------------------------------------------------------
 // BACKUP
@@ -2510,17 +2534,21 @@ function settingsSaveAndRender(revert) {
 // thousand pixels, and the jump strip that used to sit over it was an index
 // over an index. Both are gone.
 //
+// AND AN INDEX DOES NOT EXPLAIN ITSELF STANDING UP. Every door that used to
+// carry a grey line of explanation under it now carries it behind a "What's
+// this?", or behind the door itself — six sentences he reads once and then
+// scrolls past forever were most of a screen. The one caption still standing
+// is Backup's, because losing the bids is the one thing on this screen he
+// cannot undo.
+//
 // Order is how often he touches it, not how the file is organized. The
 // sections in the file itself stay in their old order so the diff stays
 // readable.
 const SETTINGS_CARDS = [
   ['set-doors', () => buildSetDoors()],
-  ['set-counter', () => buildSetCounter()],
   ['set-forget', () => buildSetForget()],
   ['set-notes', () => buildSetNotePhrases()],
-  ['set-company', () => buildSetCompanyDoor()],
-  ['set-lock', () => buildSetLock()],
-  ['set-reports', () => buildSetReports()],
+  ['set-more', () => buildSetMore()],
   ['set-backup', () => buildSetBackup()],
 ];
 
