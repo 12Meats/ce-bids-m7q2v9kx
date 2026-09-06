@@ -1,6 +1,6 @@
 // CE Bids service worker — cache-first offline support.
 // Bump CACHE on every deploy that changes any file in ASSETS.
-const CACHE = 'bids-v2';
+const CACHE = 'bids-v2.1';
 // Every file the app loads. A missing entry here means that file silently
 // falls back to the network, which in a plant with no signal means a blank
 // screen. tests/sw.test.js cross-checks this list against index.html.
