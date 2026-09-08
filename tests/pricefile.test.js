@@ -28,6 +28,20 @@ test('parse: a good file comes back with its rows; anything else says why', () =
   assert.strictEqual(P.parse(file([])).error, null, 'an empty file is a valid file with nothing in it');
 });
 
+// Zero is not a price (a supplier's out-of-stock placeholder is not a free
+// part), and a nameless row has nothing for the confirm to say moved. Both
+// are refused the same way a bad sku is: by row number. A name that is too
+// long is not refused, only trimmed, the same ceiling supplierName wears
+// everywhere else it is stored.
+test('parse: a row priced at nothing is refused, and a name is required and capped', () => {
+  assert.match(P.parse(file([{ sku: '1', name: 'x', listCents: 0, per: 'ea' }])).error, /row 1/i, 'zero is not a price');
+  assert.match(P.parse(file([{ sku: '1', name: '   ', listCents: 100, per: 'ea' }])).error, /row 1/i, 'a nameless row');
+  const long = 'x'.repeat(200);
+  const ok = P.parse(file([{ sku: '1', name: long, listCents: 100, per: 'ea' }]));
+  assert.strictEqual(ok.error, null);
+  assert.strictEqual(ok.rows[0].name.length, 120);
+});
+
 // The supplier sells by the each, the foot, the hundred or the thousand; his
 // catalog counts by ea, ft, roll, box, case, lot, day. Only the pairs that mean
 // the same thing convert; the rest come back null and the row is flagged
@@ -44,6 +58,7 @@ test('convertCents: per ea / ft / c / m against his units', () => {
   assert.strictEqual(P.convertCents({ listCents: 96, per: 'ea' }, 'ft'), null, 'an each price on a length');
   assert.strictEqual(P.convertCents({ listCents: 96, per: 'rl' }, 'ft'), null, 'a roll price on a length: the roll length is unknown');
   assert.strictEqual(P.convertCents({ listCents: 96, per: 'pallet' }, 'ea'), null);
+  assert.strictEqual(P.convertCents({ listCents: 40, per: 'm' }, 'ft'), 1, 'a fraction of a cent is still a cent, not free');
 });
 
 function catalogWith(parts) {
@@ -95,6 +110,16 @@ test('match: by sku, then by remembered supplier name; the rest are unmatched or
   assert.deepStrictEqual(m.mismatched, [], 'nothing here has a unit that cannot convert');
 });
 
+// A part's own QED number is not just a hint, it is the ONLY thing that finds
+// it once it has one: a row for a different number must never land on this
+// part just because the two once shared a supplier name.
+test('match: a part with its own QED number is never matched by name', () => {
+  const d = catalogWith([{ name: 'Something', sku: 'XXX', supplierName: 'Same Name' }]);
+  const m = P.match([{ sku: 'YYY', name: 'Same Name', listCents: 100, per: 'ea' }], d.catalog);
+  assert.strictEqual(m.matched.length, 0);
+  assert.deepStrictEqual(m.unmatched.map((r) => r.sku), ['YYY']);
+});
+
 test('match: a unit that cannot convert is mismatched, with the reason', () => {
   const d = catalogWith([{ name: '#8 THHN', unit: 'ft', sku: '1111' }]);
   const m = P.match([{ sku: '1111', name: 'Southwire #8 THHN', listCents: 9600, per: 'rl' }], d.catalog);
@@ -140,6 +165,19 @@ test('apply: writes lastListCents, supplierName, a missing sku and the date; nev
   assert.strictEqual(gfci.priceCheckedISO, '2026-10-01');
 });
 
+// snapshot/restore live beside apply so the screen can undo a refused save
+// without hand-listing which fields apply touches a second time.
+test('snapshot/restore: apply then restore leaves the parts exactly as they were', () => {
+  const d = catalogWith([{ name: 'GFCI', sku: '3302434', lastListCents: 3500 }]);
+  const before = JSON.parse(JSON.stringify(d.catalog));
+  const m = P.match([{ sku: '3302434', name: 'Pass & Seymour GFCI', listCents: 3908, per: 'ea' }], d.catalog);
+  const snap = P.snapshot(m.matched);
+  P.apply(m.matched, '2026-09-08');
+  assert.notDeepStrictEqual(d.catalog, before, 'apply actually changed something');
+  P.restore(snap);
+  assert.deepStrictEqual(d.catalog, before);
+});
+
 // The sentence the confirm shows. Counts, the big movers, and the leftovers,
 // in the order he cares about.
 test('summaryText reads like a sentence and names what moved a lot', () => {
@@ -158,4 +196,18 @@ test('summaryText reads like a sentence and names what moved a lot', () => {
   assert.match(t, /1 part is counted differently than QED sells it and is skipped: Cord\./);
   assert.strictEqual(P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [] }),
     'None of the rows in that file match a part with a QED part number. Put the part numbers on your parts first.');
+});
+
+// A long price file can move dozens of parts more than 10%; the confirm names
+// a handful and counts the rest, rather than becoming a sentence he cannot
+// read before tapping Update.
+test('summaryText: the confirm names at most five movers', () => {
+  const mover = (name) => ({ part: { name }, newListCents: 200, oldListCents: 100, changePct: 100 });
+  const seven = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map(mover);
+  const t7 = P.summaryText({ matched: seven, unmatched: [], mismatched: [], duplicates: [] });
+  assert.match(t7, /A \(\$1\.00 to \$2\.00\), B \(\$1\.00 to \$2\.00\), C \(\$1\.00 to \$2\.00\), D \(\$1\.00 to \$2\.00\), E \(\$1\.00 to \$2\.00\), and 2 more\./);
+
+  const two = ['A', 'B'].map(mover);
+  const t2 = P.summaryText({ matched: two, unmatched: [], mismatched: [], duplicates: [] });
+  assert.doesNotMatch(t2, /, and \d+ more/);
 });
