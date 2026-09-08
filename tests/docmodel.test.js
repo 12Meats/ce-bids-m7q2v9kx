@@ -559,10 +559,12 @@ test('full level: a lot row prints the quantity, no unit price, and the whole am
 // Summary and Scope & price carry the same total as Full, lot or no lot.
 test('a lot moves the total identically at every level', () => {
   const { d, b } = fixture();
+  const before = D.build(b, d, 'full').totalCents;
   b.areas[0].items[0].lotCents = 99900;
   const totals = ['full', 'summary', 'scope'].map((l) => D.build(b, d, l).totalCents);
   assert.strictEqual(totals[0], totals[1]);
   assert.strictEqual(totals[1], totals[2]);
   const stack = B.costStack(b, d.settings);
   assert.strictEqual(totals[0], B.solve(stack, 'rate', 6500).priceCents);
+  assert.notStrictEqual(totals[0], before, 'the lot changed the total');
 });

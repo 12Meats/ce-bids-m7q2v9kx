@@ -530,7 +530,7 @@ test('materialCost ignores listCents and lotCents; materialPrice reads them', ()
   assert.strictEqual(B.materialCost(b), 500 * 38 + 2 * 1500);           // 22,000
   assert.strictEqual(B.materialPrice(b, 15), 21600 + 2 * 2070);          // 25,740
   const stack = B.costStack({ ...b, misc: { cents: 0 }, labor: { crewIds: [], days: 0, tasks: null },
-    rentals: [], equipment: [], pricing: { rateCents: 8500, cushionPct: 0, markupPct: 15 } }, settings);
+    rentals: [], equipment: [], pricing: { rateCents: 8500, cushionPct: 0, markupPct: 15 } }, settings); // the bid's 15 beats settings' 18 (resolveMarkup)
   assert.strictEqual(stack.materialCost, 22000);
   assert.strictEqual(stack.materialPrice, 25740);
   assert.strictEqual(stack.fixedPrice, 25740);
