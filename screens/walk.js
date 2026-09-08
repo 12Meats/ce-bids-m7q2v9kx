@@ -430,10 +430,17 @@ function renderWalkArea(bid, edit, area, host) {
     // One sentence per card, then a mark. See unpricedWarns in ui.js.
     const warn = unpricedWarns();
     items.forEach((it) => {
+      // The right-hand number stays COST, because the area cost under it is
+      // the total of these lines and a row has to add up to its own total.
+      // What the line bills at, when that is not cost plus markup, is a few
+      // words after the count: "500 ft at $0.38 · bills $216.00 the lot".
+      const bills = itemBillText(it, markup);
       const line = walkRow(
         it.name,
-        itemCountText(it.qty, it.unit, it.costCents),
-        BidMath.fmt(Math.round(it.qty * it.costCents)),
+        itemCountText(it.qty, it.unit, it.costCents) + (bills ? ' · ' + bills : ''),
+        // The line's cost off the same primitive the area total is built on,
+        // rather than a second copy of qty × cost written here.
+        BidMath.fmt(BidMath.materialCost({ areas: [{ items: [it] }] })),
         () => { walkItemMenu = walkItemMenu === it ? null : it; render(); }
       );
       if (walkHighlightItem === it) line.classList.add('walk-row-new');
@@ -567,6 +574,7 @@ function buildItemActions(box, lineEl, area, it) {
         },
       });
     } },
+    { label: 'Bills at', onTap: () => walkAskBillsAt(area, it) },
     { label: 'Delete', quiet: true, onTap: async () => {
       const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
       if (!ok) { render(); return; }
@@ -582,6 +590,68 @@ function buildItemActions(box, lineEl, area, it) {
   // The row is already in the card, so attachedStrip has placed it. This is the
   // belt-and-braces path for a caller that built the row off-screen.
   if (!strip.parentNode) box.appendChild(strip);
+}
+
+// The SECOND price. His supply houses sell him a part under list and the
+// customer is billed at list, then the markup, so a line has two numbers:
+// Cost, which the margin is figured on, and this, which the paper prints.
+// Absent, the markup goes on the cost, which is what every line did before
+// this button existed, and Clear puts a line back there. The catalog
+// remembers it the way it remembers the cost, so the next bid offers both.
+//
+// The caption's link is the door to the lot: one number for the whole line.
+// It CLOSES this keypad (captionAction.closes) because promptMoney will not
+// open over an open panel, and a link that did nothing would read as broken.
+// A line restored from an old file with a per-unit price of its own
+// (priceCents, which no screen writes any more) says so, because that price
+// wins over this one and a Done that moved nothing would look like a bug.
+function walkAskBillsAt(area, it) {
+  const bid = walkBid();
+  const markup = BidMath.resolveMarkup(bid, state.data.settings);
+  const part = walkCatalogPart(it);
+  promptMoney(it.listCents != null ? it.listCents : null, {
+    label: partBillLabel(it.name, it.unit),
+    caption: it.lotCents != null
+      ? 'This line is priced as a lot at ' + moneyText(it.lotCents) + '. The lot wins until you clear it.'
+      : it.priceCents != null
+        ? 'This line has a price of its own at ' + moneyText(it.priceCents) + ', and that wins.'
+        : 'Before the ' + pctText(markup) + ' markup. Clear to bill off the cost instead.',
+    captionAction: { label: 'Price the whole line instead', closes: true, onTap: () => walkAskLot(area, it) },
+    done: (cents) => {
+      const prev = it.listCents;
+      const prevLast = part ? part.lastListCents : undefined;
+      it.listCents = cents;                       // null is "back to the cost"
+      if (part) part.lastListCents = cents;
+      persistOr(() => {
+        it.listCents = prev;
+        if (part) part.lastListCents = prevLast;
+      });
+      walkItemMenu = null;
+      render();
+    },
+  });
+}
+
+// THE LOT. $216.00 for 500 ft of #12 is 43.2 cents a foot, which the cost
+// keypad cannot take, so the line takes one number instead: what the customer
+// pays for all of it, markup included. The paper prints the quantity, a blank
+// unit price and the amount, which is how his own invoices do a roll of wire.
+// Clear takes the line back to per-unit pricing. A lot does not follow the
+// quantity: change the count and the lot is still the lot, and the row says
+// so in words.
+function walkAskLot(area, it) {
+  const per = perUnitText(it.unit).trim();      // 'per foot' / 'each'
+  promptMoney(it.lotCents != null ? it.lotCents : null, {
+    label: partLotLabel(it.name, it.qty, it.unit),
+    caption: 'The whole line, markup included. Nothing ' + per + ' prints. Clear to price it ' + per + ' again.',
+    done: (cents) => {
+      const prev = it.lotCents;
+      it.lotCents = cents;
+      persistOr(() => { it.lotCents = prev; });
+      walkItemMenu = null;
+      render();
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -856,7 +926,11 @@ function walkAskCost(bid, area, part, qty) {
 }
 
 function walkCommitItem(bid, area, part, qty, costCents) {
-  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null };
+  // The second price comes along when the catalog has one for this part: he
+  // put it there on a line once, and the next line starts where that one
+  // ended. A part with none has none, and the line bills off its cost.
+  const listCents = part.lastListCents != null ? part.lastListCents : null;
+  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null, listCents };
   const prevUses = part.uses;
   const prevCost = part.lastCostCents;
   area.items.push(item);
