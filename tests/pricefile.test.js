@@ -42,6 +42,13 @@ test('parse: a row priced at nothing is refused, and a name is required and capp
   assert.strictEqual(ok.rows[0].name.length, 120);
 });
 
+// A row that is not an object at all (null, a number, a string) has to be
+// named by its row number like any other bad row, not thrown past parse's
+// own error handling.
+test('parse: a null row is named by its row number, not thrown', () => {
+  assert.match(P.parse(file([null])).error, /row 1/i);
+});
+
 // A scanned or copy-pasted sku can carry a stray space in the middle, not
 // just at the ends. Stripped the same way Settings strips a typed part
 // number, so the two paths land on the same string and match each other.
@@ -117,6 +124,16 @@ test('match: by sku, then by remembered supplier name; the rest are unmatched or
   assert.deepStrictEqual(m.unmatched.map((r) => r.sku), ['424242'], 'a row for a part he never listed');
   assert.deepStrictEqual(m.duplicates.map((r) => r.sku), ['3302434'], 'the second row for the same sku is reported, not applied');
   assert.deepStrictEqual(m.mismatched, [], 'nothing here has a unit that cannot convert');
+});
+
+// A stored sku can carry a stray space in the middle (typed off a receipt,
+// same as a row's), and the catalog lane strips it the same way the row lane
+// does, so the two still land on each other.
+test('match: a stored sku with an inner space still matches', () => {
+  const d = catalogWith([{ name: 'Conduit', sku: '330 2434' }]);
+  const m = P.match([{ sku: '3302434', name: 'Conduit', listCents: 100, per: 'ea' }], d.catalog);
+  assert.strictEqual(m.matched.length, 1);
+  assert.strictEqual(m.matched[0].part.name, 'Conduit');
 });
 
 // A part's own QED number is not just a hint, it is the ONLY thing that finds
@@ -205,6 +222,16 @@ test('summaryText reads like a sentence and names what moved a lot', () => {
   assert.match(t, /1 part is counted differently than QED sells it and is skipped: Cord\./);
   assert.strictEqual(P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [] }),
     'None of the rows in that file match a part with a QED part number. Put the part numbers on your parts first.');
+});
+
+// A file whose only row matched a part but was skipped for a unit mismatch
+// is not the same as a file with no part numbers on it: the sentence has to
+// say something got skipped for a reason, not blame him for missing numbers
+// he already put on.
+test('summaryText: matched is empty but something else was found', () => {
+  const m = { matched: [], unmatched: [], mismatched: [{ part: { name: 'Cord' }, reason: 'x' }], duplicates: [] };
+  assert.match(P.summaryText(m),
+    /^None of your parts got a new price\. 1 part is counted differently than QED sells it and is skipped: Cord\.$/);
 });
 
 // A long price file can move dozens of parts more than 10%; the confirm names

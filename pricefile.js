@@ -36,8 +36,9 @@
     const rows = [];
     for (let i = 0; i < obj.rows.length; i++) {
       const x = obj.rows[i];
+      if (!x || typeof x !== 'object') return { error: 'Row ' + (i + 1) + ' of the price file is not a price row.', rows: [] };
       const nameBad = typeof x.name !== 'string' || x.name.trim() === '';
-      const bad = !x || typeof x !== 'object' || typeof x.sku !== 'string' || x.sku.trim() === ''
+      const bad = typeof x.sku !== 'string' || x.sku.trim() === ''
         || nameBad || !isCents(x.listCents) || typeof x.per !== 'string' || x.per === '';
       if (bad) return { error: 'Row ' + (i + 1) + ' of the price file is not a price row.', rows: [] };
       // Capped at 120: the same ceiling supplierName wears everywhere else it
@@ -86,7 +87,13 @@
     const byName = new Map();
     parts.forEach((p) => {
       const hasSku = typeof p.sku === 'string' && p.sku.trim() !== '';
-      if (hasSku && !bySku.has(p.sku.trim())) bySku.set(p.sku.trim(), p);
+      // Stripped of ALL whitespace, not just trimmed: a stored sku with an
+      // inner space (typed off a receipt) still matches a row whose sku was
+      // stripped the same way in parse().
+      if (hasSku) {
+        const k = p.sku.replace(/\s+/g, '');
+        if (!bySku.has(k)) bySku.set(k, p);
+      }
       // A part with its own QED number is only ever found by that number: the
       // name lane exists for a part still waiting on one, and letting it also
       // catch a part that already has a different number would let a row for
@@ -160,8 +167,26 @@
 
   // The sentence the confirm shows before anything is written.
   function summaryText(m) {
-    if (!m.matched.length) {
+    // The "put the part numbers on your parts first" sentence only belongs
+    // to a file that matched nothing at all: no matches, no mismatches, no
+    // duplicates. A file whose only row matched a part but was skipped for a
+    // unit mismatch (or landed on a repeat) is not that file, and telling him
+    // to add part numbers he already added is wrong. That case still opens
+    // with an empty-handed sentence, then falls through to the unmatched /
+    // mismatched / duplicates sentences below like any other summary.
+    if (!m.matched.length && !m.mismatched.length && !m.duplicates.length) {
       return 'None of the rows in that file match a part with a QED part number. Put the part numbers on your parts first.';
+    }
+    if (!m.matched.length) {
+      const parts = ['None of your parts got a new price.'];
+      if (m.unmatched.length) parts.push(n(m.unmatched.length, 'row is', 'rows are') + ' not in your catalog and ' + (m.unmatched.length === 1 ? 'is' : 'are') + ' skipped.');
+      if (m.mismatched.length) {
+        parts.push(n(m.mismatched.length, 'part is', 'parts are') + ' counted differently than QED sells '
+          + (m.mismatched.length === 1 ? 'it' : 'them') + ' and ' + (m.mismatched.length === 1 ? 'is' : 'are') + ' skipped: '
+          + namesList(m.mismatched, (x) => x.part.name) + '.');
+      }
+      if (m.duplicates.length) parts.push(n(m.duplicates.length, 'row repeats', 'rows repeat') + ' a part number and ' + (m.duplicates.length === 1 ? 'is' : 'are') + ' skipped.');
+      return parts.join(' ');
     }
     const big = m.matched.filter((x) => x.changePct !== null && Math.abs(x.changePct) > 10);
     const parts = [m.matched.length + ' of your parts matched.'];

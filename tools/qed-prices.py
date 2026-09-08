@@ -17,13 +17,13 @@ Standard library only. Python 3.8+.
 import argparse
 import html
 import json
-import math
 import re
 import sys
 import time
 import urllib.request
 import urllib.error
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 
 DETAIL = 'https://www.qedelectric.com/product/detail/{sku}/p'
 UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '
@@ -68,7 +68,11 @@ def parse_page(text):
     uom = RE_UOM.search(text)
     return {
         'name': clean,
-        'listCents': int(math.floor(normal * 100 + 0.5)),
+        # repr(normal), not normal itself: float multiplication can land a
+        # cent short (1.005 * 100 == 100.49999999999999), which floor-plus-a-
+        # half then rounds the wrong way. Decimal on the printed digits and a
+        # real half-up quantize gets the cent QED's page actually showed.
+        'listCents': int(Decimal(repr(normal)).scaleb(2).quantize(Decimal('1'), rounding=ROUND_HALF_UP)),
         'per': (uom.group(1).lower() if uom else 'ea'),
     }
 
@@ -150,6 +154,15 @@ def selftest():
     # Three decimals, rounded half up: 96.5 cents rounds to 97, not down to 96.
     fraction = SAMPLE.replace('"normalPrice": 39.08', '"normalPrice": 0.965').replace('/ea', '/C')
     assert parse_page(fraction)['listCents'] == 97 and parse_page(fraction)['per'] == 'c'
+    # Half up, on the digits QED actually printed, not on what float
+    # multiplication turns them into: 1.005 * 100 lands a hair under 100.5 in
+    # binary floating point, which floor-plus-a-half rounds down to 100.
+    half = SAMPLE.replace('"normalPrice": 39.08', '"normalPrice": 1.005')
+    assert parse_page(half)['listCents'] == 101, parse_page(half)
+    half2 = SAMPLE.replace('"normalPrice": 39.08', '"normalPrice": 0.575')
+    assert parse_page(half2)['listCents'] == 58, parse_page(half2)
+    whole = SAMPLE.replace('"normalPrice": 39.08', '"normalPrice": 39.08')
+    assert parse_page(whole)['listCents'] == 3908, parse_page(whole)
     print('selftest ok')
 
 
@@ -162,7 +175,7 @@ def main():
     ap.add_argument('--selftest', action='store_true')
     ap.add_argument('--sample-json', action='store_true', help='print the sample page parsed as one price-file row, for the Node contract test')
     a = ap.parse_args()
-    a.pause = max(1.0, a.pause)
+    a.pause = max(2.0, a.pause)
     if a.selftest:
         selftest()
         return

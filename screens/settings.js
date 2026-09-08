@@ -1586,15 +1586,28 @@ function settingsImportPrices(file) {
       // (PriceFile.snapshot), so a refused save puts every part back exactly
       // as it was.
       const snap = PriceFile.snapshot(m.matched);
-      const out = PriceFile.apply(m.matched, parsed.checkedISO);
-      if (!persistOr(() => PriceFile.restore(snap))) { render(); return; }
-      showBanner(out.changed + (out.changed === 1 ? ' price' : ' prices') + ' updated, '
-        + out.unchanged + ' already right.', 'ok');
+      // This leg has its own try/catch, separate from the outer .catch below:
+      // the outer one means "the file would not read", which is never true
+      // here (parse and match already ran clean). A throw in apply or the
+      // write is a WRITE failure on a file that read fine, so it gets its
+      // own banner and its own restore, rather than being told to Adrian as
+      // if his file were the problem.
+      try {
+        const out = PriceFile.apply(m.matched, parsed.checkedISO);
+        if (!persistOr(() => PriceFile.restore(snap))) { render(); return; }
+        showBanner(out.changed + (out.changed === 1 ? ' price' : ' prices') + ' updated, '
+          + out.unchanged + ' already right.', 'ok');
+      } catch (e) {
+        PriceFile.restore(snap);
+        showBanner('Nothing was changed. Try the import again.', 'danger');
+      }
       render();
     });
   }).catch(() => {
-    // A throw inside the success path too (a stale cache read without
-    // PriceFile loaded, say) lands here rather than leaving the button dead.
+    // Only the read/parse leg lands here: file.text() rejecting, or a stale
+    // cache read without PriceFile loaded. The apply leg above never falls
+    // through to this catch, so this banner is never said about a file that
+    // read fine.
     showBanner("Couldn't read that file", 'danger');
     render();
   });
