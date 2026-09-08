@@ -480,6 +480,62 @@ test('itemPrice: unit price override respected, otherwise unitPrice(costCents, m
   assert.deepStrictEqual(B.itemPrice({ qty: 180, costCents: 241, priceCents: null }, 18), { unit: 284, cents: 180 * 284 });
   assert.deepStrictEqual(B.itemPrice({ qty: 1, costCents: 674, priceCents: 700 }, 18), { unit: 700, cents: 700 });
 });
+
+// TWO PRICES. A part has what it cost him and what it bills at, and they are
+// not the same number: his supply houses sell to him under list and the
+// customer is billed at list, then the markup. listCents is the second price;
+// the markup goes on it when it is there and on the cost when it is not, which
+// is what every line did before the field existed.
+test('itemPrice: the markup goes on listCents when the line has one, on costCents when it does not', () => {
+  assert.deepStrictEqual(B.itemPrice({ qty: 2, costCents: 1500, priceCents: null, listCents: 1800 }, 15),
+    { unit: 2070, cents: 4140 });                                        // 1800 × 1.15 = 2070
+  assert.deepStrictEqual(B.itemPrice({ qty: 2, costCents: 1500, priceCents: null, listCents: null }, 15),
+    { unit: 1725, cents: 3450 });                                        // 1500 × 1.15 = 1725
+  assert.deepStrictEqual(B.itemPrice({ qty: 2, costCents: 1500, priceCents: null }, 15),
+    { unit: 1725, cents: 3450 });                                        // absent is the same as null
+  // A per-unit override still wins over the list, as it always won over the cost.
+  assert.deepStrictEqual(B.itemPrice({ qty: 2, costCents: 1500, priceCents: 2000, listCents: 1800 }, 15),
+    { unit: 2000, cents: 4000 });
+});
+
+// THE LOT. $216.00 for 500 ft is 43.2 cents a foot, which whole cents cannot
+// say, so the line carries the one number the customer pays and no unit at
+// all. The paper prints quantity, a blank unit price, and the amount, the way
+// his own invoices do for a roll of wire.
+test('itemPrice: a lot is one number, unit null, and it wins over list and override', () => {
+  assert.deepStrictEqual(B.itemPrice({ qty: 500, costCents: 38, priceCents: null, lotCents: 21600 }, 15),
+    { unit: null, cents: 21600 });
+  assert.deepStrictEqual(B.itemPrice({ qty: 500, costCents: 38, priceCents: 50, listCents: 40, lotCents: 21600 }, 15),
+    { unit: null, cents: 21600 });
+  // A lot of $0 is an unpriced line, not a free one: the unpriced check reads cents > 0.
+  assert.deepStrictEqual(B.itemPrice({ qty: 500, costCents: 38, priceCents: null, lotCents: 0 }, 15),
+    { unit: null, cents: 0 });
+  // null is "no lot": back to per unit.
+  assert.deepStrictEqual(B.itemPrice({ qty: 500, costCents: 38, priceCents: null, lotCents: null }, 15),
+    { unit: 44, cents: 22000 });                                         // 38 × 1.15 = 43.7 → 44
+});
+
+test('itemBillBase: list when there is one, cost when there is not', () => {
+  assert.strictEqual(B.itemBillBase({ costCents: 38, listCents: 40 }), 40);
+  assert.strictEqual(B.itemBillBase({ costCents: 38, listCents: null }), 38);
+  assert.strictEqual(B.itemBillBase({ costCents: 38 }), 38);
+});
+
+// The cost side never reads either field. What the parts cost him is what
+// they cost him, whatever the customer is billed.
+test('materialCost ignores listCents and lotCents; materialPrice reads them', () => {
+  const b = { areas: [{ items: [
+    { qty: 500, costCents: 38, priceCents: null, listCents: 40, lotCents: 21600 },
+    { qty: 2, costCents: 1500, priceCents: null, listCents: 1800 } ] }] };
+  assert.strictEqual(B.materialCost(b), 500 * 38 + 2 * 1500);           // 22,000
+  assert.strictEqual(B.materialPrice(b, 15), 21600 + 2 * 2070);          // 25,740
+  const stack = B.costStack({ ...b, misc: { cents: 0 }, labor: { crewIds: [], days: 0, tasks: null },
+    rentals: [], equipment: [], pricing: { rateCents: 8500, cushionPct: 0, markupPct: 15 } }, settings);
+  assert.strictEqual(stack.materialCost, 22000);
+  assert.strictEqual(stack.materialPrice, 25740);
+  assert.strictEqual(stack.fixedPrice, 25740);
+});
+
 test('rentalPrice: marked-up rental applies unitPrice, unmarked passes cents through', () => {
   assert.strictEqual(B.rentalPrice({ cents: 10000, markup: true }, 30), B.unitPrice(10000, 30));
   assert.strictEqual(B.rentalPrice({ cents: 44500, markup: false }, 18), 44500);

@@ -61,8 +61,24 @@
   function resolveMarkup(bid, settings) {
     return bid.pricing && bid.pricing.markupPct != null ? bid.pricing.markupPct : settings.markupPct;
   }
+
+  // What the markup is put ON. A part has two prices in the world: what it
+  // cost him at his supply house, and the list price the customer is billed
+  // at, and they are not the same number. listCents is the second one. Absent
+  // (every line written before the field existed) the markup goes on the cost,
+  // which is what those lines always did. materialCost never reads this: what
+  // the parts cost him is what they cost him.
+  function itemBillBase(it) { return it.listCents != null ? it.listCents : it.costCents; }
+
+  // A line priced as a LOT carries one number, the whole line's sell price,
+  // and no unit at all. $216.00 for 500 ft is 43.2 cents a foot, which whole
+  // cents cannot say; his own invoices print the quantity, a blank unit price
+  // and the amount for exactly that reason. unit is null so the paper prints
+  // the blank rather than a rounded lie. The lot wins over the per-unit
+  // override, which wins over markup on the base, as it always did.
   function itemPrice(it, markupPct) {
-    const unit = it.priceCents != null ? it.priceCents : unitPrice(it.costCents, markupPct);
+    if (it.lotCents != null) return { unit: null, cents: it.lotCents };
+    const unit = it.priceCents != null ? it.priceCents : unitPrice(itemBillBase(it), markupPct);
     return { unit, cents: r(it.qty * unit) };
   }
   function rentalPrice(x, markupPct) { return x.markup ? unitPrice(x.cents, markupPct) : x.cents; }
@@ -637,6 +653,6 @@
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,
-    resolveMarkup, itemPrice, rentalPrice, equipmentLine, changeOrderIsEmpty,
+    resolveMarkup, itemBillBase, itemPrice, rentalPrice, equipmentLine, changeOrderIsEmpty,
   };
 });
