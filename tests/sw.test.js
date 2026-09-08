@@ -156,6 +156,21 @@ test('catalog.js loads before storage.js', () => {
   assert.ok(catalog < storage, 'catalog.js must be loaded before storage.js');
 });
 
+// invmath.js reads both Docmodel (a project invoice's amount) and Dates (age,
+// range text) at load time via require, so both have to exist first. On the
+// phone that means both script tags have to run first too.
+test('docmodel.js and dates.js load before invmath.js', () => {
+  const at = (src) => HTML.indexOf('<script src="' + src + '"');
+  const docmodel = at('docmodel.js');
+  const dates = at('dates.js');
+  const invmath = at('invmath.js');
+  assert.notStrictEqual(docmodel, -1, 'index.html loads docmodel.js');
+  assert.notStrictEqual(dates, -1, 'index.html loads dates.js');
+  assert.notStrictEqual(invmath, -1, 'index.html loads invmath.js');
+  assert.ok(docmodel < invmath, 'docmodel.js must be loaded before invmath.js');
+  assert.ok(dates < invmath, 'dates.js must be loaded before invmath.js');
+});
+
 test('APP_BUILT is an ISO date, bumped with the version', () => {
   // The Settings line reads "CE Bids · v2.2 · built Sep 5, 2026", and the date
   // half comes from here. Dates.fmtDate refuses anything that is not

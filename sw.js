@@ -16,6 +16,7 @@ const ASSETS = [
   'docmodel.js',
   'keypad.js',
   'dates.js',
+  'invmath.js',
   'catalog.js',
   'vendor/jspdf.umd.min.js',
   'vendor/jspdf.plugin.autotable.min.js',
