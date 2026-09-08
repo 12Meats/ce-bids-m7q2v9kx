@@ -1038,3 +1038,127 @@ test('validateImport: supplierName on a line is an optional string, capped at 12
   assert.ok(ok((d) => { item(d).supplierName = 'x'.repeat(120); }), 'a 120-character supplierName loads');
   assert.ok(!ok((d) => { item(d).supplierName = 'x'.repeat(121); }), 'a 121-character supplierName is refused');
 });
+
+// ---------------------------------------------------------------------------
+// INVOICES ON DISK
+// ---------------------------------------------------------------------------
+// Every key is optional: a v2.4 backup has none of them and loads; a v3 backup
+// restores into v2.4 with the arrays ignored. The document version stays 1.
+
+test('emptyData carries empty projects, logs and invoices, and the two invoice settings', () => {
+  const d = S.emptyData();
+  assert.deepStrictEqual(d.projects, []);
+  assert.deepStrictEqual(d.logs, []);
+  assert.deepStrictEqual(d.invoices, []);
+  assert.strictEqual(d.settings.nextInvoiceNumber, 1);
+  assert.strictEqual(d.settings.invoiceTerms, 'Upon receipt');
+  assert.strictEqual(d.version, 1);
+});
+
+test('a file with none of the invoice keys still loads, and the arrays read as empty', () => {
+  const { d } = buildFullData();
+  delete d.projects; delete d.logs; delete d.invoices;
+  delete d.settings.nextInvoiceNumber; delete d.settings.invoiceTerms;
+  const back = S.validateImport(JSON.stringify(d));
+  assert.ok(back, 'a pre-v3 file loads');
+  assert.deepStrictEqual(back.projects || [], []);
+  assert.deepStrictEqual(back.invoices || [], []);
+});
+
+function invoiceFixture() {
+  const { d, b } = buildFullData();
+  const cust = d.customers[0];
+  cust.attn = 'Kellen'; cust.address = '2008 S Hardy Drive\nTempe, AZ 85282'; cust.rateCents = 8500; cust.po = '2526-4213';
+  const proj = S.newProject(d, cust.id, 'UF Project', '2026-08-24');
+  const crewId = d.settings.crew[0].id;
+  const log = S.newLogEntry(d, { customerId: cust.id, projectId: proj.id, dateISO: '2026-08-24' });
+  log.crew.push({ crewId, hours: 8 });
+  log.items.push({ catalogId: null, name: '#12 wire', unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 21600 });
+  const inv = {
+    id: 'inv1', number: 166818, kind: 'tm', customerId: cust.id, projectTitle: 'UF Project', dateISO: '2026-08-28',
+    serviceFrom: '2026-08-24', serviceTo: '2026-08-24', po: '2526-4213', terms: 'Upon receipt', rateCents: 8500, markupPct: 15,
+    labor: [{ crewId, name: 'Shawn', loggedHours: 8, billedHours: 8 }],
+    items: [{ catalogId: null, name: '#12 wire', unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 21600 }],
+    rentals: [], equipment: [], logIds: [log.id], bidId: null, partCents: null, notes: [],
+    status: 'sent', sentAt: '2026-08-28', savedToFilesAt: null, payments: [{ dateISO: '2026-09-15', cents: 50000 }], createdAt: 1,
+  };
+  log.invoiceId = inv.id;
+  d.invoices.push(inv);
+  return { d, b, cust, proj, log, inv, crewId };
+}
+
+test('validateImport accepts the invoice shapes and refuses the wrong ones', () => {
+  const ok = (mutate) => { const f = invoiceFixture(); mutate(f); return S.validateImport(JSON.stringify(f.d)) !== null; };
+  assert.ok(ok(() => {}), 'the fixture loads');
+  // customers
+  assert.ok(!ok((f) => { f.cust.rateCents = 85.5; }), 'a rate in fractional cents');
+  assert.ok(!ok((f) => { f.cust.address = 'x'.repeat(201); }), 'an address longer than 200');
+  assert.ok(!ok((f) => { f.cust.hidden = 'yes'; }), 'hidden must be a boolean');
+  assert.ok(ok((f) => { f.cust.hidden = true; }));
+  // projects
+  assert.ok(!ok((f) => { f.proj.customerId = 'nobody'; }), 'a project needs a real customer');
+  assert.ok(!ok((f) => { f.proj.title = ''; }), 'a project needs a title');
+  assert.ok(!ok((f) => { f.proj.title = 'x'.repeat(81); }), 'a title over 80');
+  assert.ok(!ok((f) => { f.d.projects.push({ ...f.proj }); }), 'duplicate project id');
+  // logs
+  assert.ok(!ok((f) => { f.log.crew[0].hours = 0; }), 'hours must be more than zero');
+  assert.ok(!ok((f) => { f.log.crew[0].crewId = 'ghost'; }), 'a crew id must exist');
+  assert.ok(!ok((f) => { f.log.projectId = 'nope'; }), 'a project id must exist');
+  assert.ok(!ok((f) => { f.log.invoiceId = 'nope'; }), 'an invoice id must exist');
+  assert.ok(ok((f) => { f.log.invoiceId = null; f.inv.logIds = []; }));
+  assert.ok(!ok((f) => { f.log.items[0].costCents = -1; }), 'log items are area items');
+  assert.ok(!ok((f) => { f.log.notes = 'x'.repeat(S.AREA_NOTES_MAX + 1); }), 'notes are capped like area notes');
+  // invoices
+  assert.ok(!ok((f) => { f.inv.number = 0; }), 'a number is 1 or more');
+  assert.ok(ok((f) => { f.inv.number = null; f.inv.status = 'draft'; f.inv.sentAt = null; f.inv.dateISO = null; f.inv.payments = []; }), 'a draft has no number and no date');
+  assert.ok(!ok((f) => { f.inv.kind = 'x'; }));
+  assert.ok(!ok((f) => { f.inv.customerId = 'nobody'; }));
+  assert.ok(!ok((f) => { f.inv.serviceFrom = '8/24/26'; }));
+  assert.ok(!ok((f) => { f.inv.labor[0].billedHours = -1; }), 'billed hours are 0 or more');
+  assert.ok(ok((f) => { f.inv.labor[0].billedHours = 0; }), 'zero billed hours is allowed (he chose not to bill it)');
+  assert.ok(!ok((f) => { f.inv.payments[0].cents = 0; }), 'a payment is more than nothing');
+  assert.ok(!ok((f) => { f.inv.logIds = ['ghost']; }), 'logIds must exist');
+  assert.ok(!ok((f) => { f.inv.bidId = 'ghost'; }), 'bidId must exist when set');
+  assert.ok(ok((f) => { f.inv.kind = 'project'; f.inv.bidId = f.b.id; f.inv.partCents = 100000; f.inv.logIds = []; f.log.invoiceId = null; }));
+  assert.ok(!ok((f) => { f.d.invoices.push({ ...f.inv }); }), 'duplicate invoice id');
+  assert.ok(!ok((f) => { f.d.invoices.push({ ...f.inv, id: 'inv2', logIds: [] }); }), 'two invoices with the same number');
+});
+
+test('newProject, newLogEntry: the shapes the screens write', () => {
+  const d = S.emptyData();
+  const c = S.findOrCreateCustomer(d, 'UDA');
+  const p = S.newProject(d, c.id, '  UF Project ', '2026-09-01');
+  assert.deepStrictEqual(p, { id: p.id, customerId: c.id, title: 'UF Project', done: false, createdISO: '2026-09-01' });
+  assert.strictEqual(d.projects[0], p);
+  assert.strictEqual(S.newProject(d, c.id, '   ', '2026-09-01'), null, 'no title, no project');
+  const e = S.newLogEntry(d, { customerId: c.id, projectId: p.id, dateISO: '2026-09-02' });
+  assert.deepStrictEqual(Object.keys(e).sort(), ['createdAt', 'crew', 'customerId', 'dateISO', 'equipment', 'id', 'invoiceId', 'items', 'notes', 'projectId', 'rentals'].sort());
+  assert.strictEqual(e.invoiceId, null);
+  assert.strictEqual(d.logs[0], e);
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+test('takeInvoiceNumber hands out the next number and advances the counter; bids keep their own', () => {
+  const d = S.emptyData();
+  d.settings.nextInvoiceNumber = 166818;
+  assert.strictEqual(S.takeInvoiceNumber(d), 166818);
+  assert.strictEqual(S.takeInvoiceNumber(d), 166819);
+  assert.strictEqual(d.settings.nextInvoiceNumber, 166820);
+  assert.strictEqual(d.settings.nextNumber, 1, 'the bid counter did not move');
+});
+
+test('customerInUse counts bids, projects, logs and invoices that name the customer', () => {
+  const f = invoiceFixture();
+  assert.strictEqual(S.customerInUse(f.d, f.cust.id), 4, 'one bid, one project, one log, one invoice');
+  const other = S.findOrCreateCustomer(f.d, 'Schreiber');
+  assert.strictEqual(S.customerInUse(f.d, other.id), 0);
+});
+
+test('openProjects lists a customer\'s projects that are not done, newest first', () => {
+  const d = S.emptyData();
+  const c = S.findOrCreateCustomer(d, 'UDA');
+  const a = S.newProject(d, c.id, 'Boiler room', '2026-08-01');
+  const b = S.newProject(d, c.id, 'UF Project', '2026-08-20');
+  const done = S.newProject(d, c.id, 'Old job', '2026-07-01'); done.done = true;
+  assert.deepStrictEqual(S.openProjects(d, c.id).map((p) => p.title), ['UF Project', 'Boiler room']);
+});

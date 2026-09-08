@@ -387,6 +387,9 @@
         // him to set it to his real next invoice number on day one, and the
         // counter follows whatever he types from there.
         nextNumber: 1, backupEmail: 'adriancantu95@gmail.com',
+        // A separate counter, seeded 1 like the bid counter and for the same
+        // reason: set it to his real next invoice number on day one.
+        nextInvoiceNumber: 1, invoiceTerms: 'Upon receipt',
         // Two different questions. lastBackupAt is the day a backup file last
         // left the phone and it is what the home band nags off.
         // pdfsSentThroughMs is the archive stamp of the newest PROPOSAL PDF
@@ -396,7 +399,7 @@
         // document version does not have to move.
         lastBackupAt: null, pdfsSentThroughMs: null },
       catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null })),
-      customers: [], bids: [] };
+      customers: [], bids: [], projects: [], logs: [], invoices: [] };
   }
 
   // -------------------------------------------------------------------------
@@ -422,6 +425,10 @@
   const JOB_TYPE = ['service', 'project'];
   const LOST_REASON = ['price', 'timing', 'other', 'silence'];
   const CLAUSE_GROUP = ['always', 'gc', 'trench', 'site', 'hazmat', 'subs'];
+  const INVOICE_KIND = ['tm', 'project'];
+  const INVOICE_STATUS = ['draft', 'sent', 'paid'];
+  const PROJECT_TITLE_MAX = 80;
+  const ADDRESS_MAX = 200;
   // What a did-you-forget row turns into when he taps "Add it": a rental line
   // or a $0 item in one of his areas.
   const FORGET_KIND = ['rental', 'item'];
@@ -504,6 +511,8 @@
       }
       if (!isObj(s.cushionPct) || !isPct(s.cushionPct.service) || !isPct(s.cushionPct.project)) return null;
       if (!isIn(s.taxMode, TAX_MODE)) return null;
+      if (s.nextInvoiceNumber !== undefined && !(isIntGte0(s.nextInvoiceNumber) && s.nextInvoiceNumber >= 1)) return null;
+      if (s.invoiceTerms !== undefined && !isStr(s.invoiceTerms)) return null;
 
       const co = s.company;
       if (!isObj(co)) return null;
@@ -579,6 +588,18 @@
         customerIds.add(c.id);
         if (!isStr(c.name) || !isStr(c.contact) || !isStr(c.email) || !isStr(c.phone)) return null;
         if (!isIn(c.defaultDetail, DETAIL)) return null;
+        // OPTIONAL, all six, added for invoices. Absent on every file before
+        // v3. attn and address print in Bill To; rateCents is the hourly rate
+        // THIS customer is billed; po is the current PO number he snapshots
+        // onto each invoice; terms overrides the default; hidden follows the
+        // crew/equipment rule (a customer on a bid or an invoice is hidden,
+        // never deleted).
+        if (c.attn !== undefined && c.attn !== null && !isStr(c.attn)) return null;
+        if (c.address !== undefined && c.address !== null && !(isStr(c.address) && c.address.length <= ADDRESS_MAX)) return null;
+        if (c.rateCents !== undefined && c.rateCents !== null && !isIntGte0(c.rateCents)) return null;
+        if (c.po !== undefined && c.po !== null && !isStr(c.po)) return null;
+        if (c.terms !== undefined && c.terms !== null && !isStr(c.terms)) return null;
+        if (c.hidden !== undefined && !isBool(c.hidden)) return null;
       }
 
       function validAreaItem(it) {
@@ -756,6 +777,100 @@
         }
       }
 
+      // -----------------------------------------------------------------
+      // INVOICES (v3). Three arrays, each OPTIONAL: a v2.4 file has none of
+      // them and loads; absent reads as empty everywhere. Validated after the
+      // bids so a project invoice can point at a bid id.
+      // -----------------------------------------------------------------
+      if (d.projects !== undefined) {
+        if (!isArr(d.projects)) return null;
+      }
+      const projectIds = new Set();
+      for (const p of (d.projects || [])) {
+        if (!isObj(p) || !isStr(p.id) || p.id === '' || projectIds.has(p.id)) return null;
+        projectIds.add(p.id);
+        if (!customerIds.has(p.customerId)) return null;
+        if (!isStr(p.title) || p.title.trim() === '' || p.title.length > PROJECT_TITLE_MAX) return null;
+        if (!isBool(p.done) || !isISO(p.createdISO)) return null;
+      }
+
+      if (d.invoices !== undefined && !isArr(d.invoices)) return null;
+      const invoiceIds = new Set();
+      const invoiceNumbers = new Set();
+      for (const inv of (d.invoices || [])) {
+        if (!isObj(inv) || !isStr(inv.id) || inv.id === '' || invoiceIds.has(inv.id)) return null;
+        invoiceIds.add(inv.id);
+        // A draft has no number; a numbered invoice's number is unique forever.
+        if (inv.number !== null) {
+          if (!(isIntGte0(inv.number) && inv.number >= 1) || invoiceNumbers.has(inv.number)) return null;
+          invoiceNumbers.add(inv.number);
+        }
+        if (!isIn(inv.kind, INVOICE_KIND)) return null;
+        if (!customerIds.has(inv.customerId)) return null;
+        if (!isStr(inv.projectTitle)) return null;
+        if (inv.dateISO !== null && !isISO(inv.dateISO)) return null;
+        if (!isISO(inv.serviceFrom) || !isISO(inv.serviceTo)) return null;
+        if (!isStr(inv.po) || !isStr(inv.terms)) return null;
+        if (!isIntGte0(inv.rateCents) || !isFiniteGte0(inv.markupPct)) return null;
+        if (!isArr(inv.labor)) return null;
+        for (const l of inv.labor) {
+          if (!isObj(l) || !isStr(l.crewId) || !isStr(l.name)) return null;
+          if (!isFiniteGte0(l.loggedHours) || !isFiniteGte0(l.billedHours)) return null;
+        }
+        if (!validAreas([{ id: 'inv-' + inv.id, name: '', items: inv.items, photoIds: [] }])) return null;
+        if (!isArr(inv.rentals)) return null;
+        for (const r of inv.rentals) {
+          if (!isObj(r) || !isStr(r.name) || !isFiniteGte0(r.days) || !isIntGte0(r.cents) || !isBool(r.markup)) return null;
+        }
+        if (!isArr(inv.equipment)) return null;
+        for (const e of inv.equipment) {
+          if (!isObj(e)) return null;
+          if (e.equipmentId !== null && !equipIds.has(e.equipmentId)) return null;
+          if (!isStr(e.name) || !isFiniteGte0(e.days) || !isIntGte0(e.dayCents)) return null;
+        }
+        if (!strArr(inv.logIds)) return null;   // existence is checked after the logs loop
+        if (inv.bidId !== null && !bidIds.has(inv.bidId)) return null;
+        if (inv.partCents !== null && !isIntGte0(inv.partCents)) return null;
+        if (!strArr(inv.notes)) return null;
+        if (!isIn(inv.status, INVOICE_STATUS)) return null;
+        if (inv.sentAt !== null && !isISO(inv.sentAt)) return null;
+        if (inv.savedToFilesAt !== null && !isISO(inv.savedToFilesAt)) return null;
+        if (!isArr(inv.payments)) return null;
+        for (const pay of inv.payments) {
+          if (!isObj(pay) || !isISO(pay.dateISO) || !(isIntGte0(pay.cents) && pay.cents > 0)) return null;
+        }
+        if (!isIntGte0(inv.createdAt)) return null;
+      }
+
+      if (d.logs !== undefined && !isArr(d.logs)) return null;
+      const logIds = new Set();
+      for (const e of (d.logs || [])) {
+        if (!isObj(e) || !isStr(e.id) || e.id === '' || logIds.has(e.id)) return null;
+        logIds.add(e.id);
+        if (!isISO(e.dateISO) || !customerIds.has(e.customerId) || !projectIds.has(e.projectId)) return null;
+        if (!isArr(e.crew)) return null;
+        for (const m of e.crew) {
+          if (!isObj(m) || !crewIds.has(m.crewId) || !isFiniteGt0(m.hours)) return null;
+        }
+        if (!validAreas([{ id: 'log-' + e.id, name: '', items: e.items, photoIds: [] }])) return null;
+        if (!isArr(e.rentals)) return null;
+        for (const r of e.rentals) {
+          if (!isObj(r) || !isStr(r.name) || !isFiniteGte0(r.days) || !isIntGte0(r.cents) || !isBool(r.markup)) return null;
+        }
+        if (!isArr(e.equipment)) return null;
+        for (const q of e.equipment) {
+          if (!isObj(q)) return null;
+          if (q.equipmentId !== null && !equipIds.has(q.equipmentId)) return null;
+          if (!isStr(q.name) || !isFiniteGte0(q.days) || !isIntGte0(q.dayCents)) return null;
+        }
+        if (!isStr(e.notes) || e.notes.length > AREA_NOTES_MAX) return null;
+        if (e.invoiceId !== null && !invoiceIds.has(e.invoiceId)) return null;
+        if (!isIntGte0(e.createdAt)) return null;
+      }
+      for (const inv of (d.invoices || [])) {
+        if (!inv.logIds.every((id) => logIds.has(id))) return null;
+      }
+
       return d;
     } catch { return null; }
   }
@@ -927,6 +1042,38 @@
   // bid screen, so the shape the screens write and the shape validateImport
   // checks are one definition.
   function newJob() { return { weeks: [], surprises: [], changeOrders: [], completedAt: null }; }
+
+  // A job title he picks from chips so "UF project" and "UF Project" cannot
+  // split into two invoices. Stays offered under its customer until done.
+  function newProject(d, customerId, title, createdISO) {
+    const t = String(title == null ? '' : title).replace(/\s+/g, ' ').trim().slice(0, PROJECT_TITLE_MAX);
+    if (!t) return null;
+    const p = { id: uid(), customerId, title: t, done: false, createdISO: createdISO || todayISO() };
+    if (!d.projects) d.projects = [];
+    d.projects.push(p);
+    return p;
+  }
+  function openProjects(d, customerId) {
+    return (d.projects || []).filter((p) => p.customerId === customerId && !p.done)
+      .sort((a, b) => (a.createdISO < b.createdISO ? 1 : a.createdISO > b.createdISO ? -1 : 0));
+  }
+  // One visit, at the truck. Nothing priced yet; the picker fills items.
+  function newLogEntry(d, { customerId, projectId, dateISO }) {
+    const e = { id: uid(), dateISO: dateISO || todayISO(), customerId, projectId,
+      crew: [], items: [], rentals: [], equipment: [], notes: '', invoiceId: null, createdAt: Date.now() };
+    if (!d.logs) d.logs = [];
+    d.logs.push(e);
+    return e;
+  }
+  // The invoice counter, separate from the bid counter. Seeded 1 for the same
+  // reason nextNumber is: a plain starting point he replaces on day one.
+  function takeInvoiceNumber(d) {
+    const s = d.settings;
+    if (!(Number.isInteger(s.nextInvoiceNumber) && s.nextInvoiceNumber >= 1)) s.nextInvoiceNumber = 1;
+    const n = s.nextInvoiceNumber;
+    s.nextInvoiceNumber = n + 1;
+    return n;
+  }
 
   // Has anything been logged against this job yet? The bid screen asks before
   // it offers to undo a Won: a mis-tap costs one tap to put back, but a job
@@ -1213,6 +1360,14 @@
     return bidsReferencing(d, (b) => (b.clauseIds || []).indexOf(id) !== -1);
   }
 
+  // A customer is named by bids, projects, log entries and invoices; any of
+  // them means Hide, not Delete. Counts records, so the caption can say the
+  // number.
+  function customerInUse(d, id) {
+    const n = (arr, key) => (arr || []).filter((x) => x && x[key] === id).length;
+    return n(d.bids, 'customerId') + n(d.projects, 'customerId') + n(d.logs, 'customerId') + n(d.invoices, 'customerId');
+  }
+
   // costCents is what he paid; listCents, when the caller has one, is what the
   // line bills at. undefined leaves that memory alone (a caller that never
   // asked), null clears it (he took it off the line), a number sets it.
@@ -1230,5 +1385,6 @@
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, noteCrewWage, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
     standardCatalogNames, standardEquipmentNames,
-    recordCatalogUse, numberInUse };
+    recordCatalogUse, numberInUse,
+    newProject, openProjects, newLogEntry, takeInvoiceNumber, customerInUse, INVOICE_KIND, INVOICE_STATUS, PROJECT_TITLE_MAX, ADDRESS_MAX };
 });
