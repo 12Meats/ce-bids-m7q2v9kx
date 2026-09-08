@@ -1540,11 +1540,59 @@ function buildSetCatalogTools(hiddenCount) {
     (dd) => Store.addStandardCatalog(dd), state.data.catalog,
     (before) => { state.data.catalog = before; },
     () => settingsOfferNearDuplicates('parts', state.data.catalog, Store.standardCatalogNames()));
+
+  // The second native input in the app, for the same reason as the backup
+  // picker: there is no other way to hand the phone a file. No accept filter,
+  // for the same reason too (iOS Files calls a mailed JSON public.data).
+  // PriceFile.parse is the gate.
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.id = 'priceFile';
+  picker.hidden = true;
+  picker.addEventListener('change', () => {
+    const f = picker.files && picker.files[0];
+    if (f) settingsImportPrices(f);
+  });
+  box.appendChild(picker);
+  box.appendChild(textButton('Import prices', 'link-btn', () => picker.click()));
+
   settingHiddenToggle(box, 'catalog', hiddenCount);
   box.appendChild(caption('New parts get added from the walk too. Hide takes one off the walk. '
     + 'Delete is only offered when no bid uses it. "Add the standard parts" adds the ones you are '
-    + 'missing and leaves everything you have alone.'));
+    + 'missing and leaves everything you have alone. "Import prices" reads the price file Adrian makes '
+    + 'from QED and updates what each part bills at. Nothing on a bid you already wrote moves.'));
   return box;
+}
+
+// IMPORT PRICES. Read the file, match it to his parts, say what would change,
+// and only then write. The confirm carries the whole summary because it is
+// the one moment he can still say no: what moved a lot, what was skipped and
+// why. Cost is never written (his own number), and no bid is touched (bids
+// are history; the catalog is memory).
+function settingsImportPrices(file) {
+  const read = file && typeof file.text === 'function' ? file.text() : Promise.reject(new Error('no text()'));
+  read.then((text) => {
+    const parsed = PriceFile.parse(text);
+    if (parsed.error) { showBanner(parsed.error, 'danger'); render(); return; }
+    const m = PriceFile.match(parsed.rows, state.data.catalog);
+    const summary = PriceFile.summaryText(m);
+    if (!m.matched.length) { showBanner(summary); render(); return; }
+    return confirmPanel(summary + ' Update the bill-at prices?', { ok: 'Update' }).then((ok) => {
+      if (!ok) { render(); return; }
+      // What apply is about to touch, remembered first by the module itself
+      // (PriceFile.snapshot), so a refused save puts every part back exactly
+      // as it was.
+      const snap = PriceFile.snapshot(m.matched);
+      const out = PriceFile.apply(m.matched, parsed.checkedISO);
+      if (!persistOr(() => PriceFile.restore(snap))) { render(); return; }
+      showBanner(out.changed + (out.changed === 1 ? ' price' : ' prices') + ' updated, '
+        + out.unchanged + ' already right.', 'ok');
+      render();
+    });
+  }, () => {
+    showBanner("Couldn't read that file", 'danger');
+    render();
+  });
 }
 
 // searching: the row says which drawer it came out of. A search crosses all
@@ -1560,7 +1608,7 @@ function buildSetCatalogRow(box, p, searching) {
   // counted — was the half at the end.
   const line = settingRow(box, p.name || 'Part', unit,
     () => settingsToggleMenu(key), null,
-    { strip: true, sub: searching ? catalogCategoryLabel(p.category) : null });
+    { strip: true, sub: settingsCatalogSub(p, searching) });
   if (p.hidden) line.classList.add('set-hidden');
 
   if (!settingsMenuOpen(key)) return;
@@ -1588,11 +1636,41 @@ function buildSetCatalogRow(box, p, searching) {
         settingsSaveAndRender(() => { p.name = prev; });
       });
     }],
+    // QED's number for this part. Typed once, off a receipt or the product
+    // page, and from then on a price file finds the part by it. Clear takes
+    // it off. Nothing about the price moves here; that is the import's job.
+    ['QED part #', '', () => {
+      settingsPromptText(p.sku || '', 'QED part number for ' + (p.name || 'this part'), '3302434', line,
+        { caption: 'On the receipt, or under the product on qedelectric.com. Leave it blank to take it off.' },
+        (text) => {
+          const prev = p.sku;
+          const next = (text || '').replace(/\s+/g, '');
+          if (next !== '') {
+            const clash = state.data.catalog.find((q) => q !== p && q.sku === next);
+            if (clash) { showBanner('That number is already on ' + (clash.name || 'another part') + '.'); render(); return; }
+          }
+          p.sku = next === '' ? null : next;
+          settingsSaveAndRender(() => { p.sku = prev; });
+        });
+    }],
     // Neither an edit nor a delete, so neither a button in the grid nor the
     // muted line at the bottom: a navy link of its own, which opens the search
     // in another tab and leaves this screen exactly where it was.
-    ['Check price', 'link', () => openPriceSearch(setS(), p.name)],
+    ['Check price', 'link', () => openPriceSearch(setS(), p.sku || p.name)],
   ], p, Store.catalogInUse(state.data, p.id), state.data.catalog, p.name || 'this part', units);
+}
+
+// The muted line under a part's name: the drawer when he is searching across
+// all of them, and the supplier's handle when the part has one. "QED 3302434 ·
+// $39.08 list, Sep 8" says the import reached this part and when.
+function settingsCatalogSub(p, searching) {
+  const bits = [];
+  if (searching) bits.push(catalogCategoryLabel(p.category));
+  if (p.sku) bits.push('QED ' + p.sku);
+  if (Number.isInteger(p.lastListCents) && p.priceCheckedISO) {
+    bits.push(moneyText(p.lastListCents) + ' list, ' + fmtDate(p.priceCheckedISO));
+  }
+  return bits.length ? bits.join(' · ') : null;
 }
 
 // + NEW PART: the name, then the drawer, then how it is counted. Three panels
