@@ -59,7 +59,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'ui.js'), 'utf8'), sandbox, { fi
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'price.js'), 'utf8'), sandbox,
   { filename: 'price.js' });
 
-const { priceSettingsMoves, priceUseSettings, priceUseSettingsText, priceBidCrewIds, priceApply } = sandbox;
+const { priceSettingsMoves, priceUseSettings, priceUseSettingsText, priceBidCrewIds, priceApply,
+  priceItemReadout } = sandbox;
 
 // The one call that would write to real storage if a screen ever reached past
 // persistOr. Counted, never performed: node has no localStorage.
@@ -271,4 +272,14 @@ test('Done with nothing typed, on any of the three handles, writes nothing at al
   assert.notStrictEqual(bid.pricing.rateCents, solved.rateCents);
   assert.strictEqual(bid.pricing.touched, true);
   assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+// The readout's material rows: what a line cost him, then what it prints at.
+// A lot has no unit, so the row says the whole amount and calls it a lot
+// rather than printing a dash or falling over on a null.
+test('priceItemReadout: cost then the unit it prints at; a lot says the lot', () => {
+  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null }, 15), '$0.38 → $0.44');
+  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, listCents: 40 }, 15), '$0.38 → $0.46');
+  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, lotCents: 21600 }, 15),
+    '$0.38 → $216.00 the lot');
 });

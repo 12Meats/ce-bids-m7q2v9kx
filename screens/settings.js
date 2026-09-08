@@ -743,7 +743,7 @@ function buildSetRates() {
     'What a new bid aims for. New bids only.');
 
   settingsPctRow(box, s, 'markupPct', 'Material markup',
-    'What you add to what the material cost you. New bids only.');
+    'What you add on top of what a part bills at: its list price when the line has one, what it cost you when it does not. New bids only.');
 
   settingsPctRow(box, s, 'consumablesPct', 'Consumables',
     'Tape, wire nuts, straps, bits, blades. A share of material cost. New bids only.');

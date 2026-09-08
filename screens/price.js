@@ -1264,6 +1264,15 @@ function priceTopItems(bid) {
   return rows.slice(0, PRICE_TOP_ITEMS);
 }
 
+// One material line on the readout: what it cost him, then what it prints
+// at. A lot has no unit price, so the row gives the whole amount and says so;
+// moneyText(null) would print a dash where a number belongs.
+function priceItemReadout(it, markupPct) {
+  const p = BidMath.itemPrice(it, markupPct);
+  const cost = moneyText(it.costCents);
+  return p.unit == null ? cost + ' → ' + moneyText(p.cents) + ' the lot' : cost + ' → ' + moneyText(p.unit);
+}
+
 function buildReadouts(bid, stack, solved, markup) {
   const s = priceSettings();
   const box = card();
@@ -1291,7 +1300,7 @@ function buildReadouts(bid, stack, solved, markup) {
   if (top.length) {
     box.appendChild(caption('What your biggest material lines print at, each:'));
     top.forEach(({ it }) => {
-      box.appendChild(row(it.name, moneyText(it.costCents) + ' → ' + moneyText(BidMath.itemPrice(it, markup).unit)));
+      box.appendChild(row(it.name, priceItemReadout(it, markup)));
     });
   }
 
