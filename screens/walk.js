@@ -438,9 +438,9 @@ function renderWalkArea(bid, edit, area, host) {
       const line = walkRow(
         it.name,
         itemCountText(it.qty, it.unit, it.costCents) + (bills ? ' · ' + bills : ''),
-        // The line's cost off the same primitive the area total is built on,
+        // The line's cost off the same helper the area total uses,
         // rather than a second copy of qty × cost written here.
-        BidMath.fmt(BidMath.materialCost({ areas: [{ items: [it] }] })),
+        BidMath.fmt(walkAreaCost({ items: [it] })),
         () => { walkItemMenu = walkItemMenu === it ? null : it; render(); }
       );
       if (walkHighlightItem === it) line.classList.add('walk-row-new');
@@ -574,7 +574,7 @@ function buildItemActions(box, lineEl, area, it) {
         },
       });
     } },
-    { label: 'Bills at', onTap: () => walkAskBillsAt(area, it) },
+    { label: 'Bills at', onTap: () => walkAskBillsAt(it) },
     { label: 'Delete', quiet: true, onTap: async () => {
       const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
       if (!ok) { render(); return; }
@@ -605,7 +605,7 @@ function buildItemActions(box, lineEl, area, it) {
 // A line restored from an old file with a per-unit price of its own
 // (priceCents, which no screen writes any more) says so, because that price
 // wins over this one and a Done that moved nothing would look like a bug.
-function walkAskBillsAt(area, it) {
+function walkAskBillsAt(it) {
   const bid = walkBid();
   const markup = BidMath.resolveMarkup(bid, state.data.settings);
   const part = walkCatalogPart(it);
@@ -616,7 +616,11 @@ function walkAskBillsAt(area, it) {
       : it.priceCents != null
         ? 'This line has a price of its own at ' + moneyText(it.priceCents) + ', and that wins.'
         : 'Before the ' + pctText(markup) + ' markup. Clear to bill off the cost instead.',
-    captionAction: { label: 'Price the whole line instead', closes: true, onTap: () => walkAskLot(area, it) },
+    captionAction: {
+      label: it.lotCents != null ? "Change the whole line's price" : 'Price the whole line instead',
+      closes: true,
+      onTap: () => walkAskLot(it),
+    },
     done: (cents) => {
       const prev = it.listCents;
       const prevLast = part ? part.lastListCents : undefined;
@@ -639,11 +643,11 @@ function walkAskBillsAt(area, it) {
 // Clear takes the line back to per-unit pricing. A lot does not follow the
 // quantity: change the count and the lot is still the lot, and the row says
 // so in words.
-function walkAskLot(area, it) {
-  const per = perUnitText(it.unit).trim();      // 'per foot' / 'each'
+function walkAskLot(it) {
+  const per = perUnitText(it.unit);             // ' per foot' / ' each'
   promptMoney(it.lotCents != null ? it.lotCents : null, {
     label: partLotLabel(it.name, it.qty, it.unit),
-    caption: 'The whole line, markup included. Nothing ' + per + ' prints. Clear to price it ' + per + ' again.',
+    caption: 'The whole line, markup included. No price' + per + ' prints. Clear to price it' + per + ' again.',
     done: (cents) => {
       const prev = it.lotCents;
       it.lotCents = cents;

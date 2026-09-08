@@ -1252,15 +1252,16 @@ function priceNote(text, bad) {
   return p;
 }
 
-// The three material lines with the most money in them. Sorted by comparison,
-// not by subtraction, so there is no arithmetic on cents anywhere in here —
-// each line's cost comes back from BidMath.materialCost given that one item,
-// which is the same rounding rule the whole material total is built on.
-function priceTopItems(bid) {
+// The three material lines with the most money in them, by what they PRINT
+// at rather than what they cost: a lot is the one line where the two are
+// deliberately different, and this readout is the only place he sees the
+// print price before the PDF. Sorted by comparison, not subtraction;
+// BidMath.itemPrice is the same rounding rule the paper uses.
+function priceTopItems(bid, markupPct) {
   const rows = (bid.areas || []).flatMap((a) => (a.items || []).map((it) => ({
-    it, cost: BidMath.materialCost({ areas: [{ items: [it] }] }),
+    it, sell: BidMath.itemPrice(it, markupPct).cents,
   })));
-  rows.sort((a, b) => (a.cost < b.cost ? 1 : a.cost > b.cost ? -1 : 0));
+  rows.sort((a, b) => (a.sell < b.sell ? 1 : a.sell > b.sell ? -1 : 0));
   return rows.slice(0, PRICE_TOP_ITEMS);
 }
 
@@ -1296,9 +1297,9 @@ function buildReadouts(bid, stack, solved, markup) {
     + moneyText(at.atRateCents) + '. This bid has ' + moneyText(at.bidLaborCents) + '.',
   'Against your usual rate'));
 
-  const top = priceTopItems(bid);
+  const top = priceTopItems(bid, markup);
   if (top.length) {
-    box.appendChild(caption('What your biggest material lines print at, each:'));
+    box.appendChild(caption('What your biggest material lines print at:'));
     top.forEach(({ it }) => {
       box.appendChild(row(it.name, priceItemReadout(it, markup)));
     });

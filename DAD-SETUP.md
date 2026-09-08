@@ -23,9 +23,9 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
 1. **Bid numbers.** The counter starts at **#1**. Set **Next bid number** to your real next invoice number before the first bid.
 2. **Crew ›.** Shawn at $32 and George at $30 are in already. Check both, then **+ Worker** for anyone else and his wage.
-3. **Rates ›.** **Labor rate** and **Rate floor** both come set to **$85**, what UDA pays. The floor is the lowest rate worth working for. **Hours per day** should be 8. Leave the percentages alone.
+3. **Rates ›.** **Labor rate** and **Rate floor** both come set to **$85**, what UDA pays. The floor is the lowest rate worth working for. **Hours per day** should be 8. Leave the other percentages alone.
 
-   **Material markup** is 15% on a new install. If yours still says 18, set it to 15 in Settings › Rates. Bids you already wrote keep the markup they were written at.
+   **Material markup** should read **15%**. If yours says 18, tap it and put in 15. Bids you already wrote keep the markup they were figured at.
 4. **Equipment ›.** Thirty tools. Tap one and put in a **Cost new**. A tool with no cost asks for one the first time you use it.
 5. **Company ›.** Check the phone, the address, and the ROC number. Pick a **Proposal style**: **Blue & logo** or **Plain black**. **Supply house search** is where the **Check price** link points.
 
@@ -40,7 +40,7 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
    When it asks a part's cost, **Check price** opens your supply house in Safari with the name typed in. It needs signal, and the keypad waits for you.
 
-   **Two prices on a part.** Tap a line, then **Bills at** to put the list price on it: the price the customer is billed, before the markup. Cost stays what you paid. Tap **Price the whole line instead** on that keypad to give the line one number for all of it, the way your invoices do a roll of wire ($216.00 for 500 ft prints as 500 ft, blank, $216.00).
+   **Two prices on a part.** Tap a line, then **Bills at** to put the list price on it: the price the customer is billed, before the markup. Cost stays what you paid. Tap **Price the whole line instead** on that keypad to give the line one number for all of it, the way your invoices do a roll of wire ($216.00 for 500 ft prints as 500 ft with no price per foot, just $216.00). **Clear** on either keypad puts the line back to billing off its cost. Once you put a bill price on a part, the next line you add for it starts there.
 
    Before you leave, answer **Anything missing?**. It shows the six you forget most, and **Show all 19** opens the rest. **Not this job** puts a row away. **Add it** puts it on the bid: a lift or a dumpster goes through the rental question, anything else asks the price there and then.
 

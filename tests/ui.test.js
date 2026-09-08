@@ -826,4 +826,6 @@ test('itemBillText: nothing by default, the unit for a list, the whole amount fo
   // A $0 lot is unpriced, and says so with the number rather than hiding.
   assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 0 }, 15),
     'bills $0.00 the lot');
+  // A legacy per-unit override is a price the paper prints too, so the row says it.
+  assert.equal(itemBillText({ unit: 'ea', qty: 2, costCents: 1500, priceCents: 2000 }, 15), 'bills at $20.00 each');
 });

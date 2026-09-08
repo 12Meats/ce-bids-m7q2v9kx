@@ -888,7 +888,8 @@ function partLotLabel(name, qty, unit) {
 function itemBillText(it, markupPct) {
   const p = BidMath.itemPrice(it, markupPct);
   if (p.unit == null) return 'bills ' + BidMath.fmt(p.cents) + ' the lot';
-  if (it.listCents == null) return '';
+  // A legacy per-unit override is a price the paper prints too, so the row says it.
+  if (it.listCents == null && it.priceCents == null) return '';
   return 'bills at ' + BidMath.fmt(p.unit) + perUnitText(it.unit);
 }
 

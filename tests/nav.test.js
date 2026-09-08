@@ -439,19 +439,9 @@ test('a keypad cancelled by the back gesture keeps nothing either', () => {
 const keypadCtx = () => vm.runInContext('keypadCtx', sandbox);
 const keypadLabel = () => sandbox.document.getElementById('keypadLabel').textContent;
 
-test('a plain caption link leaves the keypad standing with what he typed', () => {
-  standInTheWalk();
-  let opened = 0;
-  promptMoney(null, { label: 'Cost per foot', caption: 'Not sure?',
-    captionAction: { label: 'Check price', onTap: () => { opened += 1; } }, done: () => {} });
-  keypadPress('4');
-  keypadCaptionTapped();
-  assert.strictEqual(opened, 1, 'the link ran');
-  assert.strictEqual(anyPanelOpen(), true, 'the keypad is still up');
-  assert.strictEqual(keypadCtx().buffer.text(), '4', 'and so is the 4 he typed');
-  keypadClear();
-});
-
+// Order matters here: the closes: true test runs first so the plain-link
+// test below it also proves that closing a keypad resets captionCloses —
+// if closeKeypad ever left that flag set, the plain link would close too.
 test('a closes: true caption link hands off: one keypad up, the second label, the second done', () => {
   standInTheWalk();
   let first = null, second = null;
@@ -470,4 +460,17 @@ test('a closes: true caption link hands off: one keypad up, the second label, th
   assert.strictEqual(second, 21600, 'Done went to the lot keypad');
   assert.strictEqual(first, null, 'and never to the one that closed');
   assert.strictEqual(anyPanelOpen(), false);
+});
+
+test('a plain caption link leaves the keypad standing with what he typed', () => {
+  standInTheWalk();
+  let opened = 0;
+  promptMoney(null, { label: 'Cost per foot', caption: 'Not sure?',
+    captionAction: { label: 'Check price', onTap: () => { opened += 1; } }, done: () => {} });
+  keypadPress('4');
+  keypadCaptionTapped();
+  assert.strictEqual(opened, 1, 'the link ran');
+  assert.strictEqual(anyPanelOpen(), true, 'the keypad is still up');
+  assert.strictEqual(keypadCtx().buffer.text(), '4', 'and so is the 4 he typed');
+  keypadClear();
 });
