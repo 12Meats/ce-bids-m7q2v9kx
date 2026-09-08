@@ -859,6 +859,36 @@ function itemCountText(qty, unit, costCents) {
   return numText(qty) + ' ' + plural + ' at ' + BidMath.fmt(costCents);
 }
 
+// '#12 wire, bills at per foot' — the second price, asked the way the cost is.
+function partBillLabel(name, unit) {
+  const w = UNIT_ONE[unit];
+  return w ? name + ', bills at per ' + w : name + ', bills at each';
+}
+
+// '#12 wire, all 500 feet together' — one number for the whole line. A count
+// of one has nothing to gather ("all 1 lot together" reads like a bug), so it
+// says what it is: the whole line.
+function partLotLabel(name, qty, unit) {
+  if (qty === 1) return name + ', the whole line';
+  const w = UNIT_MANY[unit];
+  return name + ', all ' + numText(qty) + (w ? ' ' + w : '') + ' together';
+}
+
+// What a walk row says under its cost when the line bills at something other
+// than cost plus markup: the marked-up unit for a list price, the whole
+// amount for a lot. Empty when neither is set, so a row on an old bid reads
+// exactly as it always has. BidMath.itemPrice does the arithmetic; this only
+// chooses the sentence.
+function itemBillText(it, markupPct) {
+  const p = BidMath.itemPrice(it, markupPct);
+  if (it.lotCents != null) return 'bills ' + BidMath.fmt(p.cents) + ' the lot';
+  if (it.listCents != null) {
+    const w = UNIT_ONE[it.unit];
+    return 'bills at ' + BidMath.fmt(p.unit) + (w ? ' per ' + w : ' each');
+  }
+  return '';
+}
+
 // Order matters: what goes on everything, then the three kinds of job that
 // carry their own risk, then subs. A clause whose group is not named here is
 // still shown by both screens, under "Other" — a clause that is invisible is a

@@ -34,7 +34,8 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
-  crewDaysText, detailCaption, partQtyLabel, partCostLabel, itemCountText, areaNoteLine,
+  crewDaysText, detailCaption, partQtyLabel, partCostLabel, partBillLabel, partLotLabel, itemCountText,
+  itemBillText, areaNoteLine,
   priceSearchUrl } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -790,4 +791,36 @@ test('the home nudge and the backup caption are amber, not red', () => {
   const bids = readSrc('screens/bids.js');
   assert.equal(/nudgeBand\([^)]*'danger'/.test(bids), false,
     'no screen asks for a red band');
+});
+
+// The keypad questions for the second price and the lot, in the words the
+// cost question already uses.
+test('partBillLabel and partLotLabel read the way partCostLabel does', () => {
+  assert.equal(partBillLabel('#12 wire', 'ft'), '#12 wire, bills at per foot');
+  assert.equal(partBillLabel('20 A breaker', 'ea'), '20 A breaker, bills at each');
+  assert.equal(partBillLabel('#12 THHN', 'roll'), '#12 THHN, bills at per roll');
+  assert.equal(partLotLabel('#12 wire', 500, 'ft'), '#12 wire, all 500 feet together');
+  assert.equal(partLotLabel('#12 THHN', 2, 'roll'), '#12 THHN, all 2 rolls together');
+  assert.equal(partLotLabel('20 A breaker', 6, 'ea'), '20 A breaker, all 6 together');
+  // A count of one has nothing to gather up. "Permits, all 1 lot together" is
+  // what the rule would say, and it reads like a bug; the line is the line.
+  assert.equal(partLotLabel('Permits', 1, 'lot'), 'Permits, the whole line');
+  assert.equal(partLotLabel('VFD', 1, 'ea'), 'VFD, the whole line');
+});
+
+// What a walk row says under its cost when the line bills at something other
+// than cost plus markup. Empty when it does not, so the row reads as it
+// always has and nothing on an old bid changes.
+test('itemBillText: nothing by default, the unit for a list, the whole amount for a lot', () => {
+  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null }, 15), '');
+  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: null, lotCents: null }, 15), '');
+  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: 40 }, 15),
+    'bills at $0.46 per foot');                                          // 40 × 1.15 = 46
+  assert.equal(itemBillText({ unit: 'ea', qty: 2, costCents: 1500, priceCents: null, listCents: 1800 }, 15),
+    'bills at $20.70 each');
+  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: 40, lotCents: 21600 }, 15),
+    'bills $216.00 the lot');
+  // A $0 lot is unpriced, and says so with the number rather than hiding.
+  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 0 }, 15),
+    'bills $0.00 the lot');
 });
