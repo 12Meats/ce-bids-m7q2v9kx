@@ -168,7 +168,7 @@ function clearBanner(includePersistent) {
 // wired once in boot(). Only one may be open at a time: a second request while
 // a panel is up is dropped, which is what a fast double-tap on iOS produces.
 
-const keypadCtx = { open: false, buffer: null, done: null, captionAction: null };
+const keypadCtx = { open: false, buffer: null, done: null, captionAction: null, captionCloses: false };
 // field: whichever of the two text controls this prompt is using — the
 // single-line input or the multi-line textarea. Everything after promptText
 // reads the field through the context rather than by id, so Done, the chips
@@ -239,14 +239,18 @@ function promptNumber(current, opts) {
   cap.textContent = opts.caption || '';
   cap.hidden = !opts.caption;
 
-  // captionAction: { label, onTap } — one link under that sentence, for the
-  // one panel that has somewhere to send him. It does NOT close the keypad:
-  // the search opens in another tab and the half-typed number is still here
-  // when he comes back. Stored on the context rather than bound to the button,
-  // because the button is wired once at boot and the panel is opened a
-  // thousand times.
+  // captionAction: { label, onTap, closes } — one link under that sentence.
+  // Written for the one panel that has somewhere to send him: "Check price"
+  // opens the search in another tab and does NOT close the keypad, so the
+  // half-typed number is still here when he comes back. closes: true is the
+  // other kind of link, the one that hands off to a different keypad ("Price
+  // the whole line instead"): this panel goes down first, because promptNumber
+  // refuses to open over an open panel. Stored on the context rather than
+  // bound to the button, because the button is wired once at boot and the
+  // panel is opened a thousand times.
   const act = opts.captionAction && opts.captionAction.label ? opts.captionAction : null;
   keypadCtx.captionAction = act ? act.onTap : null;
+  keypadCtx.captionCloses = !!(act && act.closes);
   const actBtn = el('keypadCaptionAction');
   if (actBtn) {
     actBtn.textContent = act ? act.label : '';
@@ -298,6 +302,7 @@ function closeKeypad() {
   keypadCtx.buffer = null;
   keypadCtx.done = null;
   keypadCtx.captionAction = null;
+  keypadCtx.captionCloses = false;
   const actBtn = el('keypadCaptionAction');
   if (actBtn) { actBtn.hidden = true; actBtn.textContent = ''; }
   syncPanelClass();
@@ -947,13 +952,17 @@ function wirePanels() {
     else if (btn.dataset.digit !== undefined) keypadPress(btn.dataset.digit);
   });
   // The optional link under a keypad's caption. Wired once; what it does is
-  // whatever the panel that is open put on the context, and it deliberately
-  // leaves the panel standing.
+  // whatever the panel that is open put on the context. Most leave the panel
+  // standing (Check price); captionCloses is the one kind that hands off to a
+  // different keypad instead.
   const capAct = el('keypadCaptionAction');
   if (capAct) {
     capAct.addEventListener('click', () => {
       const act = keypadCtx.captionAction;
-      if (act) act();
+      if (!act) return;
+      // Read before the close, which clears the context.
+      if (keypadCtx.captionCloses) closeKeypad();
+      act();
     });
   }
   el('keypadDone').addEventListener('click', keypadDone);
