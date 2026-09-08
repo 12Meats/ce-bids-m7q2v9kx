@@ -395,7 +395,7 @@
         // restores without it and every PDF simply reads as pending, so the
         // document version does not have to move.
         lastBackupAt: null, pdfsSentThroughMs: null },
-      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false })),
+      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null })),
       customers: [], bids: [] };
   }
 
@@ -561,6 +561,13 @@
         // OPTIONAL: the last "bills at" he put on this part. Absent on every
         // file older than v2.3, which is why undefined loads.
         if (p.lastListCents !== undefined && !isIntGte0OrNull(p.lastListCents)) return null;
+        // OPTIONAL, the supplier's handle on the part: QED's part number, QED's
+        // own name, and the day a price file last touched it. Absent on every
+        // file older than v2.4. A number where a name goes is refused, so a
+        // hand-edited file cannot make the import match on garbage.
+        if (p.sku !== undefined && p.sku !== null && !isStr(p.sku)) return null;
+        if (p.supplierName !== undefined && p.supplierName !== null && !isStr(p.supplierName)) return null;
+        if (p.priceCheckedISO !== undefined && p.priceCheckedISO !== null && !isISO(p.priceCheckedISO)) return null;
       }
 
       if (!isArr(d.customers)) return null;
@@ -990,7 +997,7 @@
     const nm = Catalog.straighten(name);
     if (!nm) return null;
     const un = String(unit || '');
-    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false };
+    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null };
     d.catalog.push(p); return p;
   }
   // A tool he owns, added from Settings or from the price screen's picker.
@@ -1061,7 +1068,7 @@
     SEED_CATALOG.forEach(([category, name, unit]) => {
       if (have.has(Catalog.normalizeName(name))) return;
       have.add(Catalog.normalizeName(name));
-      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false });
+      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null });
       added += 1;
     });
     return added;

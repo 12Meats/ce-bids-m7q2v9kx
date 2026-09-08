@@ -993,3 +993,36 @@ test('newBid snapshots the 15% default, and a bid under 18 keeps 18', () => {
   assert.strictEqual(c.pricing.markupPct, 18);
   assert.strictEqual(b.pricing.markupPct, 15, 'the first bid did not move');
 });
+
+// The supplier's handle on a part: QED's part number, QED's name, and when a
+// price file last touched it. All three OPTIONAL: absent, null, or a string.
+// Anything else is refused, so a hand-edited file cannot put a number where a
+// name goes and have the import match on it.
+test('validateImport: sku, supplierName and priceCheckedISO on a part are optional strings', () => {
+  const ok = (mutate) => {
+    const { d } = buildFullData();
+    mutate(d);
+    return S.validateImport(JSON.stringify(d)) !== null;
+  };
+  const part = (d) => d.catalog[0];
+  assert.ok(ok(() => {}), 'a file with none of them loads');
+  assert.ok(ok((d) => { part(d).sku = null; part(d).supplierName = null; part(d).priceCheckedISO = null; }));
+  assert.ok(ok((d) => { part(d).sku = '3302434'; }));
+  assert.ok(ok((d) => { part(d).supplierName = 'Pass & Seymour 1597-TRWRW GFCI, White'; }));
+  assert.ok(ok((d) => { part(d).priceCheckedISO = '2026-09-08'; }));
+  assert.ok(!ok((d) => { part(d).sku = 3302434; }), 'a number is not a part number');
+  assert.ok(!ok((d) => { part(d).supplierName = ['x']; }), 'an array is not a name');
+  assert.ok(!ok((d) => { part(d).priceCheckedISO = '9/8/26'; }), 'a date that is not YYYY-MM-DD');
+  assert.ok(!ok((d) => { part(d).priceCheckedISO = 20260908; }), 'a number is not a date');
+});
+
+test('seeds, addCatalogItem and addStandardCatalog carry the three fields as null', () => {
+  const d = S.emptyData();
+  assert.ok(d.catalog.every((p) => p.sku === null && p.supplierName === null && p.priceCheckedISO === null));
+  const p = S.addCatalogItem(d, { category: 'gear', name: 'Test part', unit: 'ea' });
+  assert.strictEqual(p.sku, null); assert.strictEqual(p.supplierName, null); assert.strictEqual(p.priceCheckedISO, null);
+  d.catalog.splice(0, 3);
+  S.addStandardCatalog(d);
+  assert.ok(d.catalog.every((x) => 'sku' in x && 'supplierName' in x && 'priceCheckedISO' in x));
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
