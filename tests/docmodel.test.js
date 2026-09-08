@@ -532,3 +532,37 @@ test('area notes never reach the document, at any level', () => {
   const without = D.build(b, d, 'full');
   assert.deepStrictEqual(withNote, without);
 });
+
+// THE LOT ON PAPER. His own invoices print "500 FT · #12 wire · (blank) ·
+// $216.00": quantity, no unit price, the amount. A lot row prints exactly
+// that, and a list-priced row prints its marked-up unit like any other.
+test('full level: a lot row prints the quantity, no unit price, and the whole amount; a list row prints its unit', () => {
+  const { d, b } = fixture();
+  b.pricing.markupPct = 15;
+  b.areas[0].items = [
+    { catalogId: null, name: '#12 wire', unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: 40, lotCents: 21600 },
+    { catalogId: null, name: '20 A breaker', unit: 'ea', qty: 2, costCents: 1500, priceCents: null, listCents: 1800 },
+  ];
+  b.misc.cents = 0;
+  const doc = D.build(b, d, 'full');
+  const rows = doc.sections.find((s) => s.title === 'Materials').rows;
+  assert.deepStrictEqual(rows, [
+    { desc: '#12 wire', qtyText: '500 ft', unitCents: null, cents: 21600 },
+    { desc: '20 A breaker', qtyText: '2 ea', unitCents: 2070, cents: 4140 },
+  ]);
+  // And the rows still add up to the stack, the same way every other row does.
+  assertRowsMatchStack(b, d);
+  const stack = B.costStack(b, d.settings);
+  assert.strictEqual(stack.materialCost, 500 * 38 + 2 * 1500, 'cost is cost, whatever the lot bills');
+});
+
+// Summary and Scope & price carry the same total as Full, lot or no lot.
+test('a lot moves the total identically at every level', () => {
+  const { d, b } = fixture();
+  b.areas[0].items[0].lotCents = 99900;
+  const totals = ['full', 'summary', 'scope'].map((l) => D.build(b, d, l).totalCents);
+  assert.strictEqual(totals[0], totals[1]);
+  assert.strictEqual(totals[1], totals[2]);
+  const stack = B.costStack(b, d.settings);
+  assert.strictEqual(totals[0], B.solve(stack, 'rate', 6500).priceCents);
+});
