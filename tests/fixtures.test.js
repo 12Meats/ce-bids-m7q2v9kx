@@ -16,9 +16,14 @@
 //   * New bid fields are OPTIONAL with a fallback, which is what lets an old
 //     fixture keep loading with no version bump at all.
 //
-// backup-bids-v2.2.json is this release's own: Schreiber's cooler room, won,
-// with a surprise and a change order on it, and a sent bid at a ten-hour day
-// that quotes fewer hours than it takes. Both snapshots disagree with the
+// backup-bids-v2.3.json is this release's own: the v2.2 file with Settings
+// moved to a 15% markup, plus one UDA bid whose wire is priced as a lot, whose
+// breakers bill at a list price, and whose boxes bill off cost like every line
+// before v2.3. The two older bids still price at 18, off their snapshots.
+//
+// backup-bids-v2.2.json is the release before it: Schreiber's cooler room,
+// won, with a surprise and a change order on it, and a sent bid at a ten-hour
+// day that quotes fewer hours than it takes. Both snapshots disagree with the
 // Settings sitting beside them.
 //
 // backup-bids-v2.1.json is the release before it: two bids whose snapshots
@@ -128,6 +133,11 @@ const FIXTURE_TOTALS = {
   // with a NEGATIVE cushion — he is quoting fewer hours than the job takes to
   // get the work, which is allowed and has to survive a backup.
   'backup-bids-v2.2.json': { 1: 2607636, 2: 591060 },
+  // v2.3's own. Bids 1 and 2 are the v2.2 photograph unchanged, and they pin
+  // the rule twice over: Settings moved to a 15% markup after they were
+  // written and their snapshots still say 18. Bid 3 is the new shape: a roll
+  // of wire priced as a lot, two breakers billed at list, one plain line.
+  'backup-bids-v2.3.json': { 1: 2607636, 2: 591060, 3: 181040 },
 };
 
 for (const file of Object.keys(FIXTURE_TOTALS)) {
@@ -274,6 +284,57 @@ test('backup-bids-v2.2.json really is a v2.2 file', () => {
   });
   assert.deepStrictEqual(families, ['thhn', 'xhhw', 'mc cable', 'soow cord', 'vfd cable',
     'bare copper ground', 'cat6', 'wire nuts, tape, crimps']);
+});
+
+// The photograph of THIS release. v2.3 added three optional fields, and this
+// is the one file on record that carries all of them, so a field that quietly
+// stops being read fails here before it fails on his phone.
+test('backup-bids-v2.3.json really is a v2.3 file', () => {
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v2.3.json'), 'utf8'));
+  assert.ok(d, 'the v2.3 fixture does not load');
+
+  // Settings moved to 15; the two older bids keep the 18 they were figured at.
+  assert.strictEqual(d.settings.markupPct, 15);
+  assert.deepStrictEqual(d.bids.map((b) => b.pricing.markupPct).sort((a, b) => a - b), [15, 18, 18]);
+
+  const b = d.bids.find((x) => x.pricing.markupPct === 15);
+  const items = b.areas[0].items;
+  const lot = items.find((it) => it.lotCents != null);
+  const listed = items.find((it) => it.listCents != null && it.lotCents == null);
+  const plain = items.find((it) => it.listCents == null && it.lotCents == null);
+  assert.ok(lot && listed && plain, 'a lot line, a list line and a plain line are all in the photograph');
+  assert.strictEqual(lot.lotCents, 21600);
+  assert.strictEqual(lot.listCents, 40, 'the lot line also carries a list, and the lot wins');
+  assert.strictEqual(listed.listCents, 1800);
+
+  // The catalog remembers both prices for the parts he put them on.
+  const wire = d.catalog.find((p) => p.id === lot.catalogId);
+  const breaker = d.catalog.find((p) => p.id === listed.catalogId);
+  assert.strictEqual(wire.lastCostCents, 38); assert.strictEqual(wire.lastListCents, 40);
+  assert.strictEqual(breaker.lastCostCents, 1500); assert.strictEqual(breaker.lastListCents, 1800);
+  // Absent is "not set", the same as null: the 210 parts inherited from the
+  // v2.2 file never grow the key (nothing normalizes on restore, by design),
+  // so the check is loose. Only the two parts he priced carry a number.
+  assert.ok(d.catalog.every((p) => p.lastListCents == null || Number.isInteger(p.lastListCents)));
+
+  // What the paper prints, by hand: quantity, blank, amount for the lot;
+  // round(1800 × 1.15) = 2070 a breaker; round(1000 × 1.15) = 1150 a box.
+  const rows = D.build(b, d, 'full').sections.find((s) => s.title === 'Materials').rows;
+  assert.deepStrictEqual(rows.map((r) => [r.qtyText, r.unitCents, r.cents]), [
+    ['500 ft', null, 21600],
+    ['2 ea', 2070, 4140],
+    ['2 ea', 1150, 2300],
+  ]);
+  // Cost is cost: 500 × 38 + 2 × 1500 + 2 × 1000.
+  assert.strictEqual(BidMath.costStack(b, d.settings).materialCost, 24000);
+
+  // Everything v2.2 put in a file is still in this one.
+  assert.ok(d.bids.some((bb) => bb.pricing.cushionPct < 0));
+  assert.ok(d.bids.some((bb) => (bb.rentals || []).some((r) => typeof r.areaId === 'string')));
+  const job = d.bids.map((bb) => bb.job).find(Boolean);
+  assert.ok(job && job.surprises.length === 1 && job.changeOrders.length === 1);
+  assert.strictEqual(d.catalog.length, 210);
+  assert.strictEqual(d.settings.clauses.length, 27);
 });
 
 // ---------------------------------------------------------------------------
