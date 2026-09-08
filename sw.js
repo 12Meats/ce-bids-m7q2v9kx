@@ -12,6 +12,7 @@ const ASSETS = [
   'logo.png',
   'bidmath.js',
   'storage.js',
+  'pricefile.js',
   'docmodel.js',
   'keypad.js',
   'dates.js',
