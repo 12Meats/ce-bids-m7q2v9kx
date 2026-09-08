@@ -374,7 +374,7 @@
         // equipment/clause instead of splicing it, so old bids that reference
         // its id by reference stay valid forever.
         crew: [{ id: 'c1', name: 'Shawn', wageCents: 3200, hidden: false }, { id: 'c2', name: 'George', wageCents: 3000, hidden: false }],
-        hoursPerDay: 8, burdenPct: 25, rateCents: 8500, floorCents: 8500, marginPct: 25, markupPct: 18, consumablesPct: 3,
+        hoursPerDay: 8, burdenPct: 25, rateCents: 8500, floorCents: 8500, marginPct: 25, markupPct: 15, consumablesPct: 3,
         truckDayCents: 9500, overheadPct: 10, cushionPct: { service: 10, project: 15 }, equipmentPct: 4, validityDays: 30,
         taxMode: 'included',
         equipment: SEED_EQUIPMENT.map((name) => ({ id: uid(), name, costCents: null, overrideDayCents: null, hidden: false })),
@@ -395,7 +395,7 @@
         // restores without it and every PDF simply reads as pending, so the
         // document version does not have to move.
         lastBackupAt: null, pdfsSentThroughMs: null },
-      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, uses: 0, hidden: false })),
+      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false })),
       customers: [], bids: [] };
   }
 
@@ -558,6 +558,9 @@
         catalogIds.add(p.id);
         if (!isIn(p.category, CATALOG_CATEGORY) || !isStr(p.name) || !isStr(p.unit)) return null;
         if (!isIntGte0OrNull(p.lastCostCents) || !isIntGte0(p.uses) || !isBool(p.hidden)) return null;
+        // OPTIONAL: the last "bills at" he put on this part. Absent on every
+        // file older than v2.3, which is why undefined loads.
+        if (p.lastListCents !== undefined && !isIntGte0OrNull(p.lastListCents)) return null;
       }
 
       if (!isArr(d.customers)) return null;
@@ -575,6 +578,11 @@
         if (!isStr(it.name) || !isStr(it.unit) || !isFiniteGt0(it.qty)) return false;
         if (!isIntGte0(it.costCents)) return false;
         if (it.priceCents !== null && !isIntGte0(it.priceCents)) return false;
+        // OPTIONAL, both: what the line bills at per unit (the markup goes on
+        // it), and the whole line's price as a lot (nothing per unit prints).
+        // Absent on every line written before v2.3; null means "not set" too.
+        if (it.listCents !== undefined && !isIntGte0OrNull(it.listCents)) return false;
+        if (it.lotCents !== undefined && !isIntGte0OrNull(it.lotCents)) return false;
         return true;
       }
       // Area ids only need to be unique *within* the array passed in — once
@@ -982,7 +990,7 @@
     const nm = Catalog.straighten(name);
     if (!nm) return null;
     const un = String(unit || '');
-    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, uses: 0, hidden: false };
+    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false };
     d.catalog.push(p); return p;
   }
   // A tool he owns, added from Settings or from the price screen's picker.
@@ -1053,7 +1061,7 @@
     SEED_CATALOG.forEach(([category, name, unit]) => {
       if (have.has(Catalog.normalizeName(name))) return;
       have.add(Catalog.normalizeName(name));
-      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, uses: 0, hidden: false });
+      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false });
       added += 1;
     });
     return added;
@@ -1191,7 +1199,16 @@
     return bidsReferencing(d, (b) => (b.clauseIds || []).indexOf(id) !== -1);
   }
 
-  function recordCatalogUse(d, id, costCents) { const p = d.catalog.find((x) => x.id === id); if (p) { p.uses += 1; p.lastCostCents = costCents; } }
+  // costCents is what he paid; listCents, when the caller has one, is what the
+  // line bills at. undefined leaves that memory alone (a caller that never
+  // asked), null clears it (he took it off the line), a number sets it.
+  function recordCatalogUse(d, id, costCents, listCents) {
+    const p = d.catalog.find((x) => x.id === id);
+    if (!p) return;
+    p.uses += 1;
+    p.lastCostCents = costCents;
+    if (listCents !== undefined) p.lastListCents = listCents;
+  }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
   return { KEY, MISC_LABEL, AREA_NOTES_MAX, uid, todayISO, mondayOf, jobWeekWindow, emptyData, validateImport, load, save, check, loadProblem,

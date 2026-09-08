@@ -43,6 +43,11 @@ test('emptyData has version 1, seeded settings, seeded catalog with null costs',
   // the size-complete list was written to fix.
   assert.strictEqual(d.catalog.length, 210);
   assert.ok(d.catalog.every((p) => p.lastCostCents === null && p.uses === 0));
+  // The second price a part remembers. Null on a seed, like the first one.
+  assert.ok(d.catalog.every((p) => p.lastListCents === null));
+  // 15, not 18: he already bills the highest list price among his suppliers
+  // for a part, so 15 on top of that is the fair number (Adrian, 9/06).
+  assert.strictEqual(d.settings.markupPct, 15);
   assert.deepStrictEqual([...new Set(d.catalog.map((p) => p.category))].sort(),
     ['boxes', 'conduit', 'gear', 'lighting', 'rentals', 'wire']);
   assert.strictEqual(d.settings.equipment.length, 30);
@@ -914,4 +919,77 @@ test('Reset to the standard library replaces what is loose and hides what a bid 
   const ids = d.settings.clauses.map((c) => c.id);
   assert.strictEqual(new Set(ids).size, ids.length);
   assert.strictEqual(d.settings.clauses.filter((c) => c.group === 'always' && !c.hidden).length, 8);
+});
+
+// The two new prices on a line and the one on a part are OPTIONAL: absent and
+// null both load, a whole number loads, anything else is refused. An old file
+// with none of them is the common case and it has to keep loading unchanged.
+test('validateImport: listCents, lotCents and lastListCents are optional, and refused when not whole cents', () => {
+  const ok = (mutate) => {
+    const { d } = buildFullData();
+    mutate(d);
+    return S.validateImport(JSON.stringify(d)) !== null;
+  };
+  const item = (d) => d.bids[0].areas[0].items[0];
+  const part = (d) => d.catalog[0];
+
+  assert.ok(ok(() => {}), 'a file with none of the new fields loads');
+  assert.ok(ok((d) => { item(d).listCents = null; item(d).lotCents = null; }));
+  assert.ok(ok((d) => { item(d).listCents = 1800; }));
+  assert.ok(ok((d) => { item(d).lotCents = 21600; }));
+  assert.ok(ok((d) => { item(d).lotCents = 0; }), 'a $0 lot is an unpriced line, and it saves');
+  assert.ok(ok((d) => { part(d).lastListCents = null; }));
+  assert.ok(ok((d) => { part(d).lastListCents = 1800; }));
+
+  assert.ok(!ok((d) => { item(d).listCents = 18.5; }), 'fractional cents on the list');
+  assert.ok(!ok((d) => { item(d).listCents = -1; }), 'a negative list');
+  assert.ok(!ok((d) => { item(d).listCents = '1800'; }), 'a string list');
+  assert.ok(!ok((d) => { item(d).lotCents = 216.0001; }), 'fractional cents on the lot');
+  assert.ok(!ok((d) => { item(d).lotCents = -5; }), 'a negative lot');
+  assert.ok(!ok((d) => { part(d).lastListCents = 'x'; }), 'a string on the part');
+  assert.ok(!ok((d) => { part(d).lastListCents = -1; }), 'a negative on the part');
+});
+
+// The catalog's memory of the second price. undefined leaves it alone (a
+// caller that never asked), null clears it (he took it off), a number sets it.
+test('recordCatalogUse: a fourth argument remembers the list price; undefined leaves it alone', () => {
+  const d = S.emptyData();
+  const p = S.addCatalogItem(d, { category: 'wire', name: '#12 THHN, test', unit: 'ft' });
+  assert.strictEqual(p.lastListCents, null, 'a new part has no list price yet');
+
+  S.recordCatalogUse(d, p.id, 38);
+  assert.strictEqual(p.lastCostCents, 38);
+  assert.strictEqual(p.lastListCents, null, 'three arguments touch nothing');
+
+  S.recordCatalogUse(d, p.id, 38, 40);
+  assert.strictEqual(p.lastListCents, 40);
+  assert.strictEqual(p.uses, 2);
+
+  S.recordCatalogUse(d, p.id, 38, undefined);
+  assert.strictEqual(p.lastListCents, 40, 'undefined is "I did not ask"');
+
+  S.recordCatalogUse(d, p.id, 38, null);
+  assert.strictEqual(p.lastListCents, null, 'null is "take it off"');
+
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+test('addStandardCatalog: parts it adds carry lastListCents like the seeds do', () => {
+  const d = S.emptyData();
+  d.catalog.splice(0, 5);
+  assert.ok(S.addStandardCatalog(d) >= 5);
+  assert.ok(d.catalog.every((p) => p.lastListCents === null));
+});
+
+// A fresh file marks material up 15. A phone that already has Settings keeps
+// its own number: nothing here migrates, and a bid written under 18 carries
+// 18 on its snapshot forever.
+test('newBid snapshots the 15% default, and a bid under 18 keeps 18', () => {
+  const d = S.emptyData();
+  const b = S.newBid(d, { customerName: 'UDA', title: 'x', jobType: 'service' });
+  assert.strictEqual(b.pricing.markupPct, 15);
+  d.settings.markupPct = 18;
+  const c = S.newBid(d, { customerName: 'UDA', title: 'y', jobType: 'service' });
+  assert.strictEqual(c.pricing.markupPct, 18);
+  assert.strictEqual(b.pricing.markupPct, 15, 'the first bid did not move');
 });
