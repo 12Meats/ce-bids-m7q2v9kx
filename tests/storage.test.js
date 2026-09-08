@@ -612,6 +612,52 @@ test('catalogInUse sees an item in the bid and one in a change order area', () =
   assert.strictEqual(S.catalogInUse(d, spare.id), 0);
 });
 
+// A log entry and an invoice are both outside any bid, so the three delete
+// guards have to see them too — validateImport now refuses a file whose
+// crew/equipment/catalog ids do not resolve from d.logs and d.invoices, and
+// these three counted zero from either array until now.
+test('equipmentInUse and catalogInUse count logs and invoices; crewInUse counts only logs', () => {
+  const d = S.emptyData();
+  const tool = d.settings.equipment[0];
+  const part = d.catalog[0];
+  const crewId = d.settings.crew[0].id;
+  const cust = S.findOrCreateCustomer(d, 'UDA');
+  const proj = S.newProject(d, cust.id, 'Job', '2026-09-01');
+  const log = S.newLogEntry(d, { customerId: cust.id, projectId: proj.id, dateISO: '2026-09-01', createdAt: 1 });
+  log.crew.push({ crewId, hours: 4 });
+  log.items.push({ catalogId: part.id, name: part.name, unit: part.unit, qty: 1, costCents: 100, priceCents: null });
+  log.equipment.push({ equipmentId: tool.id, name: tool.name, days: 1, dayCents: 500 });
+
+  const inv = {
+    id: 'inv1', number: null, kind: 'tm', customerId: cust.id, projectTitle: 'Job', dateISO: null,
+    serviceFrom: '2026-09-01', serviceTo: '2026-09-01', po: '', terms: 'Upon receipt', rateCents: 8500, markupPct: 15,
+    labor: [], items: [], rentals: [], equipment: [{ equipmentId: tool.id, name: tool.name, days: 1, dayCents: 500 }],
+    logIds: [], bidId: null, partCents: null, notes: [],
+    status: 'draft', sentAt: null, savedToFilesAt: null, payments: [], createdAt: 1,
+  };
+  d.invoices.push(inv);
+  assert.ok(S.check(d), 'the fixture itself is a valid file');
+
+  // A tool on a log and on an invoice: both count.
+  assert.strictEqual(S.equipmentInUse(d, tool.id), 2);
+  // A catalog part on a log: counts.
+  assert.strictEqual(S.catalogInUse(d, part.id), 1);
+  // A crew member used only on a log entry: counts.
+  assert.strictEqual(S.crewInUse(d, crewId), 1);
+
+  // Invoices do NOT count toward crewInUse: an invoice's labor row carries
+  // the man's name as a snapshot and survives him being deleted from Settings.
+  inv.labor.push({ crewId, name: 'Whoever', loggedHours: 4, billedHours: 4 });
+  assert.strictEqual(S.crewInUse(d, crewId), 1, 'the invoice labor row does not add to the count');
+
+  // And that is exactly why the guard matters: splicing the crew member out
+  // of settings.crew while a log still names him leaves a file that refuses
+  // its own check.
+  const idx = d.settings.crew.findIndex((c) => c.id === crewId);
+  d.settings.crew.splice(idx, 1);
+  assert.strictEqual(S.check(d), false, 'the log still names a crew id nothing answers');
+});
+
 test('clauseInUse counts the bids that name a clause, and null clauseIds names none', () => {
   const d = S.emptyData();
   const clause = d.settings.clauses[0];
@@ -1161,4 +1207,73 @@ test('openProjects lists a customer\'s projects that are not done, newest first'
   const b = S.newProject(d, c.id, 'UF Project', '2026-08-20');
   const done = S.newProject(d, c.id, 'Old job', '2026-07-01'); done.done = true;
   assert.deepStrictEqual(S.openProjects(d, c.id).map((p) => p.title), ['UF Project', 'Boiler room']);
+});
+
+// ---------------------------------------------------------------------------
+// FIX ROUND (quality review of the invoices-on-disk task)
+// ---------------------------------------------------------------------------
+
+test('takeInvoiceNumber never reuses a number already on the file, even with the seed low or missing', () => {
+  const f = invoiceFixture();   // carries invoice #166818
+  delete f.d.settings.nextInvoiceNumber;
+  const n = S.takeInvoiceNumber(f.d);
+  assert.strictEqual(n, 166819, 'steps past the highest number on file, not the missing seed');
+  assert.ok(S.check(f.d));
+  // A seed that is merely low, not missing, is stepped past the same way.
+  f.d.settings.nextInvoiceNumber = 1;
+  assert.strictEqual(S.takeInvoiceNumber(f.d), 166819);
+});
+
+test('invoiceNumberInUse sees a number already on an invoice, except the one asking', () => {
+  const f = invoiceFixture();
+  assert.strictEqual(S.invoiceNumberInUse(f.d, 166818), true);
+  assert.strictEqual(S.invoiceNumberInUse(f.d, 166818, f.inv.id), false, 'excepts its own invoice');
+  assert.strictEqual(S.invoiceNumberInUse(f.d, 1), false);
+});
+
+test('validateImport refuses a one-sided log/invoice link, both directions, and a repeated logId', () => {
+  const ok = (mutate) => { const f = invoiceFixture(); mutate(f); return S.validateImport(JSON.stringify(f.d)) !== null; };
+  assert.ok(ok(() => {}), 'the good fixture still loads');
+  assert.ok(!ok((f) => { f.log.invoiceId = null; }), 'the invoice points at the log but the log does not point back');
+  assert.ok(!ok((f) => { f.inv.logIds = []; }), 'the log points at the invoice but the invoice does not list it');
+  assert.ok(!ok((f) => {
+    const inv2 = { ...f.inv, id: 'inv2', number: 166819, logIds: [] };
+    f.d.invoices.push(inv2);
+    f.log.invoiceId = inv2.id;   // f.inv.logIds still names this same log
+  }), 'the log points at a different invoice than the one that names it');
+  assert.ok(!ok((f) => { f.inv.logIds = [f.log.id, f.log.id]; }), 'a log id repeated inside one invoice');
+  // Both sides cleared together is still fine.
+  assert.ok(ok((f) => { f.log.invoiceId = null; f.inv.logIds = []; }));
+});
+
+test('customerUseCounts breaks the total down by record kind; customerInUse is their sum', () => {
+  const f = invoiceFixture();
+  assert.deepStrictEqual(S.customerUseCounts(f.d, f.cust.id), { bids: 1, projects: 1, logs: 1, invoices: 1 });
+  assert.strictEqual(S.customerInUse(f.d, f.cust.id), 4);
+  const other = S.findOrCreateCustomer(f.d, 'Schreiber');
+  assert.deepStrictEqual(S.customerUseCounts(f.d, other.id), { bids: 0, projects: 0, logs: 0, invoices: 0 });
+});
+
+test('newLogEntry takes createdAt when given, and defaults to Date.now() only when it is not', () => {
+  const d = S.emptyData();
+  const c = S.findOrCreateCustomer(d, 'UDA');
+  const p = S.newProject(d, c.id, 'Job', '2026-09-01');
+  const fixed = S.newLogEntry(d, { customerId: c.id, projectId: p.id, dateISO: '2026-09-01', createdAt: 1 });
+  assert.strictEqual(fixed.createdAt, 1);
+  const before = Date.now();
+  const defaulted = S.newLogEntry(d, { customerId: c.id, projectId: p.id, dateISO: '2026-09-01' });
+  assert.ok(defaulted.createdAt >= before, 'no createdAt passed falls back to Date.now()');
+});
+
+test('newProject finds an open project by title, case-insensitively, and never matches a done one', () => {
+  const d = S.emptyData();
+  const c = S.findOrCreateCustomer(d, 'UDA');
+  const first = S.newProject(d, c.id, 'UF Project', '2026-08-24');
+  const again = S.newProject(d, c.id, 'UF project', '2026-09-01');
+  assert.strictEqual(again, first, 'the same open project comes back, not a new one');
+  assert.strictEqual(d.projects.length, 1);
+  first.done = true;
+  const revived = S.newProject(d, c.id, 'UF Project', '2026-09-05');
+  assert.notStrictEqual(revived, first, 'a done project does not match; a new one is created');
+  assert.strictEqual(d.projects.length, 2);
 });

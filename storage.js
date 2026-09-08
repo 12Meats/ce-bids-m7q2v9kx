@@ -647,6 +647,18 @@
         }
         return true;
       }
+      // The rental and owned-equipment line shapes, shared by a bid, an
+      // invoice and a log entry — the same three lists, in the same shape,
+      // wherever the app lets him add one.
+      function validRentals(arr) {
+        if (!isArr(arr)) return false;
+        return arr.every((r) => isObj(r) && isStr(r.name) && isFiniteGte0(r.days) && isIntGte0(r.cents) && isBool(r.markup));
+      }
+      function validEquipmentLines(arr) {
+        if (!isArr(arr)) return false;
+        return arr.every((e) => isObj(e) && (e.equipmentId === null || equipIds.has(e.equipmentId))
+          && isStr(e.name) && isFiniteGte0(e.days) && isIntGte0(e.dayCents));
+      }
       function validLabor(labor) {
         if (!isObj(labor)) return false;
         if (!isArr(labor.crewIds) || !labor.crewIds.every((id) => crewIds.has(id))) return false;
@@ -688,16 +700,8 @@
         if (!validAreas(b.areas)) return null;
         if (!isObj(b.misc) || !isStr(b.misc.label) || !isIntGte0(b.misc.cents)) return null;
         if (!validLabor(b.labor)) return null;
-        if (!isArr(b.rentals)) return null;
-        for (const r of b.rentals) {
-          if (!isObj(r) || !isStr(r.name) || !isFiniteGte0(r.days) || !isIntGte0(r.cents) || !isBool(r.markup)) return null;
-        }
-        if (!isArr(b.equipment)) return null;
-        for (const e of b.equipment) {
-          if (!isObj(e)) return null;
-          if (e.equipmentId !== null && !equipIds.has(e.equipmentId)) return null;
-          if (!isStr(e.name) || !isFiniteGte0(e.days) || !isIntGte0(e.dayCents)) return null;
-        }
+        if (!validRentals(b.rentals)) return null;
+        if (!validEquipmentLines(b.equipment)) return null;
         if (!isObj(b.pricing) || !isFiniteNum(b.pricing.marginPct) || !isIntGte0(b.pricing.rateCents)) return null;
         // The cushion may be NEGATIVE. A cushion is normally hours he quotes
         // and hopes not to work, but the price screen lets him type the bid
@@ -782,9 +786,7 @@
       // them and loads; absent reads as empty everywhere. Validated after the
       // bids so a project invoice can point at a bid id.
       // -----------------------------------------------------------------
-      if (d.projects !== undefined) {
-        if (!isArr(d.projects)) return null;
-      }
+      if (d.projects !== undefined && !isArr(d.projects)) return null;
       const projectIds = new Set();
       for (const p of (d.projects || [])) {
         if (!isObj(p) || !isStr(p.id) || p.id === '' || projectIds.has(p.id)) return null;
@@ -818,17 +820,9 @@
           if (!isFiniteGte0(l.loggedHours) || !isFiniteGte0(l.billedHours)) return null;
         }
         if (!validAreas([{ id: 'inv-' + inv.id, name: '', items: inv.items, photoIds: [] }])) return null;
-        if (!isArr(inv.rentals)) return null;
-        for (const r of inv.rentals) {
-          if (!isObj(r) || !isStr(r.name) || !isFiniteGte0(r.days) || !isIntGte0(r.cents) || !isBool(r.markup)) return null;
-        }
-        if (!isArr(inv.equipment)) return null;
-        for (const e of inv.equipment) {
-          if (!isObj(e)) return null;
-          if (e.equipmentId !== null && !equipIds.has(e.equipmentId)) return null;
-          if (!isStr(e.name) || !isFiniteGte0(e.days) || !isIntGte0(e.dayCents)) return null;
-        }
-        if (!strArr(inv.logIds)) return null;   // existence is checked after the logs loop
+        if (!validRentals(inv.rentals)) return null;
+        if (!validEquipmentLines(inv.equipment)) return null;
+        if (!strArr(inv.logIds)) return null;   // existence and the two-sided link are checked after the logs loop
         if (inv.bidId !== null && !bidIds.has(inv.bidId)) return null;
         if (inv.partCents !== null && !isIntGte0(inv.partCents)) return null;
         if (!strArr(inv.notes)) return null;
@@ -853,22 +847,35 @@
           if (!isObj(m) || !crewIds.has(m.crewId) || !isFiniteGt0(m.hours)) return null;
         }
         if (!validAreas([{ id: 'log-' + e.id, name: '', items: e.items, photoIds: [] }])) return null;
-        if (!isArr(e.rentals)) return null;
-        for (const r of e.rentals) {
-          if (!isObj(r) || !isStr(r.name) || !isFiniteGte0(r.days) || !isIntGte0(r.cents) || !isBool(r.markup)) return null;
-        }
-        if (!isArr(e.equipment)) return null;
-        for (const q of e.equipment) {
-          if (!isObj(q)) return null;
-          if (q.equipmentId !== null && !equipIds.has(q.equipmentId)) return null;
-          if (!isStr(q.name) || !isFiniteGte0(q.days) || !isIntGte0(q.dayCents)) return null;
-        }
+        if (!validRentals(e.rentals)) return null;
+        if (!validEquipmentLines(e.equipment)) return null;
         if (!isStr(e.notes) || e.notes.length > AREA_NOTES_MAX) return null;
         if (e.invoiceId !== null && !invoiceIds.has(e.invoiceId)) return null;
         if (!isIntGte0(e.createdAt)) return null;
       }
+      // Both sides of a log/invoice link are written in one mutation (the
+      // review screen sets a log's invoiceId and pushes that log's id onto
+      // the invoice's logIds together), so a one-sided link, in EITHER
+      // direction, is a bug this validator refuses rather than a shape a
+      // hand-edited file gets to teach it. The invoice-points-only case is
+      // the one that would actually cost him money: nothing on the log
+      // itself would say it is already spoken for, and grouping the pile
+      // again would bill it a second time.
+      const logById = new Map((d.logs || []).map((e) => [e.id, e]));
+      const invoiceById = new Map((d.invoices || []).map((inv) => [inv.id, inv]));
       for (const inv of (d.invoices || [])) {
-        if (!inv.logIds.every((id) => logIds.has(id))) return null;
+        const seen = new Set();
+        for (const id of inv.logIds) {
+          if (!logById.has(id) || seen.has(id)) return null;
+          seen.add(id);
+          if (logById.get(id).invoiceId !== inv.id) return null;
+        }
+      }
+      for (const e of (d.logs || [])) {
+        if (e.invoiceId !== null) {
+          const inv = invoiceById.get(e.invoiceId);
+          if (!inv || inv.logIds.indexOf(e.id) === -1) return null;
+        }
       }
 
       return d;
@@ -1043,38 +1050,6 @@
   // checks are one definition.
   function newJob() { return { weeks: [], surprises: [], changeOrders: [], completedAt: null }; }
 
-  // A job title he picks from chips so "UF project" and "UF Project" cannot
-  // split into two invoices. Stays offered under its customer until done.
-  function newProject(d, customerId, title, createdISO) {
-    const t = String(title == null ? '' : title).replace(/\s+/g, ' ').trim().slice(0, PROJECT_TITLE_MAX);
-    if (!t) return null;
-    const p = { id: uid(), customerId, title: t, done: false, createdISO: createdISO || todayISO() };
-    if (!d.projects) d.projects = [];
-    d.projects.push(p);
-    return p;
-  }
-  function openProjects(d, customerId) {
-    return (d.projects || []).filter((p) => p.customerId === customerId && !p.done)
-      .sort((a, b) => (a.createdISO < b.createdISO ? 1 : a.createdISO > b.createdISO ? -1 : 0));
-  }
-  // One visit, at the truck. Nothing priced yet; the picker fills items.
-  function newLogEntry(d, { customerId, projectId, dateISO }) {
-    const e = { id: uid(), dateISO: dateISO || todayISO(), customerId, projectId,
-      crew: [], items: [], rentals: [], equipment: [], notes: '', invoiceId: null, createdAt: Date.now() };
-    if (!d.logs) d.logs = [];
-    d.logs.push(e);
-    return e;
-  }
-  // The invoice counter, separate from the bid counter. Seeded 1 for the same
-  // reason nextNumber is: a plain starting point he replaces on day one.
-  function takeInvoiceNumber(d) {
-    const s = d.settings;
-    if (!(Number.isInteger(s.nextInvoiceNumber) && s.nextInvoiceNumber >= 1)) s.nextInvoiceNumber = 1;
-    const n = s.nextInvoiceNumber;
-    s.nextInvoiceNumber = n + 1;
-    return n;
-  }
-
   // Has anything been logged against this job yet? The bid screen asks before
   // it offers to undo a Won: a mis-tap costs one tap to put back, but a job
   // with a week of hours or a change order in it holds work that was never
@@ -1143,6 +1118,65 @@
     });
     d.bids.push(c); return c;
   }
+
+  // -------------------------------------------------------------------------
+  // INVOICES (v3)
+  // -------------------------------------------------------------------------
+
+  // A job title he picks from chips so "UF project" and "UF Project" cannot
+  // split into two invoices: typing a title that matches an OPEN project of
+  // this customer, case aside, hands back that same project rather than a
+  // second one under a near-identical name — the same precedent
+  // findOrCreateCustomer already sets for a customer name. A DONE project
+  // never matches: that job is finished, and typing its old title again
+  // means a new job, not reopening the paperwork on a closed one. Stays
+  // offered under its customer until done.
+  function newProject(d, customerId, title, createdISO) {
+    const t = String(title == null ? '' : title).replace(/\s+/g, ' ').trim().slice(0, PROJECT_TITLE_MAX);
+    if (!t) return null;
+    if (!d.projects) d.projects = [];
+    const key = t.toLowerCase();
+    const hit = d.projects.find((p) => p.customerId === customerId && !p.done && p.title.toLowerCase() === key);
+    if (hit) return hit;
+    const p = { id: uid(), customerId, title: t, done: false, createdISO: createdISO || todayISO() };
+    d.projects.push(p);
+    return p;
+  }
+  function openProjects(d, customerId) {
+    // Array#sort is stable, so two projects created on the same day keep the
+    // order they were pushed in (the older of the two stays first, since the
+    // sort itself is newest-first).
+    return (d.projects || []).filter((p) => p.customerId === customerId && !p.done)
+      .sort((a, b) => (a.createdISO < b.createdISO ? 1 : a.createdISO > b.createdISO ? -1 : 0));
+  }
+  // One visit, at the truck. Nothing priced yet; the picker fills items.
+  // createdAt defaults to Date.now() only when the caller does not pass one,
+  // so a test can hand it a fixed number and stay deterministic.
+  function newLogEntry(d, { customerId, projectId, dateISO, createdAt }) {
+    const e = { id: uid(), dateISO: dateISO || todayISO(), customerId, projectId,
+      crew: [], items: [], rentals: [], equipment: [], notes: '', invoiceId: null,
+      createdAt: createdAt === undefined ? Date.now() : createdAt };
+    if (!d.logs) d.logs = [];
+    d.logs.push(e);
+    return e;
+  }
+  // The invoice counter, separate from the bid counter. Seeded 1 for the same
+  // reason nextNumber is: a plain starting point he replaces on day one. It
+  // also steps past the highest number already ON THE FILE: validateImport
+  // refuses two invoices sharing a number, so a seed left low (a restored
+  // backup, a hand edit) would not just print a wrong number, it would make
+  // the very next save fail outright.
+  function takeInvoiceNumber(d) {
+    const s = d.settings;
+    let n = (Number.isInteger(s.nextInvoiceNumber) && s.nextInvoiceNumber >= 1) ? s.nextInvoiceNumber : 1;
+    for (const inv of (d.invoices || [])) if (Number.isInteger(inv.number) && inv.number >= n) n = inv.number + 1;
+    s.nextInvoiceNumber = n + 1;
+    return n;
+  }
+  function invoiceNumberInUse(d, number, exceptInvoiceId) {
+    return (d.invoices || []).some((inv) => inv.number === number && inv.id !== exceptInvoiceId);
+  }
+
   function addCatalogItem(d, { category, name, unit }) {
     const cat = CATALOG_CATEGORY.indexOf(category) !== -1 ? category : 'gear';
     // Straightened, never lowercased: his capitals are his, and a curly quote
@@ -1338,8 +1372,15 @@
 
   function changeOrdersOf(b) { return (b.job && b.job.changeOrders) || []; }
 
+  // A tool, a part or a crew member can be named outside any bid now: a log
+  // entry at the truck, or an invoice drafted off the pile. Both arrays are
+  // small, so the guards below simply walk them alongside the bids.
+  function logsAndInvoices(d) { return (d.logs || []).concat(d.invoices || []); }
+
   function equipmentInUse(d, id) {
-    return bidsReferencing(d, (b) => (b.equipment || []).some((e) => e.equipmentId === id));
+    const bids = bidsReferencing(d, (b) => (b.equipment || []).some((e) => e.equipmentId === id));
+    const rest = logsAndInvoices(d).filter((x) => (x.equipment || []).some((e) => e.equipmentId === id)).length;
+    return bids + rest;
   }
 
   function crewInUse(d, id) {
@@ -1348,12 +1389,22 @@
       if ((labor.crewIds || []).indexOf(id) !== -1) return true;
       return (labor.tasks || []).some((t) => (t.crewIds || []).indexOf(id) !== -1);
     };
-    return bidsReferencing(d, (b) => inLabor(b.labor) || changeOrdersOf(b).some((co) => inLabor(co.labor)));
+    const bids = bidsReferencing(d, (b) => inLabor(b.labor) || changeOrdersOf(b).some((co) => inLabor(co.labor)));
+    // Invoices do NOT count here, on purpose: an invoice's labor row is
+    // { crewId, name, ... } with the man's NAME already copied onto it the
+    // day the invoice was drafted, so the paper is right forever even if he
+    // is later taken off Settings. A LOG entry's crew is the live reference
+    // (it is what draftInvoice reads to build that snapshot), so only logs
+    // block a delete.
+    const logs = (d.logs || []).filter((e) => (e.crew || []).some((m) => m.crewId === id)).length;
+    return bids + logs;
   }
 
   function catalogInUse(d, id) {
     const inAreas = (areas) => (areas || []).some((a) => (a.items || []).some((it) => it.catalogId === id));
-    return bidsReferencing(d, (b) => inAreas(b.areas) || changeOrdersOf(b).some((co) => inAreas(co.areas)));
+    const bids = bidsReferencing(d, (b) => inAreas(b.areas) || changeOrdersOf(b).some((co) => inAreas(co.areas)));
+    const rest = logsAndInvoices(d).filter((x) => (x.items || []).some((it) => it.catalogId === id)).length;
+    return bids + rest;
   }
 
   function clauseInUse(d, id) {
@@ -1361,11 +1412,15 @@
   }
 
   // A customer is named by bids, projects, log entries and invoices; any of
-  // them means Hide, not Delete. Counts records, so the caption can say the
-  // number.
+  // them means Hide, not Delete. Broken down by kind, so a caption that wants
+  // to say "3 bids and 2 invoices" can, instead of just a total.
+  function customerUseCounts(d, id) {
+    const n = (arr) => (arr || []).filter((x) => x && x.customerId === id).length;
+    return { bids: n(d.bids), projects: n(d.projects), logs: n(d.logs), invoices: n(d.invoices) };
+  }
   function customerInUse(d, id) {
-    const n = (arr, key) => (arr || []).filter((x) => x && x[key] === id).length;
-    return n(d.bids, 'customerId') + n(d.projects, 'customerId') + n(d.logs, 'customerId') + n(d.invoices, 'customerId');
+    const c = customerUseCounts(d, id);
+    return c.bids + c.projects + c.logs + c.invoices;
   }
 
   // costCents is what he paid; listCents, when the caller has one, is what the
@@ -1386,5 +1441,6 @@
     addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
     standardCatalogNames, standardEquipmentNames,
     recordCatalogUse, numberInUse,
-    newProject, openProjects, newLogEntry, takeInvoiceNumber, customerInUse, INVOICE_KIND, INVOICE_STATUS, PROJECT_TITLE_MAX, ADDRESS_MAX };
+    newProject, openProjects, newLogEntry, takeInvoiceNumber, invoiceNumberInUse, customerInUse, customerUseCounts,
+    INVOICE_KIND, INVOICE_STATUS, PROJECT_TITLE_MAX, ADDRESS_MAX };
 });
