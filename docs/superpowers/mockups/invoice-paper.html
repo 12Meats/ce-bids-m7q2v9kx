@@ -1,0 +1,127 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CE invoice paper, app version</title>
+<style>
+  body { margin: 0; padding: 24px; background: #e5e7eb; font-family: -apple-system, Segoe UI, sans-serif; color: #0f172a; }
+  h2 { margin: 0 0 4px; font-size: 20px; }
+  .sub { color: #475569; margin: 0 0 18px; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .paper { width: 500px; background: #fff; border: 1px solid #cbd5e1; padding: 30px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #111; box-shadow: 0 2px 10px rgba(0,0,0,.10); box-sizing: border-box; }
+  .hdr { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #041E42; padding-bottom: 10px; margin-bottom: 12px; }
+  .brand { font-weight: 800; font-size: 17px; color: #041E42; letter-spacing: .02em; }
+  .brand small { display: block; font-weight: 400; font-size: 9.5px; color: #334155; margin-top: 3px; letter-spacing: 0; }
+  .contact { color: #334155; font-size: 9.5px; line-height: 1.45; text-align: left; margin-top: 6px; }
+  .invbox { border: 1.2px solid #334155; min-width: 150px; text-align: center; }
+  .invbox .t { font-weight: 700; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid #334155; }
+  .invbox .g { display: grid; grid-template-columns: 1fr 1fr; font-size: 9.5px; color: #334155; }
+  .invbox .g div { padding: 3px 6px; border-right: 1px solid #94a3b8; }
+  .invbox .g div:last-child { border-right: 0; }
+  .invbox .v { display: grid; grid-template-columns: 1fr 1fr; font-weight: 700; font-size: 11px; border-top: 1px solid #94a3b8; }
+  .invbox .v div { padding: 5px 6px; border-right: 1px solid #94a3b8; }
+  .invbox .v div:last-child { border-right: 0; }
+  .billto { border: 1.2px solid #334155; width: 230px; margin: 4px 0 14px; }
+  .billto .t { font-weight: 700; font-size: 9.5px; padding: 3px 6px; border-bottom: 1px solid #334155; }
+  .billto .b { padding: 6px; line-height: 1.45; font-size: 10.5px; }
+  .strip { display: grid; grid-template-columns: 1.1fr 1.1fr 1.1fr 2.6fr; border: 1.2px solid #334155; border-bottom: 0; margin-top: 8px; }
+  .strip div { padding: 3px 6px; border-right: 1px solid #94a3b8; font-size: 9.5px; color: #334155; font-weight: 700; }
+  .strip div:last-child { border-right: 0; }
+  .strip.vals div { color: #111; font-weight: 600; font-size: 10.5px; padding: 6px; border-top: 1px solid #94a3b8; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; border: 1.2px solid #334155; }
+  th { text-align: left; font-size: 9.5px; color: #334155; border-bottom: 1px solid #334155; padding: 4px 6px; background: #f8fafc; }
+  td { padding: 5px 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  td.r, th.r { text-align: right; white-space: nowrap; }
+  td.c, th.c { text-align: center; white-space: nowrap; }
+  tr.svc td { color: #334155; font-style: italic; border-bottom: 0; padding-top: 10px; }
+  tr.spacer td { height: 90px; border-bottom: 0; }
+  tr.sum td { border-bottom: 0; padding: 3px 6px; }
+  tr.sum td.lab { text-align: right; color: #334155; }
+  tr.total td { font-weight: 800; font-size: 12px; border-top: 1.5px solid #334155; padding-top: 6px; }
+  .foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px; }
+  .thanks { font-weight: 700; font-size: 12px; line-height: 1.4; }
+  .note { margin: 18px 0 0; font-size: 13px; color: #334155; max-width: 1040px; line-height: 1.5; }
+  .note b { color: #0f172a; }
+</style></head><body>
+
+<h2>The invoice the app will print</h2>
+<p class="sub">Left: his #166815 re-done the app's way (a project over two weeks, wire priced by the lot). Right: his #166816 (a service call with parts at unit prices). Rate now prints, one Bill To, PO only because UDA has one.</p>
+
+<div class="row">
+
+<div class="paper">
+  <div class="hdr">
+    <div>
+      <div class="brand">CE &nbsp;CANTU ELECTRIC LLC<small>Licensed, bonded, and insured &nbsp;·&nbsp; AZ ROC #276507</small></div>
+      <div class="contact">15708 E Chandler Heights Rd, Gilbert, AZ 85298<br>(480) 329-5548 &nbsp;·&nbsp; cantuelectric@cox.net</div>
+    </div>
+    <div class="invbox">
+      <div class="t">Invoice</div>
+      <div class="g"><div>Date</div><div>Invoice #</div></div>
+      <div class="v"><div>Jul 6, 2026</div><div>166815</div></div>
+    </div>
+  </div>
+
+  <div class="billto">
+    <div class="t">Bill To</div>
+    <div class="b">United Dairymen of Arizona<br>Attn: Kellen<br>2008 S Hardy Drive<br>Tempe, AZ 85282</div>
+  </div>
+
+  <div class="strip"><div>P.O. Number</div><div>Terms</div><div>Rep</div><div>Project</div></div>
+  <div class="strip vals"><div>2526-4213</div><div>Upon receipt</div><div>Andy Cantu</div><div>UF Project</div></div>
+
+  <table>
+    <tr><th class="c">Quantity</th><th>Description</th><th class="r">Price ea.</th><th class="r">Amount</th></tr>
+    <tr><td class="c">500 ft</td><td>#12 wire</td><td class="r"></td><td class="r">$216.00</td></tr>
+    <tr><td class="c">3</td><td>#14 wire</td><td class="r">$114.00</td><td class="r">$342.00</td></tr>
+    <tr><td class="c">45 hrs</td><td>Labor hours, Jun 22 to Jul 2, 2026</td><td class="r">$65.00</td><td class="r">$2,925.00</td></tr>
+    <tr class="svc"><td></td><td colspan="3">Service dates: Jun 22 to Jul 2, 2026</td></tr>
+    <tr class="spacer"><td colspan="4"></td></tr>
+    <tr class="sum"><td colspan="2" rowspan="3" style="vertical-align:bottom"><div class="thanks">Thank you for choosing Cantu Electric LLC.<br>We appreciate your business</div></td><td class="lab">Subtotal</td><td class="r">$3,483.00</td></tr>
+    <tr class="sum"><td class="lab">Tax</td><td class="r">$0.00</td></tr>
+    <tr class="sum total"><td class="lab">Total</td><td class="r">$3,483.00</td></tr>
+  </table>
+</div>
+
+<div class="paper">
+  <div class="hdr">
+    <div>
+      <div class="brand">CE &nbsp;CANTU ELECTRIC LLC<small>Licensed, bonded, and insured &nbsp;·&nbsp; AZ ROC #276507</small></div>
+      <div class="contact">15708 E Chandler Heights Rd, Gilbert, AZ 85298<br>(480) 329-5548 &nbsp;·&nbsp; cantuelectric@cox.net</div>
+    </div>
+    <div class="invbox">
+      <div class="t">Invoice</div>
+      <div class="g"><div>Date</div><div>Invoice #</div></div>
+      <div class="v"><div>Jul 6, 2026</div><div>166816</div></div>
+    </div>
+  </div>
+
+  <div class="billto">
+    <div class="t">Bill To</div>
+    <div class="b">United Dairymen of Arizona<br>Attn: Kellen<br>2008 S Hardy Drive<br>Tempe, AZ 85282</div>
+  </div>
+
+  <div class="strip"><div>P.O. Number</div><div>Terms</div><div>Rep</div><div>Project</div></div>
+  <div class="strip vals"><div>2526-4710</div><div>Upon receipt</div><div>Andy Cantu</div><div>Temp boiler rewire</div></div>
+
+  <table>
+    <tr><th class="c">Quantity</th><th>Description</th><th class="r">Price ea.</th><th class="r">Amount</th></tr>
+    <tr><td class="c">1</td><td>Cambric tape, roll</td><td class="r">$56.00</td><td class="r">$56.00</td></tr>
+    <tr><td class="c">2</td><td>Rubber tape, roll</td><td class="r">$23.00</td><td class="r">$46.00</td></tr>
+    <tr><td class="c">2</td><td>Black tape, roll</td><td class="r">$7.50</td><td class="r">$15.00</td></tr>
+    <tr><td class="c">3</td><td>3/0 crimps</td><td class="r">$9.00</td><td class="r">$27.00</td></tr>
+    <tr><td class="c">3</td><td>4/0 crimps</td><td class="r">$14.50</td><td class="r">$43.50</td></tr>
+    <tr><td class="c">1</td><td>3" hub</td><td class="r">$37.81</td><td class="r">$37.81</td></tr>
+    <tr><td class="c">1</td><td>2" cord grip</td><td class="r">$89.00</td><td class="r">$89.00</td></tr>
+    <tr><td class="c">1</td><td>Heavy duty shrink tube</td><td class="r">$16.59</td><td class="r">$16.59</td></tr>
+    <tr><td class="c">5 hrs</td><td>Labor hours</td><td class="r">$65.00</td><td class="r">$325.00</td></tr>
+    <tr class="svc"><td></td><td colspan="3">Service date: Jul 2, 2026</td></tr>
+    <tr class="spacer"><td colspan="4" style="height:20px"></td></tr>
+    <tr class="sum"><td colspan="2" rowspan="3" style="vertical-align:bottom"><div class="thanks">Thank you for choosing Cantu Electric LLC.<br>We appreciate your business</div></td><td class="lab">Subtotal</td><td class="r">$655.90</td></tr>
+    <tr class="sum"><td class="lab">Tax</td><td class="r">$0.00</td></tr>
+    <tr class="sum total"><td class="lab">Total</td><td class="r">$655.90</td></tr>
+  </table>
+</div>
+
+</div>
+
+<p class="note"><b>What changed from his sheet:</b> the Ship To box, the Item Code column, and the Ship column are gone. The service date is a plain line under the items instead of red in the middle. The rate prints on the labor line. Wire by the lot keeps a blank Price ea., the way he does it. Rates shown are the $65 on the originals; new invoices would print $85 for UDA. The header is the same one the proposals use, so bids and invoices look like they came from the same company.</p>
+
+</body></html>

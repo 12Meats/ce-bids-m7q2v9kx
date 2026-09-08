@@ -1,0 +1,162 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CE Invoices, phone side</title>
+<style>
+  body { margin: 0; padding: 24px; background: #e5e7eb; font-family: -apple-system, Segoe UI, sans-serif; color: #0f172a; }
+  h2 { margin: 0 0 4px; font-size: 20px; }
+  .sub { color: #475569; margin: 0 0 18px; font-size: 14px; max-width: 1100px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .col { width: 330px; }
+  .cap { font-size: 13px; color: #334155; margin: 10px 4px 0; line-height: 1.45; }
+  .phone { width: 330px; border: 2px solid #cbd5e1; border-radius: 28px; background: #f8fafc; overflow: hidden; color: #0f172a; box-sizing: border-box; }
+  .ptop { background: #041E42; color: #fff; padding: 14px 16px; font-weight: 700; text-align: center; font-size: 17px; position: relative; }
+  .ptop .back { position: absolute; left: 14px; font-weight: 600; font-size: 15px; }
+  .pbody { padding: 12px 14px; }
+  .pcard { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .pcard h4 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .pcard h4 .muted { font-weight: 500; }
+  .prow { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 15px; gap: 10px; }
+  .prow:last-child { border-bottom: 0; }
+  .muted { color: #64748b; font-size: 13px; }
+  .amber { color: #92400e; }
+  .amberrow { background: #fffbeb; margin: 0 -12px; padding-left: 12px; padding-right: 12px; }
+  .chev { color: #94a3b8; }
+  .navy { color: #041E42; font-weight: 700; border-bottom: 2px dotted #041E42; white-space: nowrap; }
+  .pbtn { display: block; width: 100%; box-sizing: border-box; text-align: center; padding: 13px; border-radius: 12px; font-weight: 700; font-size: 16px; margin-top: 4px; }
+  .primary { background: #041E42; color: #fff; }
+  .outline { border: 2px solid #041E42; color: #041E42; background: #fff; }
+  .small { padding: 8px 12px; font-size: 14px; display: inline-block; width: auto; margin: 6px 6px 0 0; border-radius: 10px; }
+  .big { font-size: 26px; font-weight: 800; margin: 4px 0 2px; }
+  .tabs { display: flex; border-top: 1px solid #e2e8f0; background: #fff; }
+  .tabs div { flex: 1; text-align: center; padding: 14px 0; font-size: 15px; color: #64748b; }
+  .tabs .on { color: #041E42; font-weight: 700; border-top: 3px solid #041E42; }
+  .pin { padding: 10px 14px 12px; background: #f8fafc; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 2px; }
+  .chip { border: 1.5px solid #cbd5e1; border-radius: 999px; padding: 8px 12px; font-size: 14px; background: #fff; }
+  .chip.on { border-color: #041E42; background: #041E42; color: #fff; }
+  .chip.new { border-style: dashed; color: #475569; }
+  .check { width: 24px; height: 24px; border-radius: 7px; border: 2px solid #041E42; background: #041E42; color: #fff; font-size: 15px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .check.off { background: #fff; color: transparent; border-color: #94a3b8; }
+  .lead { display: flex; gap: 10px; align-items: center; flex: 1; min-width: 0; }
+  .lead .txt { min-width: 0; }
+  .inv { border: 1.5px solid #041E42; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fff; }
+  .inv .hd { display: flex; justify-content: space-between; font-weight: 700; font-size: 15px; }
+  .inv .ent { font-size: 13px; color: #475569; padding: 4px 0 0 10px; border-left: 2px solid #e2e8f0; margin: 6px 0 0 2px; line-height: 1.5; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; margin-right: 6px; }
+  .pill.amber { background: #fef3c7; color: #92400e; }
+</style></head><body>
+
+<h2>The phone side: log it, pick what to bill, check the grouping</h2>
+<p class="sub">Left to right, the order he'd use them in. Log hours at the truck. On billing day, the pile shows every unbilled entry with its age, oldest first, all checked. "Bill these" shows the invoices it's about to make, grouped by customer, project, and week, before any of them gets a number.</p>
+
+<div class="row">
+
+<div class="col">
+  <div class="phone">
+    <div class="ptop"><span class="back">‹ Invoices</span>Log hours</div>
+    <div class="pbody">
+      <div class="pcard">
+        <h4>Customer</h4>
+        <div class="chips"><span class="chip on">UDA</span><span class="chip">Schreiber</span><span class="chip">Sun Orchard</span><span class="chip new">+ New</span></div>
+      </div>
+      <div class="pcard">
+        <h4>Project <span class="muted">UDA's open jobs</span></h4>
+        <div class="chips"><span class="chip on">UF Project</span><span class="chip">Boiler room</span><span class="chip new">+ New</span></div>
+        <div class="muted" style="margin-top:8px">Or a one-off call: type a title, it's offered again until you mark it done.</div>
+      </div>
+      <div class="pcard">
+        <h4>Date <span class="navy">Tue, Sep 8</span></h4>
+      </div>
+      <div class="pcard">
+        <h4>Who and hours</h4>
+        <div class="prow"><span>Shawn</span><span class="navy">8</span></div>
+        <div class="prow"><span>George</span><span class="navy">4</span></div>
+        <div class="prow"><span class="muted">Luis</span><span class="muted">not on this one</span></div>
+      </div>
+      <div class="pcard">
+        <h4>Parts, rentals, equipment</h4>
+        <div class="prow"><div>#12 wire<br><span class="muted">500 ft · $216.00 the lot</span></div><span class="chev">›</span></div>
+        <div class="prow"><div>Boom lift, rented<br><span class="muted">1 day · $285.00 · markup on</span></div><span class="chev">›</span></div>
+        <div class="prow"><div>Scissor lift, yours<br><span class="muted">2 days · $150.00 a day</span></div><span class="chev">›</span></div>
+        <a class="pbtn outline small">+ Part</a><a class="pbtn outline small">+ Rental</a><a class="pbtn outline small">+ Equipment</a>
+      </div>
+      <div class="pcard">
+        <div class="prow"><span>Notes for you</span><span class="muted">never prints ›</span></div>
+      </div>
+    </div>
+    <div class="pin"><a class="pbtn primary">Save</a></div>
+    <div class="tabs"><div>Bids</div><div class="on">Invoices</div><div>Settings</div></div>
+  </div>
+  <div class="cap">Project is a chip, not typed text, so "UF Project" is always the same "UF Project." The money section is the walk's three kinds: parts (lot price shown the way his paper does), a rental passed through with the markup switch, and his own equipment at the library day rate. Nothing is on the entry unless he taps it in.</div>
+</div>
+
+<div class="col">
+  <div class="phone">
+    <div class="ptop">Invoices</div>
+    <div class="pbody">
+      <div class="pcard" style="background:#041E42;color:#fff;border:0">
+        <div class="muted" style="color:#cbd5e1">Who owes you</div>
+        <div class="big">$4,177.00</div>
+        <div class="muted" style="color:#cbd5e1">3 open invoices · oldest 33 days (Schreiber)</div>
+      </div>
+
+      <div class="pcard">
+        <h4>Ready to bill <span class="muted">6 checked</span></h4>
+        <div class="prow amberrow"><div class="lead"><span class="check">✓</span><div class="txt">UDA · UF Project<br><span class="muted amber">Aug 24 to Aug 28 · 15 days · 2 entries · 21 hrs</span></div></div></div>
+        <div class="prow"><div class="lead"><span class="check">✓</span><div class="txt">UDA · UF Project<br><span class="muted">Aug 31 to Sep 4 · 8 days · 3 entries · 24 hrs</span></div></div></div>
+        <div class="prow"><div class="lead"><span class="check">✓</span><div class="txt">UDA · R2 condensate pump<br><span class="muted">Sep 2 · 6 days · 4 hrs</span></div></div></div>
+        <div class="prow"><div class="lead"><span class="check">✓</span><div class="txt">Schreiber · Freezer lights<br><span class="muted">Sep 3 · 5 days · 8 hrs · $96 parts</span></div></div></div>
+        <div class="prow"><div class="lead"><span class="check off">✓</span><div class="txt">UDA · Boiler room<br><span class="muted">Sep 4 · 4 days · 6 hrs · $310 parts</span></div></div></div>
+        <a class="pbtn outline">Bill these</a>
+      </div>
+
+      <div class="pcard">
+        <h4>Invoices</h4>
+        <div class="prow"><div>#166819 · UDA · $1,142.00<br><span class="pill">Sent</span><span class="muted">Aug 28 · 11 days</span></div><span class="chev">›</span></div>
+        <div class="prow"><div>#166818 · Schreiber · $2,125.00<br><span class="pill amber">Sent</span><span class="muted">Aug 6 · 33 days</span></div><span class="chev">›</span></div>
+        <div class="prow"><div>#166817 · UDA · $260.00<br><span class="pill" style="background:#dcfce7;color:#166534">Paid</span><span class="muted">Jul 2</span></div><span class="chev">›</span></div>
+      </div>
+    </div>
+    <div class="pin"><a class="pbtn primary">+ Log hours</a></div>
+    <div class="tabs"><div>Bids</div><div class="on">Invoices</div><div>Settings</div></div>
+  </div>
+  <div class="cap">Oldest first. Each row is already what it will become: a project's entries for one week show as one row. Fifteen days is amber. The boiler room call is unchecked, so it waits.</div>
+</div>
+
+<div class="col">
+  <div class="phone">
+    <div class="ptop"><span class="back">‹ Back</span>4 invoices</div>
+    <div class="pbody">
+      <div class="muted" style="margin:0 2px 10px">Nothing is numbered yet. Check each one, then send.</div>
+
+      <div class="inv">
+        <div class="hd"><span>UDA · UF Project</span><span>$1,785.00</span></div>
+        <div class="muted">Aug 24 to Aug 28 · 21 hrs at $85 · no parts</div>
+        <div class="ent">Mon Aug 24 · Shawn 8, George 5<br>Fri Aug 28 · Shawn 8</div>
+        <a class="pbtn outline small">Combine with next week</a><a class="pbtn outline small">Split</a>
+      </div>
+
+      <div class="inv">
+        <div class="hd"><span>UDA · UF Project</span><span>$2,256.00</span></div>
+        <div class="muted">Aug 31 to Sep 4 · 24 hrs at $85 · $216.00 parts</div>
+        <div class="ent">Mon Aug 31 · Shawn 8<br>Tue Sep 1 · Shawn 8, George 4 · #12 wire<br>Fri Sep 4 · Shawn 4</div>
+        <a class="pbtn outline small">Split</a>
+      </div>
+
+      <div class="inv">
+        <div class="hd"><span>UDA · R2 condensate pump</span><span>$340.00</span></div>
+        <div class="muted">Sep 2 · 4 hrs at $85</div>
+      </div>
+
+      <div class="inv">
+        <div class="hd"><span>Schreiber · Freezer lights</span><span>$630.40</span></div>
+        <div class="muted">Sep 3 · 8 hrs at $65 · $110.40 parts</div>
+      </div>
+    </div>
+    <div class="pin"><a class="pbtn primary">Number and send 4 invoices</a></div>
+    <div class="tabs"><div>Bids</div><div class="on">Invoices</div><div>Settings</div></div>
+  </div>
+  <div class="cap">The catch-up case: two weeks of UF Project show as two invoices with "Combine" if he wants his old one-invoice habit. Tapping an invoice opens it to edit billed hours or a part before it's numbered. The send step numbers them in date order and shares the PDFs one at a time, the way proposals do.</div>
+</div>
+
+</div>
+</body></html>
