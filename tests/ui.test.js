@@ -2,8 +2,8 @@
 //
 // ui.js is browser code: it builds DOM nodes and it is loaded as plain globals
 // rather than as a module, so most of it has no business being tested here.
-// Three of its functions are different — they are pure, they take plain data,
-// and every one of them is load-bearing in a way a screenshot would not catch:
+// The pure helpers below are different, and the first four are load-bearing
+// in a way a screenshot would not catch:
 //
 //   bidPdfParse   — a bid id is a UUID with its own dashes in it. Split on the
 //                   wrong one and Settings sends the wrong bid's proposals off
@@ -35,7 +35,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sa
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, detailCaption, partQtyLabel, partCostLabel, partBillLabel, partLotLabel, itemCountText,
-  itemBillText, areaNoteLine,
+  itemBillText, areaNoteLine, perUnitText,
   priceSearchUrl } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -796,9 +796,9 @@ test('the home nudge and the backup caption are amber, not red', () => {
 // The keypad questions for the second price and the lot, in the words the
 // cost question already uses.
 test('partBillLabel and partLotLabel read the way partCostLabel does', () => {
-  assert.equal(partBillLabel('#12 wire', 'ft'), '#12 wire, bills at per foot');
-  assert.equal(partBillLabel('20 A breaker', 'ea'), '20 A breaker, bills at each');
-  assert.equal(partBillLabel('#12 THHN', 'roll'), '#12 THHN, bills at per roll');
+  assert.equal(partBillLabel('#12 wire', 'ft'), '#12 wire, bill price per foot');
+  assert.equal(partBillLabel('20 A breaker', 'ea'), '20 A breaker, bill price each');
+  assert.equal(partBillLabel('#12 THHN', 'roll'), '#12 THHN, bill price per roll');
   assert.equal(partLotLabel('#12 wire', 500, 'ft'), '#12 wire, all 500 feet together');
   assert.equal(partLotLabel('#12 THHN', 2, 'roll'), '#12 THHN, all 2 rolls together');
   assert.equal(partLotLabel('20 A breaker', 6, 'ea'), '20 A breaker, all 6 together');
@@ -806,6 +806,9 @@ test('partBillLabel and partLotLabel read the way partCostLabel does', () => {
   // what the rule would say, and it reads like a bug; the line is the line.
   assert.equal(partLotLabel('Permits', 1, 'lot'), 'Permits, the whole line');
   assert.equal(partLotLabel('VFD', 1, 'ea'), 'VFD, the whole line');
+  assert.equal(perUnitText('ft'), ' per foot');
+  assert.equal(perUnitText('ea'), ' each');
+  assert.equal(perUnitText('pcs'), ' each');
 });
 
 // What a walk row says under its cost when the line bills at something other

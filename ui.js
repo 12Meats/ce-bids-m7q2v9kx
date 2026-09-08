@@ -859,10 +859,15 @@ function itemCountText(qty, unit, costCents) {
   return numText(qty) + ' ' + plural + ' at ' + BidMath.fmt(costCents);
 }
 
-// '#12 wire, bills at per foot' — the second price, asked the way the cost is.
-function partBillLabel(name, unit) {
+// ' per foot' or ' each': the tail of every sentence that names a unit price.
+function perUnitText(unit) {
   const w = UNIT_ONE[unit];
-  return w ? name + ', bills at per ' + w : name + ', bills at each';
+  return w ? ' per ' + w : ' each';
+}
+
+// '#12 wire, bill price per foot' — the second price, asked the way the cost is.
+function partBillLabel(name, unit) {
+  return name + ', bill price' + perUnitText(unit);
 }
 
 // '#12 wire, all 500 feet together' — one number for the whole line. A count
@@ -874,19 +879,17 @@ function partLotLabel(name, qty, unit) {
   return name + ', all ' + numText(qty) + (w ? ' ' + w : '') + ' together';
 }
 
-// What a walk row says under its cost when the line bills at something other
-// than cost plus markup: the marked-up unit for a list price, the whole
-// amount for a lot. Empty when neither is set, so a row on an old bid reads
-// exactly as it always has. BidMath.itemPrice does the arithmetic; this only
-// chooses the sentence.
+// What a walk row says under its cost when the line carries a list price or
+// a lot: the marked-up unit for a list price, the whole amount for a lot.
+// Empty when neither is set, so a row on an old bid reads exactly as it
+// always has. BidMath.itemPrice does the arithmetic; this only chooses the
+// sentence, and it asks the RESULT whether the line is a lot (no unit came
+// back) rather than the field, so it can never disagree with the paper.
 function itemBillText(it, markupPct) {
   const p = BidMath.itemPrice(it, markupPct);
-  if (it.lotCents != null) return 'bills ' + BidMath.fmt(p.cents) + ' the lot';
-  if (it.listCents != null) {
-    const w = UNIT_ONE[it.unit];
-    return 'bills at ' + BidMath.fmt(p.unit) + (w ? ' per ' + w : ' each');
-  }
-  return '';
+  if (p.unit == null) return 'bills ' + BidMath.fmt(p.cents) + ' the lot';
+  if (it.listCents == null) return '';
+  return 'bills at ' + BidMath.fmt(p.unit) + perUnitText(it.unit);
 }
 
 // Order matters: what goes on everything, then the three kinds of job that

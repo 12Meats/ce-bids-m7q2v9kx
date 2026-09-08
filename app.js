@@ -167,6 +167,9 @@ function clearBanner(includePersistent) {
 // Three full-screen sheets, all driven from static markup in index.html and
 // wired once in boot(). Only one may be open at a time: a second request while
 // a panel is up is dropped, which is what a fast double-tap on iOS produces.
+// The one way round it is a closes: true caption link, which takes its own
+// panel down before it opens the next; the next must not carry a closes link
+// of its own.
 
 const keypadCtx = { open: false, buffer: null, done: null, captionAction: null, captionCloses: false };
 // field: whichever of the two text controls this prompt is using — the
@@ -245,7 +248,8 @@ function promptNumber(current, opts) {
   // half-typed number is still here when he comes back. closes: true is the
   // other kind of link, the one that hands off to a different keypad ("Price
   // the whole line instead"): this panel goes down first, because promptNumber
-  // refuses to open over an open panel. Stored on the context rather than
+  // refuses to open over an open panel, and what he had typed here goes down
+  // with it, which is what "instead" means. Stored on the context rather than
   // bound to the button, because the button is wired once at boot and the
   // panel is opened a thousand times.
   const act = opts.captionAction && opts.captionAction.label ? opts.captionAction : null;
@@ -306,6 +310,17 @@ function closeKeypad() {
   const actBtn = el('keypadCaptionAction');
   if (actBtn) { actBtn.hidden = true; actBtn.textContent = ''; }
   syncPanelClass();
+}
+
+// The caption link under a keypad. Wired once at boot; what it does is
+// whatever the open panel put on the context. A closes: true link takes
+// this panel down first, and what he had typed here goes down with it,
+// which is what "instead" means on the one link that uses it.
+function keypadCaptionTapped() {
+  const act = keypadCtx.captionAction;
+  if (!act) return;
+  if (keypadCtx.captionCloses) closeKeypad();   // read before the close, which clears the context
+  act();
 }
 
 function keypadDone() {
@@ -956,15 +971,7 @@ function wirePanels() {
   // standing (Check price); captionCloses is the one kind that hands off to a
   // different keypad instead.
   const capAct = el('keypadCaptionAction');
-  if (capAct) {
-    capAct.addEventListener('click', () => {
-      const act = keypadCtx.captionAction;
-      if (!act) return;
-      // Read before the close, which clears the context.
-      if (keypadCtx.captionCloses) closeKeypad();
-      act();
-    });
-  }
+  if (capAct) capAct.addEventListener('click', keypadCaptionTapped);
   el('keypadDone').addEventListener('click', keypadDone);
   el('keypadClear').addEventListener('click', keypadClear);
   el('keypadCancel').addEventListener('click', closeKeypad);

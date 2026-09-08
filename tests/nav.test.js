@@ -112,7 +112,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), sandbox, { f
 const {
   registerScreen, show, goBack, onPopState, anyPanelOpen,
   promptNumber, promptMoney, promptText, confirmPanel, keypadPress, keypadDone, keypadClear,
-  textDone, closeAnyPanel, attachedStrip, closeAnyStrip,
+  textDone, closeAnyPanel, attachedStrip, closeAnyStrip, keypadCaptionTapped,
 } = sandbox;
 
 // A function declaration lands on the context's global object; a top-level
@@ -426,4 +426,48 @@ test('a keypad cancelled by the back gesture keeps nothing either', () => {
   onPopState({ state: { ceb: 2 } });
   keypadDone();
   assert.deepStrictEqual(seen, [], 'a cancel commits nothing, prior or not');
+});
+
+// ---------------------------------------------------------------------------
+// The caption link under a keypad
+// ---------------------------------------------------------------------------
+// Two kinds. "Check price" leaves the panel standing (the number he was half
+// way through typing is still there when he comes back from the browser).
+// "Price the whole line instead" is closes: true: this keypad goes down,
+// buffer and all, and the link opens the next one. Done afterwards belongs to
+// the second keypad and never to the first.
+const keypadCtx = () => vm.runInContext('keypadCtx', sandbox);
+const keypadLabel = () => sandbox.document.getElementById('keypadLabel').textContent;
+
+test('a plain caption link leaves the keypad standing with what he typed', () => {
+  standInTheWalk();
+  let opened = 0;
+  promptMoney(null, { label: 'Cost per foot', caption: 'Not sure?',
+    captionAction: { label: 'Check price', onTap: () => { opened += 1; } }, done: () => {} });
+  keypadPress('4');
+  keypadCaptionTapped();
+  assert.strictEqual(opened, 1, 'the link ran');
+  assert.strictEqual(anyPanelOpen(), true, 'the keypad is still up');
+  assert.strictEqual(keypadCtx().buffer.text(), '4', 'and so is the 4 he typed');
+  keypadClear();
+});
+
+test('a closes: true caption link hands off: one keypad up, the second label, the second done', () => {
+  standInTheWalk();
+  let first = null, second = null;
+  promptMoney(null, { label: 'Wire, bills at per foot', caption: 'Before the markup.',
+    captionAction: { label: 'Price the whole line instead', closes: true,
+      onTap: () => promptMoney(null, { label: 'Wire, all 500 feet together', done: (c) => { second = c; } }) },
+    done: (c) => { first = c; } });
+  keypadPress('4');                       // half-typed, abandoned by "instead"
+  keypadCaptionTapped();
+  assert.strictEqual(anyPanelOpen(), true, 'exactly one keypad is up');
+  assert.strictEqual(keypadLabel(), 'Wire, all 500 feet together', 'and it is the second one');
+  assert.strictEqual(keypadCtx().buffer.text(), '', 'the abandoned 4 did not carry over');
+  assert.strictEqual(keypadCtx().captionAction, null, 'the second keypad has no link of its own');
+  keypadPress('2'); keypadPress('1'); keypadPress('6');
+  keypadDone();
+  assert.strictEqual(second, 21600, 'Done went to the lot keypad');
+  assert.strictEqual(first, null, 'and never to the one that closed');
+  assert.strictEqual(anyPanelOpen(), false);
 });
