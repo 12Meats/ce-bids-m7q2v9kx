@@ -17,6 +17,39 @@ function fixture() {
   d.bids.push(b); return { d, b };
 }
 
+// THE SUPPLIER'S NAME ON PAPER. His tile says "GFCI"; the customer's page
+// says "Pass & Seymour 1597-TRWRW 15A 125V Self-Test GFCI, White", because
+// that is a product a plant's accounts payable can look up. The scope
+// sentence keeps his short name: "furnish and install a Pass & Seymour
+// 1597-TRWRW 15A 125V Self-Test GFCI, White" is not a sentence anybody says.
+test('full level: a line with a supplierName prints it as the description; scope keeps his name', () => {
+  const { d, b } = fixture();
+  b.areas[0].items = [
+    { catalogId: null, name: 'GFCI', unit: 'ea', qty: 2, costCents: 3000, priceCents: null,
+      supplierName: 'Pass & Seymour 1597-TRWRW 15A 125V Self-Test GFCI, White' },
+    { catalogId: null, name: '3/4" EMT', unit: 'ft', qty: 100, costCents: 112, priceCents: null, supplierName: null },
+    { catalogId: null, name: 'Straps', unit: 'lot', qty: 1, costCents: 500, priceCents: null },
+  ];
+  b.misc.cents = 0;
+  const rows = D.build(b, d, 'full').sections.find((s) => s.title === 'Materials').rows;
+  assert.deepStrictEqual(rows.map((r) => r.desc), [
+    'Pass & Seymour 1597-TRWRW 15A 125V Self-Test GFCI, White',
+    '3/4" EMT',
+    'Straps',
+  ]);
+  assert.deepStrictEqual(D.draftScope(b), ['Warehouse: furnish and install 2 GFCIs; run 100 ft of 3/4" EMT; furnish and install 1 lot of straps']);
+  // A supplier name of spaces is no name.
+  b.areas[0].items[0].supplierName = '   ';
+  assert.strictEqual(D.build(b, d, 'full').sections[0].rows[0].desc, 'GFCI');
+  // Capped at 120 by storage: a 121-character supplierName does not load.
+  const dd = S.emptyData();
+  const bb = S.newBid(dd, { customerName: 'UDA', title: 'x', jobType: 'service' });
+  bb.areas.push({ id: 'a1', name: 'Room', items: [
+    { catalogId: null, name: 'GFCI', unit: 'ea', qty: 1, costCents: 3000, priceCents: null, supplierName: 'x'.repeat(121) } ], photoIds: [] });
+  dd.bids.push(bb);
+  assert.strictEqual(S.validateImport(JSON.stringify(dd)), null, 'a 121-character supplierName is refused');
+});
+
 test('full level: sections Materials / Equipment & rentals / Labor with a labor row of bidHours × rate', () => {
   const { d, b } = fixture();
   const doc = D.build(b, d, 'full');

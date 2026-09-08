@@ -934,7 +934,8 @@ function walkCommitItem(bid, area, part, qty, costCents) {
   // put it there on a line once, and the next line starts where that one
   // ended. A part with none has none, and the line bills off its cost.
   const listCents = part.lastListCents != null ? part.lastListCents : null;
-  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null, listCents };
+  const supplierName = typeof part.supplierName === 'string' && part.supplierName.trim() !== '' ? part.supplierName : null;
+  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null, listCents, supplierName };
   const prevUses = part.uses;
   const prevCost = part.lastCostCents;
   area.items.push(item);

@@ -125,7 +125,11 @@
     // materialPrice uses), plus a misc row when there's a misc cost.
     const materialRows = (bid.areas || []).flatMap((a) => (a.items || []).map((it) => {
       const { unit, cents } = B.itemPrice(it, markup);
-      return { desc: it.name.trim(), qtyText: unitText(it), unitCents: unit, cents };
+      // The supplier's name when the line carries one: the customer's page
+      // names the product a plant can look up, while his own short name stays
+      // on the walk and in the scope sentence (scopePhrase reads it.name).
+      const supplier = typeof it.supplierName === 'string' ? it.supplierName.trim() : '';
+      return { desc: supplier || it.name.trim(), qtyText: unitText(it), unitCents: unit, cents };
     }));
     if (bid.misc && bid.misc.cents > 0) {
       materialRows.push({ desc: bid.misc.label, qtyText: '', unitCents: null, cents: bid.misc.cents });

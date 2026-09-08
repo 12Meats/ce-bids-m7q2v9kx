@@ -566,7 +566,9 @@
         // file older than v2.4. A number where a name goes is refused, so a
         // hand-edited file cannot make the import match on garbage.
         if (p.sku !== undefined && p.sku !== null && !isStr(p.sku)) return null;
-        if (p.supplierName !== undefined && p.supplierName !== null && !isStr(p.supplierName)) return null;
+        // Capped at 120: the app never types a longer one, and a hand-edited
+        // or generated file should not be able to hand a line a paragraph.
+        if (p.supplierName !== undefined && p.supplierName !== null && !(isStr(p.supplierName) && p.supplierName.length <= 120)) return null;
         if (p.priceCheckedISO !== undefined && p.priceCheckedISO !== null && !isISO(p.priceCheckedISO)) return null;
       }
 
@@ -590,6 +592,11 @@
         // Absent on every line written before v2.3; null means "not set" too.
         if (it.listCents !== undefined && !isIntGte0OrNull(it.listCents)) return false;
         if (it.lotCents !== undefined && !isIntGte0OrNull(it.lotCents)) return false;
+        // OPTIONAL: the supplier's name for the part, remembered on the line
+        // the day it was added so the paper prints the specific product and
+        // a later import never rewrites paper already out. Capped at 120, the
+        // same ceiling it wears on the catalog part.
+        if (it.supplierName !== undefined && it.supplierName !== null && !(isStr(it.supplierName) && it.supplierName.length <= 120)) return false;
         return true;
       }
       // Area ids only need to be unique *within* the array passed in — once

@@ -1014,6 +1014,8 @@ test('validateImport: sku, supplierName and priceCheckedISO on a part are option
   assert.ok(!ok((d) => { part(d).supplierName = ['x']; }), 'an array is not a name');
   assert.ok(!ok((d) => { part(d).priceCheckedISO = '9/8/26'; }), 'a date that is not YYYY-MM-DD');
   assert.ok(!ok((d) => { part(d).priceCheckedISO = 20260908; }), 'a number is not a date');
+  assert.ok(ok((d) => { part(d).supplierName = 'x'.repeat(120); }), 'a 120-character supplierName loads');
+  assert.ok(!ok((d) => { part(d).supplierName = 'x'.repeat(121); }), 'a 121-character supplierName is refused');
 });
 
 test('seeds, addCatalogItem and addStandardCatalog carry the three fields as null', () => {
@@ -1025,4 +1027,14 @@ test('seeds, addCatalogItem and addStandardCatalog carry the three fields as nul
   S.addStandardCatalog(d);
   assert.ok(d.catalog.every((x) => 'sku' in x && 'supplierName' in x && 'priceCheckedISO' in x));
   assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
+test('validateImport: supplierName on a line is an optional string, capped at 120', () => {
+  const ok = (mutate) => { const { d } = buildFullData(); mutate(d); return S.validateImport(JSON.stringify(d)) !== null; };
+  const item = (d) => d.bids[0].areas[0].items[0];
+  assert.ok(ok((d) => { item(d).supplierName = 'Square D QO120 20A Single-Pole Breaker'; }));
+  assert.ok(ok((d) => { item(d).supplierName = null; }));
+  assert.ok(!ok((d) => { item(d).supplierName = 42; }), 'a number is not a name');
+  assert.ok(ok((d) => { item(d).supplierName = 'x'.repeat(120); }), 'a 120-character supplierName loads');
+  assert.ok(!ok((d) => { item(d).supplierName = 'x'.repeat(121); }), 'a 121-character supplierName is refused');
 });
