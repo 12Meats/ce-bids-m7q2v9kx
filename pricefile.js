@@ -1,7 +1,9 @@
 // pricefile.js — the price file a script writes off the supplier's site and
 // the app reads in Settings. UMD so node:test and the browser both load it.
 // Pure: no DOM, no persistence. The screen shows summaryText and asks; this
-// file decides everything else.
+// file decides everything else. A row with no name, or a price of nothing,
+// is refused, the same as a row missing its sku or its per. bidmath.js must
+// load before this file (summaryText formats money through BidMath.fmt).
 //
 // THE APP NEVER TALKS TO THE SUPPLIER. tools/qed-prices.py, run by hand on a
 // PC, reads one public product page per part that has a part number and
@@ -40,8 +42,10 @@
       if (bad) return { error: 'Row ' + (i + 1) + ' of the price file is not a price row.', rows: [] };
       // Capped at 120: the same ceiling supplierName wears everywhere else it
       // is stored, so a row cannot put a longer string on a part than typing
-      // it in Settings ever could.
-      rows.push({ sku: x.sku.trim(), name: Catalog.straighten(x.name).slice(0, 120), listCents: x.listCents, per: x.per.trim().toLowerCase() });
+      // it in Settings ever could. sku strips ALL whitespace, not just the
+      // ends, the same as the typed path in Settings, so "330 2434" off a
+      // scanned receipt matches the part he typed "3302434" onto.
+      rows.push({ sku: x.sku.replace(/\s+/g, ''), name: Catalog.straighten(x.name).slice(0, 120), listCents: x.listCents, per: x.per.trim().toLowerCase() });
     }
     return { error: null, checkedISO: obj.checkedISO, rows };
   }

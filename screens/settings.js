@@ -1577,6 +1577,9 @@ function settingsImportPrices(file) {
     const m = PriceFile.match(parsed.rows, state.data.catalog);
     const summary = PriceFile.summaryText(m);
     if (!m.matched.length) { showBanner(summary); render(); return; }
+    // confirmPanel refuses to open over another open panel; asking anyway
+    // would look like the button did nothing, so say why instead.
+    if (anyPanelOpen()) { showBanner('Finish what you were doing, then try the import again.'); render(); return; }
     return confirmPanel(summary + ' Update the bill-at prices?', { ok: 'Update' }).then((ok) => {
       if (!ok) { render(); return; }
       // What apply is about to touch, remembered first by the module itself
@@ -1589,7 +1592,9 @@ function settingsImportPrices(file) {
         + out.unchanged + ' already right.', 'ok');
       render();
     });
-  }, () => {
+  }).catch(() => {
+    // A throw inside the success path too (a stale cache read without
+    // PriceFile loaded, say) lands here rather than leaving the button dead.
     showBanner("Couldn't read that file", 'danger');
     render();
   });
@@ -1662,7 +1667,7 @@ function buildSetCatalogRow(box, p, searching) {
 
 // The muted line under a part's name: the drawer when he is searching across
 // all of them, and the supplier's handle when the part has one. "QED 3302434 ·
-// $39.08 list, Sep 8" says the import reached this part and when.
+// $39.08 list, Sep 8, 2026" says the import reached this part and when.
 function settingsCatalogSub(p, searching) {
   const bits = [];
   if (searching) bits.push(catalogCategoryLabel(p.category));

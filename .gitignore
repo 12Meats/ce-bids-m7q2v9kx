@@ -3,3 +3,5 @@ node_modules/
 .superpowers/
 .playwright-mcp/
 .gstack/
+__pycache__/
+qed-prices.json

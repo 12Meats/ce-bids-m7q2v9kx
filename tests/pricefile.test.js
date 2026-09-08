@@ -42,6 +42,15 @@ test('parse: a row priced at nothing is refused, and a name is required and capp
   assert.strictEqual(ok.rows[0].name.length, 120);
 });
 
+// A scanned or copy-pasted sku can carry a stray space in the middle, not
+// just at the ends. Stripped the same way Settings strips a typed part
+// number, so the two paths land on the same string and match each other.
+test('parse: a sku strips all whitespace, not just the ends', () => {
+  const ok = P.parse(file([{ sku: '330 2434', name: 'GFCI', listCents: 3908, per: 'ea' }]));
+  assert.strictEqual(ok.error, null);
+  assert.strictEqual(ok.rows[0].sku, '3302434');
+});
+
 // The supplier sells by the each, the foot, the hundred or the thousand; his
 // catalog counts by ea, ft, roll, box, case, lot, day. Only the pairs that mean
 // the same thing convert; the rest come back null and the row is flagged

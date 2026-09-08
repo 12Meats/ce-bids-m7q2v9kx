@@ -624,11 +624,15 @@ function walkAskBillsAt(it) {
     done: (cents) => {
       const prev = it.listCents;
       const prevLast = part ? part.lastListCents : undefined;
+      const prevChecked = part ? part.priceCheckedISO : undefined;
       it.listCents = cents;                       // null is "back to the cost"
-      if (part) part.lastListCents = cents;
+      // A price he types here is his own, typed by hand, not QED's. If the
+      // part still carried the date of an earlier import, that date now lies
+      // about where this number came from, so it comes off with it.
+      if (part) { part.lastListCents = cents; part.priceCheckedISO = null; }
       persistOr(() => {
         it.listCents = prev;
-        if (part) part.lastListCents = prevLast;
+        if (part) { part.lastListCents = prevLast; part.priceCheckedISO = prevChecked; }
       });
       walkItemMenu = null;
       render();

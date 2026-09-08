@@ -17,6 +17,7 @@ Standard library only. Python 3.8+.
 import argparse
 import html
 import json
+import math
 import re
 import sys
 import time
@@ -41,7 +42,7 @@ RE_UOM = re.compile(r'class="priceUOM"[^>]*>\s*/?\s*([^<\s]+)')
 
 
 def parse_page(text):
-    """-> {'name', 'listCents', 'per'} or None when the page has no price on it."""
+    """-> {'name', 'listCents', 'per'} or None when the page has no usable price on it."""
     m = RE_PRICING.search(text)
     if not m:
         return None
@@ -50,14 +51,24 @@ def parse_page(text):
     except ValueError:
         return None
     normal = pricing.get('normalPrice')
-    if not isinstance(normal, (int, float)):
+    # A placeholder price is not a price; PriceFile refuses a zero or
+    # negative listCents anyway, so this is a miss, not a row worth writing.
+    if not isinstance(normal, (int, float)) or normal <= 0:
+        return None
+    # sellPackQuantity other than 1 means the price is for a pack, not the
+    # each price his catalog expects; skip rather than guess the pack math.
+    pack = pricing.get('sellPackQuantity')
+    if pack is not None and pack != 1:
         return None
     name = RE_NAME.search(text)
+    raw = re.sub(r'<[^>]+>', ' ', name.group(1)) if name else ''
+    clean = html.unescape(re.sub(r'\s+', ' ', raw)).strip()
+    if not clean:
+        return None
     uom = RE_UOM.search(text)
-    clean = html.unescape(re.sub(r'\s+', ' ', name.group(1))).strip() if name else ''
     return {
         'name': clean,
-        'listCents': int(round(normal * 100)),
+        'listCents': int(math.floor(normal * 100 + 0.5)),
         'per': (uom.group(1).lower() if uom else 'ea'),
     }
 
@@ -81,6 +92,8 @@ def skus_from_backup(path):
 
 def run(pairs, out_path, pause=PAUSE):
     rows, fails = [], 0
+    if len(pairs) > MAX_PARTS:
+        print(f'{len(pairs)} parts, reading the first {MAX_PARTS}. Run again for the rest.', file=sys.stderr)
     pairs = pairs[:MAX_PARTS]
     for i, (sku, his_name) in enumerate(pairs, 1):
         try:
@@ -122,6 +135,21 @@ def selftest():
     assert parse_page(wire)['listCents'] == 96 and parse_page(wire)['per'] == 'ft'
     hundred = SAMPLE.replace('/ea', '/C')
     assert parse_page(hundred)['per'] == 'c'
+    # A placeholder price is not a price.
+    zero = SAMPLE.replace('"normalPrice": 39.08', '"normalPrice": 0')
+    assert parse_page(zero) is None
+    # No h1, no name, no row.
+    no_h1 = re.sub(r'<h1>.*?</h1>', '', SAMPLE, flags=re.S)
+    assert parse_page(no_h1) is None
+    # A brand span inside the h1 is markup, not part of the name.
+    branded = re.sub(r'<h1>.*?</h1>', '<h1><span class="brand">Pass &amp; Seymour</span> GFCI</h1>', SAMPLE, flags=re.S)
+    assert parse_page(branded)['name'] == 'Pass & Seymour GFCI'
+    # A pack price is not his each price.
+    packed = SAMPLE.replace('"sellPackQuantity": 1', '"sellPackQuantity": 10')
+    assert parse_page(packed) is None
+    # Three decimals, rounded half up: 96.5 cents rounds to 97, not down to 96.
+    fraction = SAMPLE.replace('"normalPrice": 39.08', '"normalPrice": 0.965').replace('/ea', '/C')
+    assert parse_page(fraction)['listCents'] == 97 and parse_page(fraction)['per'] == 'c'
     print('selftest ok')
 
 
@@ -132,9 +160,15 @@ def main():
     ap.add_argument('--out', default='qed-prices.json')
     ap.add_argument('--pause', type=float, default=PAUSE)
     ap.add_argument('--selftest', action='store_true')
+    ap.add_argument('--sample-json', action='store_true', help='print the sample page parsed as one price-file row, for the Node contract test')
     a = ap.parse_args()
+    a.pause = max(1.0, a.pause)
     if a.selftest:
         selftest()
+        return
+    if a.sample_json:
+        print(json.dumps({'source': 'qedelectric.com', 'checkedISO': date.today().isoformat(),
+                           'rows': [dict(sku='3302434', **parse_page(SAMPLE))]}))
         return
     if a.backup:
         pairs = skus_from_backup(a.backup)
