@@ -27,9 +27,11 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
    **Material markup** should read **15%**. If yours says 18, tap it and put in 15. Bids you already wrote keep the markup they were figured at.
 4. **Equipment ›.** Thirty tools. Tap one and put in a **Cost new**. A tool with no cost asks for one the first time you use it.
-5. **Company ›.** Check the phone, the address, and the ROC number. Pick a **Proposal style**: **Blue & logo** or **Plain black**. **Supply house search** is where the **Check price** link points.
+5. **Company ›.** Check the phone, the address, and the ROC number. Pick a **Proposal style**: **Blue & logo** or **Plain black**. **Supply house search** is where the **Check price** link points: set it to `https://www.qedelectric.com/product/search?q={q}` so Check price opens QED's own search. A part with a QED part number searches by the number and lands on the exact product.
 
 **Parts catalog** (210 parts), **Terms library** (27 clauses), **Anything missing** and **Note phrases** come filled in. Nothing to do there.
+
+**QED part number.** Tap a part, then **QED part #**, and type the number off your QED receipt (or from under the product on their site). Once a part has its number, Adrian can update its bill-at price from QED with one file: Settings › Catalog › **Import prices**. The app tells you what moved before it changes anything, and bids you already wrote never move. A price you type yourself on the walk is yours, and the QED date comes off that part until the next import.
 
 **Every number in Rates is new bids only.** Change the labor rate today and it is what the next bid starts at. A bid you already wrote keeps the numbers it was figured at, so nothing you handed a customer moves behind your back.
 

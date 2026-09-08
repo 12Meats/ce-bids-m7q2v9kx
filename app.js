@@ -26,14 +26,14 @@
 // The build the phone is actually running, shown at the bottom of Settings.
 // Must match CACHE in sw.js; both bump on every deploy that changes a cached
 // file. tests/sw.test.js fails if the two ever drift.
-const APP_VERSION = 'bids-v2.3';
+const APP_VERSION = 'bids-v2.4';
 
 // The day that build was made, as a plain ISO date. The version line at the
 // bottom of Settings reads "CE Bids · v2.2 · built Sep 5, 2026" off these two
 // together: the version says WHICH build and this says WHEN, which is the half
 // he can check against the day he was told to update. Bumped with APP_VERSION
 // and CACHE, in the same commit, every release.
-const APP_BUILT = '2026-09-07';
+const APP_BUILT = '2026-09-08';
 
 // ---------------------------------------------------------------------------
 // STATE

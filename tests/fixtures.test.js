@@ -16,7 +16,11 @@
 //   * New bid fields are OPTIONAL with a fallback, which is what lets an old
 //     fixture keep loading with no version bump at all.
 //
-// backup-bids-v2.3.json is this release's own: the v2.2 file with Settings
+// backup-bids-v2.4.json is this release's own: the v2.3 file after a price
+// import put a QED part number, QED's name and a new bill-at price on two
+// parts. Every bid total is the v2.3 number, which is the whole point.
+//
+// backup-bids-v2.3.json is the release before it: the v2.2 file with Settings
 // moved to a 15% markup, plus one UDA bid whose wire is priced as a lot, whose
 // breakers bill at a list price, and whose boxes bill off cost like every line
 // before v2.3. The two older bids still price at 18, off their snapshots.
@@ -138,6 +142,10 @@ const FIXTURE_TOTALS = {
   // written and their snapshots still say 18. Bid 3 is the new shape: a run
   // of wire priced as a lot, two breakers billed at list, one plain line.
   'backup-bids-v2.3.json': { 1: 2607636, 2: 591060, 3: 181040 },
+  // v2.4's own: the v2.3 file after a price import. The catalog's bill-at
+  // prices moved (the wire to 96, the breaker to 1850) and NOT ONE BID DID:
+  // an import is memory for the next bid, never a rewrite of an old one.
+  'backup-bids-v2.4.json': { 1: 2607636, 2: 591060, 3: 181040 },
 };
 
 for (const file of Object.keys(FIXTURE_TOTALS)) {
@@ -335,6 +343,25 @@ test('backup-bids-v2.3.json really is a v2.3 file', () => {
   assert.ok(job && job.surprises.length === 1 && job.changeOrders.length === 1);
   assert.strictEqual(d.catalog.length, 210);
   assert.strictEqual(d.settings.clauses.length, 27);
+});
+
+test('backup-bids-v2.4.json really is a v2.4 file', () => {
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v2.4.json'), 'utf8'));
+  assert.ok(d, 'the v2.4 fixture does not load');
+  const withSku = d.catalog.filter((p) => typeof p.sku === 'string');
+  assert.strictEqual(withSku.length, 2, 'two parts carry a QED part number');
+  assert.ok(withSku.every((p) => typeof p.supplierName === 'string' && p.priceCheckedISO === '2026-09-08'));
+  const wire = withSku.find((p) => p.unit === 'ft');
+  const breaker = withSku.find((p) => p.unit === 'ea');
+  assert.strictEqual(wire.lastListCents, 96);
+  assert.strictEqual(breaker.lastListCents, 1850);
+  // The bid that used the wire at 40 list and 21600 the lot still says so.
+  const b = d.bids.find((x) => x.pricing.markupPct === 15);
+  const line = b.areas[0].items.find((it) => it.catalogId === wire.id);
+  assert.strictEqual(line.listCents, 40);
+  assert.strictEqual(line.lotCents, 21600);
+  // Every other part is untouched: absent or null, never a stray string.
+  assert.ok(d.catalog.every((p) => p.sku == null || typeof p.sku === 'string'));
 });
 
 // ---------------------------------------------------------------------------
