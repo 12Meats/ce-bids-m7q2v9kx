@@ -40,7 +40,7 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
    When it asks a part's cost, **Check price** opens your supply house in Safari with the name typed in. It needs signal, and the keypad waits for you.
 
-   **Two prices on a part.** Tap a line, then **Bills at** to put the list price on it: the price the customer is billed, before the markup. Cost stays what you paid. Tap **Price the whole line instead** on that keypad to give the line one number for all of it, the way your invoices do a roll of wire ($216.00 for 500 ft prints as 500 ft with no price per foot, just $216.00). **Clear** on either keypad puts the line back to billing off its cost. Once you put a bill price on a part, the next line you add for it starts there.
+   **Two prices on a part.** Tap a line, then **Bills at** to put the list price on it: the price the customer is billed, before the markup. Cost stays what you paid. Tap **Price the whole line instead** on that keypad to give the line one number for all of it, the way your invoices do a roll of wire ($216.00 for 500 ft prints as 500 ft with no price per foot, just $216.00). **Clear** on the whole-line keypad puts the line back to a price per foot. **Clear** on the **Bills at** keypad puts it back to billing off its cost. Once you put a bill price on a part, the next line you add for it starts there.
 
    Before you leave, answer **Anything missing?**. It shows the six you forget most, and **Show all 19** opens the rest. **Not this job** puts a row away. **Add it** puts it on the bid: a lift or a dumpster goes through the rental question, anything else asks the price there and then.
 

@@ -135,7 +135,7 @@ const FIXTURE_TOTALS = {
   'backup-bids-v2.2.json': { 1: 2607636, 2: 591060 },
   // v2.3's own. Bids 1 and 2 are the v2.2 photograph unchanged, and they pin
   // the rule twice over: Settings moved to a 15% markup after they were
-  // written and their snapshots still say 18. Bid 3 is the new shape: a roll
+  // written and their snapshots still say 18. Bid 3 is the new shape: a run
   // of wire priced as a lot, two breakers billed at list, one plain line.
   'backup-bids-v2.3.json': { 1: 2607636, 2: 591060, 3: 181040 },
 };

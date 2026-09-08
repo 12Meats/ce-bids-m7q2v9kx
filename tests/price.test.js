@@ -60,7 +60,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'price.js'), 'utf8'),
   { filename: 'price.js' });
 
 const { priceSettingsMoves, priceUseSettings, priceUseSettingsText, priceBidCrewIds, priceApply,
-  priceItemReadout } = sandbox;
+  priceItemReadout, priceTopItems } = sandbox;
 
 // The one call that would write to real storage if a screen ever reached past
 // persistOr. Counted, never performed: node has no localStorage.
@@ -282,4 +282,18 @@ test('priceItemReadout: cost then the unit it prints at; a lot says the lot', ()
   assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, listCents: 40 }, 15), '$0.38 → $0.46');
   assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, lotCents: 21600 }, 15),
     '$0.38 → $216.00 the lot');
+});
+
+// The readout's biggest lines are the biggest AS PRINTED. A lot is the one
+// line where cost and print price part ways, and it used to hide below
+// three lines that cost more per unit than the whole lot sold for.
+test('priceTopItems ranks by what the line prints at, so a lot cannot hide', () => {
+  const bid = { areas: [{ items: [
+    { name: 'A', unit: 'ea', qty: 1, costCents: 30000, priceCents: null },                 // prints 34500
+    { name: 'B', unit: 'ea', qty: 1, costCents: 25000, priceCents: null },                 // prints 28750
+    { name: 'C', unit: 'ea', qty: 1, costCents: 20000, priceCents: null },                 // prints 23000
+    { name: 'wire', unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 99900 }, // cost 19000, prints 99900
+  ] }] };
+  const names = priceTopItems(bid, 15).map((r) => r.it.name);
+  assert.deepStrictEqual(names.slice(0, 3), ['wire', 'A', 'B']);
 });
