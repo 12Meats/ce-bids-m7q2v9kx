@@ -1,0 +1,124 @@
+<h2>The invoice</h2>
+<p class="subtitle">Left: what he sees after "Bill these" builds a T&amp;M invoice for UDA. Right: the paper the plant gets. Same header, terms, and counter as the proposals.</p>
+
+<style>
+  .phone { width: 330px; border: 2px solid #cbd5e1; border-radius: 28px; background: #f8fafc; overflow: hidden; font-family: -apple-system, Segoe UI, sans-serif; color: #0f172a; }
+  .ptop { background: #041E42; color: #fff; padding: 14px 16px; font-weight: 700; text-align: center; font-size: 17px; position: relative; }
+  .ptop .back { position: absolute; left: 14px; font-weight: 600; font-size: 15px; }
+  .pbody { padding: 12px 14px; }
+  .pcard { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .pcard h4 { margin: 0 0 8px; font-size: 14px; }
+  .prow { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 15px; gap: 8px; }
+  .prow:last-child { border-bottom: 0; }
+  .muted { color: #64748b; font-size: 13px; }
+  .navy { color: #041E42; font-weight: 700; border-bottom: 2px dotted #041E42; white-space: nowrap; }
+  .chev { color: #94a3b8; }
+  .pbtn { display: block; width: 100%; box-sizing: border-box; text-align: center; padding: 13px; border-radius: 12px; font-weight: 700; font-size: 16px; margin-top: 4px; }
+  .primary { background: #041E42; color: #fff; }
+  .outline { border: 2px solid #041E42; color: #041E42; background: #fff; }
+  .big { font-size: 26px; font-weight: 800; margin: 4px 0 2px; }
+  .tabs { display: flex; border-top: 1px solid #e2e8f0; background: #fff; }
+  .tabs div { flex: 1; text-align: center; padding: 14px 0; font-size: 15px; color: #64748b; }
+  .tabs .on { color: #041E42; font-weight: 700; border-top: 3px solid #041E42; }
+  .pin { padding: 10px 14px 12px; background: #f8fafc; }
+  .paper { width: 420px; background: #fff; border: 1px solid #cbd5e1; padding: 26px 28px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #111; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .paper .hdr { display: flex; justify-content: space-between; border-bottom: 2.5px solid #041E42; padding-bottom: 8px; margin-bottom: 10px; }
+  .paper .brand { font-weight: 800; font-size: 15px; color: #041E42; }
+  .paper .contact { text-align: right; color: #334155; font-size: 9.5px; line-height: 1.4; }
+  .paper .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; margin-bottom: 10px; font-size: 10.5px; }
+  .paper .meta b { color: #334155; font-weight: 600; }
+  .paper .title { font-weight: 700; font-size: 13px; color: #041E42; margin: 6px 0 8px; }
+  .paper table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  .paper th { text-align: left; font-size: 9.5px; color: #334155; border-bottom: 1px solid #94a3b8; padding: 4px 3px; }
+  .paper td { padding: 4px 3px; border-bottom: 1px solid #e2e8f0; }
+  .paper td.r, .paper th.r { text-align: right; }
+  .paper tr.band td { background: #f1f5f9; font-weight: 700; }
+  .paper tr.total td { font-weight: 800; border-top: 1.5px solid #334155; background: #f8fafc; }
+  .paper .terms { margin-top: 12px; font-size: 9.5px; color: #334155; line-height: 1.45; }
+  .paper .foot { margin-top: 14px; font-size: 9.5px; color: #334155; }
+</style>
+
+<div class="split" style="align-items:flex-start; gap: 28px; justify-content:center">
+
+  <div class="phone">
+    <div class="ptop"><span class="back">‹ Invoices</span>Invoice #1062</div>
+    <div class="pbody">
+      <div class="pcard">
+        <div class="muted">UDA · service call · Sep 5, 2026</div>
+        <div class="big">$1,134.25</div>
+        <div class="muted">Due Oct 5 · net 30</div>
+      </div>
+
+      <div class="pcard">
+        <h4>Labor</h4>
+        <div class="prow"><div>Shawn<br><span class="muted">logged 4 hrs</span></div><span class="navy">4 hrs</span></div>
+        <div class="prow"><div>George<br><span class="muted">logged 4 hrs</span></div><span class="navy">4 hrs</span></div>
+        <div class="prow"><span class="muted">8 hrs at $85.00</span><b>$680.00</b></div>
+      </div>
+
+      <div class="pcard">
+        <h4>Materials</h4>
+        <div class="prow"><div>30 A 3-pole disconnect<br><span class="muted">1 ea · cost $310.00 · markup on</span></div><b>$356.50</b></div>
+        <div class="prow"><div>3/4" seal-tight<br><span class="muted">20 ft · cost $3.00 · markup on</span></div><b>$69.00</b></div>
+        <div class="prow"><div>Supports, anchors, and hardware<br><span class="muted">cost $25.00 · markup on</span></div><b>$28.75</b></div>
+        <div class="prow"><span class="muted">Materials with 15%</span><b>$454.25</b></div>
+      </div>
+
+      <div class="pcard">
+        <h4>Work done</h4>
+        <div class="prow"><span>Lactose motor swap, line 3</span><span class="chev">›</span></div>
+      </div>
+
+      <div class="pcard">
+        <div class="prow"><span>Notes on the invoice</span><span class="chev">›</span></div>
+        <div class="prow"><span>Terms</span><span class="muted">Net 30 · standard</span></div>
+      </div>
+      <a class="pbtn outline">Preview</a>
+    </div>
+    <div class="pin"><a class="pbtn primary">Send invoice</a></div>
+    <div class="tabs"><div>Bids</div><div class="on">Invoices</div><div>Settings</div></div>
+  </div>
+
+  <div class="paper">
+    <div class="hdr">
+      <div><div class="brand">CE &nbsp;CANTU ELECTRIC LLC</div><div style="font-size:9.5px;color:#334155">Licensed, bonded, and insured</div></div>
+      <div class="contact">Andy Cantu<br>(480) 329-5548 · cantuelectric@cox.net<br>15708 E Chandler Heights Rd, Gilbert, AZ 85298<br>AZ ROC #276507</div>
+    </div>
+    <div class="meta">
+      <div><b>Invoice to:</b> UDA</div><div><b>Invoice #:</b> 1062</div>
+      <div><b>Date:</b> Sep 5, 2026</div><div><b>Due:</b> Oct 5, 2026</div>
+    </div>
+    <div class="title">Lactose motor swap, line 3</div>
+    <table>
+      <tr><th>Description</th><th class="r">Qty</th><th class="r">Unit</th><th class="r">Cost</th></tr>
+      <tr class="band"><td colspan="4">Materials</td></tr>
+      <tr><td>30 A 3-pole disconnect</td><td class="r">1</td><td class="r">$356.50</td><td class="r">$356.50</td></tr>
+      <tr><td>3/4" seal-tight</td><td class="r">20 ft</td><td class="r">$3.45</td><td class="r">$69.00</td></tr>
+      <tr><td>Supports, anchors, and hardware</td><td class="r"></td><td class="r"></td><td class="r">$28.75</td></tr>
+      <tr class="band"><td colspan="4">Labor</td></tr>
+      <tr><td>Labor · Sep 5</td><td class="r">8 hrs</td><td class="r">$85.00</td><td class="r">$680.00</td></tr>
+      <tr><td>Subtotal</td><td></td><td></td><td class="r">$1,134.25</td></tr>
+      <tr><td>Tax</td><td></td><td></td><td class="r">$0.00</td></tr>
+      <tr class="total"><td>Total due</td><td></td><td></td><td class="r">$1,134.25</td></tr>
+    </table>
+    <div class="terms">Payment is due within 30 days of the invoice date. Balances not paid when due bear interest at 1.5% per month plus any costs of collection. Material is billed at cost at the time of purchase.</div>
+    <div class="foot">Thank you for your business. Questions? Call Andy at (480) 329-5548.</div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:24px">
+  <h3>How the two kinds differ on this screen</h3>
+  <ul>
+    <li><b>T&amp;M (shown):</b> labor lines come from the log with billed hours editable beside the logged hours; materials at cost with the markup switch per line; "Work done" is the log's one line.</li>
+    <li><b>Project:</b> the Labor and Materials cards are replaced by one line, "Cheese plant lighting, as proposed #1057 · $13,030.00", plus a line per approved change order; "Bill part of it" lets him type a smaller amount for a big job and the rest stays open on the bid.</li>
+    <li>Both: Send invoice shares the PDF the way proposals do, marks it Sent with the date, and it lands in the invoice list waiting for a payment.</li>
+  </ul>
+</div>
+
+<h3>Anything to change on the invoice or the paper?</h3>
+<div class="options">
+  <div class="option" data-choice="good" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Looks right</h3><p>Move on to payments and the who-owes-you view.</p></div></div>
+  <div class="option" data-choice="paper" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Change the paper</h3><p>Tell me what his invoices usually show that this doesn't, or shouldn't.</p></div></div>
+  <div class="option" data-choice="screen" onclick="toggleSelect(this)"><div class="letter">C</div><div class="content"><h3>Change the screen</h3><p>Order, wording, or what's editable.</p></div></div>
+</div>
