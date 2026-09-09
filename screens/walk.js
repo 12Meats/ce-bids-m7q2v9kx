@@ -44,7 +44,6 @@
 // is added. One sentence, one destination, said the same way twice — the
 // banner used to point at a screen and the area then showed nothing.
 const WALK_RENTAL_SUB = 'rental · priced on Costs & price';
-const WALK_HIGHLIGHT_MS = 1000;
 const WALK_MAX_EDGE = 1600;      // px on the long edge of a stored photo
 const WALK_JPEG_QUALITY = 0.85;
 
@@ -56,18 +55,17 @@ let walkAreaId = null;
 // copy of this file living in job.js.
 let walkCoId = null;
 let walkForTargetId = null;      // which bid (and change order) the view state above belongs to
-let walkAddCat = null;           // the category being browsed in the add view
-let walkAddSearch = '';
-let walkAddListEl = null;        // the live list, so typing in search redraws only it
-let walkAddNew = null;           // { category, name } while the unit picker is up
-let walkAddPending = null;       // { part, qty } waiting on the same-price answer
+// Where the add-a-part flow has got to: the drawer being browsed, what is
+// typed in the search, the part being invented, the price question waiting for
+// an answer, the line that is flashing. All six live in ui.js's own shape now,
+// so the truck log can hold one of its own without this file knowing.
+let walkPicker = pickerState();
 let walkItemMenu = null;         // the item object showing its action row
 let walkSheet = null;            // { kind: 'rentEquip' | 'equip', from: 'add' | 'forget' }
 let walkForgetRow = null;        // the forget-list row a placeholder flow is answering
 let walkForgetPick = null;       // the forget-list row showing its "Which area?" chips
 let walkForgetOpen = false;      // the answered rows, unfolded from their one line
 let walkForgetAll = false;       // the questions past the sixth, unfolded from "Show all N"
-let walkHighlightItem = null;    // the item flashed for a second after it was added
 let walkPhotoOpenId = null;      // the photo showing full-size
 let walkPhotoUrls = [];          // object URLs handed out by the last render
 let walkRenderToken = 0;         // async thumbnail fills from an older render are dropped
@@ -84,18 +82,13 @@ function walkResetView() {
 // The half-finished things: a sheet, an open photo, a part waiting on its
 // price. None of them should survive leaving the screen and coming back.
 function walkClearTransient() {
-  walkAddCat = null;
-  walkAddSearch = '';
-  walkAddListEl = null;
-  walkAddNew = null;
-  walkAddPending = null;
+  walkPicker = pickerState();
   walkItemMenu = null;
   walkSheet = null;
   walkForgetRow = null;
   walkForgetPick = null;
   walkForgetOpen = false;
   walkForgetAll = false;
-  walkHighlightItem = null;
   walkPhotoOpenId = null;
 }
 
@@ -182,41 +175,11 @@ function walkCatalogPart(it) {
   return it.catalogId ? (state.data.catalog.find((p) => p.id === it.catalogId) || null) : null;
 }
 
-// A two-line tappable line: name and money on top, the detail underneath.
-// Pass no onTap for an inert one (the area-cost footer), which then wears
-// .flat: no chevron, no press state, nothing to aim at. opts.keypad says the
-// tap opens a number panel, so the value goes navy instead of taking a ›.
-function walkRow(name, sub, value, onTap, opts) {
-  const node = document.createElement(onTap ? 'button' : 'div');
-  node.className = 'walk-row' + tapClasses(onTap, opts);
-  if (onTap) {
-    node.type = 'button';
-    node.addEventListener('click', onTap);
-  }
-
-  const text = document.createElement('div');
-  text.className = 'walk-row-text';
-  const n = document.createElement('div');
-  n.className = 'walk-row-name';
-  n.textContent = name;
-  text.appendChild(n);
-  if (sub) {
-    const s = document.createElement('div');
-    s.className = 'walk-row-sub';
-    s.textContent = sub;
-    text.appendChild(s);
-  }
-  node.appendChild(text);
-
-  if (value !== null && value !== undefined && value !== '') {
-    const v = document.createElement('div');
-    v.className = 'walk-row-value';
-    v.textContent = String(value);
-    node.appendChild(v);
-  }
-  if (onTap && !(opts && opts.keypad)) node.appendChild(chevron());
-  return node;
-}
+// The walk's own walkRow moved to ui.js as lineRow when the add-a-part flow
+// did: the picker draws the same two-line row, and one row shared beats two
+// that drift apart. The name stays here because every list on this screen is
+// built out of it.
+const walkRow = lineRow;
 
 // ---------------------------------------------------------------------------
 // AREA LIST
@@ -443,7 +406,7 @@ function renderWalkArea(bid, edit, area, host) {
         BidMath.fmt(walkAreaCost({ items: [it] })),
         () => { walkItemMenu = walkItemMenu === it ? null : it; render(); }
       );
-      if (walkHighlightItem === it) line.classList.add('walk-row-new');
+      if (walkPicker.highlight === it) line.classList.add('walk-row-new');
       box.appendChild(line);
       if (!(BidMath.itemPrice(it, markup).cents > 0)) box.appendChild(warn());
       // Inside this card, under the row that was tapped, indented - not
@@ -483,8 +446,7 @@ function renderWalkArea(bid, edit, area, host) {
   nav.appendChild(textButton('+ Item', 'btn btn-primary btn-block', () => {
     navPush();
     walkView = 'add';
-    walkAddCat = null;
-    walkAddSearch = '';
+    walkPicker = pickerState();
     walkItemMenu = null;
     render();
   }));
@@ -555,8 +517,8 @@ function buildItemActions(box, lineEl, area, it) {
     { label: 'Cost', onTap: () => {
       promptMoney(it.costCents, {
         label: partCostLabel(it.name, it.unit),
-        caption: walkPriceCaption(),
-        captionAction: walkPriceAction(it.name),
+        caption: pickerPriceCaption(),
+        captionAction: pickerPriceAction(state.data.settings, it.name),
         done: (cents) => {
           const part = walkCatalogPart(it);
           const prev = it.costCents;
@@ -665,311 +627,47 @@ function walkAskLot(it) {
 // ---------------------------------------------------------------------------
 // ADD ITEM
 // ---------------------------------------------------------------------------
-// Six tiles, then a list, then two numbers. The hybrid: the catalog is there
-// so he never types "3/4 EMT" again, and + New part is there so the one thing
-// the catalog has never heard of doesn't stop the walk.
+// The flow itself — tiles, search, the catalog list, + New part, the unit
+// picker, quantity, same-or-different price, the cost keypad, the commit — is
+// renderItemPicker in ui.js. It moved there so the truck log can offer the
+// identical one onto a log entry rather than growing a second copy of it that
+// drifts. What is left here is what is the WALK's: which list is being filled,
+// what the running strip counts, and what the rentals tile means on a bid.
 
 function renderWalkAdd(bid, edit, area, host) {
   const co = edit === bid ? null : edit;
-
-  host.appendChild(screenHead('Add to ' + (area.name || 'this area'), null, { center: true }));
-
-  if (walkAddPending) { host.appendChild(buildPriceAnswer(bid, area)); return; }
-  if (walkAddNew) { host.appendChild(buildUnitPicker(bid, area)); return; }
-
-  // What he has counted in this room so far, and what it costs him. He adds
-  // eight things in a row without leaving this screen, so the running total is
-  // the only way he can tell that any of it landed.
-  host.appendChild(walkTallyStrip(area));
-
-  // The search is ABOVE the tiles and searches everything: knowing the name of
-  // the part is not the same as knowing which of six drawers this app filed it
-  // under, and he knows the name. Redraws only the list below it — rebuilding
-  // the input under a typing thumb would drop focus and close the keyboard.
-  host.appendChild(searchInput({
-    className: 'walk-search',
-    placeholder: 'Search all parts',
-    label: 'Search all parts',
-    value: walkAddSearch,
-    onInput: (value) => {
-      // The first character is the step from the tiles into a list; the rest
-      // are typing. One entry, so one Back puts the tiles back.
-      if (walkAddSearch.trim() === '' && value.trim() !== '') navPush();
-      walkAddSearch = value;
-      if (walkAddListEl && walkAddListEl.isConnected) buildWalkAddBody(bid, area, walkAddListEl, !!co);
-      else render();
-    },
-  }));
-
-  walkAddListEl = document.createElement('div');
-  buildWalkAddBody(bid, area, walkAddListEl, !!co);
-  host.appendChild(walkAddListEl);
-
-  // The way out of the add flow that is not Back: he is done counting in this
-  // room, rather than one step up the list. Pinned, because it is eleven rows
-  // down a parts list by the time he wants it.
-  pinnedBar(host, 'Done', () => {
-    walkView = 'area';
-    walkAddCat = null;
-    walkAddSearch = '';
-    render();
-  });
-}
-
-// Tiles, or a list. A search beats a category — typing crosses all six drawers,
-// which is what Catalog.matches does with a query — and clearing it puts the
-// tiles back exactly where they were.
-function buildWalkAddBody(bid, area, host, onChangeOrder) {
-  host.textContent = '';
-  if (walkAddSearch.trim() === '' && !walkAddCat) {
-    host.appendChild(buildCategoryTiles(onChangeOrder));
-    return;
-  }
-  const box = card();
-  buildCatalogList(bid, area, box, onChangeOrder);
-  host.appendChild(box);
-}
-
-// "3 items · $412.00" — the area's own running total, at cost. The arithmetic
-// is areaTallyText in ui.js, where it is pure and tested; this only decides
-// whether it flashes, which it does for a second after something is added.
-function walkTallyStrip(area) {
-  const strip = document.createElement('div');
-  strip.className = 'walk-tally';
-  strip.textContent = areaTallyText(area);
-  if (walkHighlightItem) strip.classList.add('walk-row-new');
-  return strip;
-}
-
-// onChangeOrder drops the rentals tile: a rental line lives on the bid's own
-// rentals list, which a change order does not have and must not borrow.
-function buildCategoryTiles(onChangeOrder) {
-  const grid = document.createElement('div');
-  grid.className = 'walk-tiles';
-  CATALOG_CATEGORIES.filter(([key]) => !(onChangeOrder && key === 'rentals')).forEach(([key, label]) => {
-    grid.appendChild(textButton(label, 'walk-tile', () => {
-      // Rentals and owned equipment are not material lines — they are priced
-      // per day on the Costs & price screen (Task 9). All this tile does is
-      // get the line onto the bid before he forgets it exists.
-      navPush();
-      if (key === 'rentals') {
+  renderItemPicker(host, walkPicker, {
+    title: 'Add to ' + (area.name || 'this area'),
+    items: area.items,
+    // areaTallyText reads an area, and the picker only knows about a list of
+    // lines, which is the one thing an area is to it.
+    tally: (items) => areaTallyText({ items }),
+    // A change order has no rentals list of its own and must not borrow the
+    // bid's, so it gets neither the tile nor the rental hits in a search.
+    allowRentals: !co,
+    onRental: (name) => {
+      // The TILE arrives with no name on it: it is the start of "Rented, or
+      // your own?", which is a sheet this screen owns and the picker knows
+      // nothing about. A rentals part picked out of a drawer or a search
+      // already has its name and goes straight to the rental line.
+      if (name === null) {
         walkForgetRow = null;
         walkSheet = { kind: 'rentEquip', from: 'add' };
-      } else {
-        walkAddCat = key;
-        walkAddSearch = '';
-      }
-      render();
-    }));
-  });
-  return grid;
-}
-
-// Which parts to offer and in what order is a rule, not a rendering decision,
-// so it lives in catalog.js where it is pure and tested: hidden ones excluded,
-// rentals kept out of the material lists, search crossing categories, most-used
-// first. This screen only decides what to do with what comes back.
-function walkCatalogMatches(onChangeOrder) {
-  const searching = walkAddSearch.trim() !== '';
-  return Catalog.matches(state.data.catalog, {
-    category: walkAddCat,
-    query: walkAddSearch,
-    // A search crosses the drawers, and rentals are one of the drawers. He
-    // types "scissor lift" because a scissor lift is the thing he needs; a
-    // search that hides it offered him "+ New part" instead, and the lift went
-    // on the bid as a gear line at material markup. Only a search reaches
-    // them — the browsing lists still keep rentals out, because they are not
-    // material — and a change order never does: it has no rentals list of its
-    // own and must not borrow the bid's.
-    includeRentals: searching && !onChangeOrder,
-  });
-}
-
-function buildCatalogList(bid, area, box, onChangeOrder) {
-  box.textContent = '';
-  const searching = walkAddSearch.trim() !== '';
-
-  const h = document.createElement('h3');
-  h.className = 'card-title';
-  h.textContent = searching ? 'All parts' : catalogCategoryLabel(walkAddCat);
-  box.appendChild(h);
-
-  const list = walkCatalogMatches(onChangeOrder);
-  if (list.length === 0) {
-    box.appendChild(emptyNote(searching ? 'Nothing matches that.' : 'Nothing in here yet.'));
-  } else {
-    list.forEach((p) => {
-      // Search crosses categories on purpose — typing "3/4" should find the
-      // hubs as well as the EMT — so each row has to say which drawer it came
-      // out of, or two identical-looking names are indistinguishable.
-      const sub = searching ? catalogCategoryLabel(p.category) : '';
-      const value = p.lastCostCents === null
-        ? p.unit
-        : BidMath.fmt(p.lastCostCents) + ' / ' + p.unit;
-      box.appendChild(walkRow(p.name, sub, value, () => walkPickPart(bid, area, p), { keypad: true }));
-    });
-  }
-
-  box.appendChild(walkRow('+ New part', 'Something not on the list', null, () => {
-    promptText('', {
-      label: 'New part',
-      placeholder: 'What it is',
-      done: (name) => {
-        if (!name) { showBanner('A new part needs a name'); return; }
-        // A part invented while searching across everything has no category to
-        // belong to; gear is the drawer for anything that isn't the other five.
-        walkAddNew = { category: searching ? 'gear' : walkAddCat, name };
-        render();
-      },
-    });
-  }));
-}
-
-function buildUnitPicker(bid, area) {
-  const box = card('How is ' + walkAddNew.name + ' counted?');
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  CATALOG_UNITS.forEach((unit) => {
-    nav.appendChild(textButton(unit, 'btn btn-block', () => walkCreatePart(bid, area, unit)));
-  });
-  box.appendChild(nav);
-  return box;
-}
-
-function walkCreatePart(bid, area, unit) {
-  const { category, name } = walkAddNew;
-  const part = Store.addCatalogItem(state.data, { category, name, unit });
-  if (!part) { showBanner('A new part needs a name'); walkAddNew = null; render(); return; }
-  // The catalog entry is saved on its own: if the quantity keypad is cancelled
-  // a moment from now, a part that is on screen must already be on disk rather
-  // than living in memory until some later save happens to carry it along.
-  if (!persistOr(() => {
-    const i = state.data.catalog.indexOf(part);
-    if (i !== -1) state.data.catalog.splice(i, 1);
-  })) { render(); return; }
-  walkAddNew = null;
-  walkPickPart(bid, area, part);
-}
-
-// Quantity, then price. A part he has bought before offers the price he paid
-// last time as one button, because typing the same $3.40 for the fortieth
-// length of EMT is the kind of friction that gets an app put down.
-function walkPickPart(bid, area, part) {
-  // The catalog carries a rentals category, and a lift is not a material line:
-  // priced as one it would take material markup and be counted in the material
-  // total. It goes where rentals go, whatever list he found it in.
-  if (part.category === 'rentals') {
-    walkAddRental(bid, part.name, 'add', null);
-    return;
-  }
-  promptNumber(null, {
-    label: partQtyLabel(part.name, part.unit || 'ea'),
-    allowDecimal: true,
-    done: (v) => {
-      if (v === null) return;
-      if (!(v > 0)) { showBanner('A count has to be more than zero'); render(); return; }
-      if (typeof part.lastCostCents === 'number') {
-        walkAddPending = { part, qty: v };
         render();
         return;
       }
-      walkAskCost(bid, area, part, v);
+      walkAddRental(bid, name, 'add', null);
     },
-  });
-}
-
-function buildPriceAnswer(bid, area) {
-  const { part, qty } = walkAddPending;
-  const box = card();
-  box.appendChild(walkRow(part.name, itemCountText(qty, part.unit, part.lastCostCents), null, null));
-
-  const nav = document.createElement('div');
-  nav.className = 'bid-nav';
-  nav.appendChild(textButton(
-    'Same price (' + BidMath.fmt(part.lastCostCents) + ')',
-    'btn btn-primary btn-block',
-    () => walkCommitItem(bid, area, part, qty, part.lastCostCents)
-  ));
-  // The pending state is NOT cleared here: walkCommitItem owns clearing it. If
-  // he cancels the cost keypad, this view is still what is on the glass and
-  // Back still walks one step, rather than the screen and the state disagreeing.
-  nav.appendChild(textButton('Different price', 'btn btn-block', () => {
-    walkAskCost(bid, area, part, qty);
-  }));
-  box.appendChild(nav);
-  return box;
-}
-
-// "Check price" under a cost keypad. Offline it is not offered at all rather
-// than offered and then refused: a link that opens the browser's own no-signal
-// page is a tab he has to find his way back out of, and in a plant with no
-// signal that is every tap. Nothing here blocks anything either way.
-function walkPriceCaption() {
-  return navigator.onLine === false ? '' : 'Not sure? Check the price first.';
-}
-
-function walkPriceAction(name) {
-  if (navigator.onLine === false) return null;
-  return { label: 'Check price', onTap: () => openPriceSearch(state.data.settings, name) };
-}
-
-function walkAskCost(bid, area, part, qty) {
-  promptMoney(part.lastCostCents, {
-    label: partCostLabel(part.name, part.unit || 'ea'),
-    // The one panel in the app with somewhere to send him. It opens the search
-    // in another tab and leaves the keypad standing, so what he was half way
-    // through typing is still here when he comes back with the number.
-    caption: walkPriceCaption(),
-    captionAction: walkPriceAction(part.name),
-    done: (cents) => {
-      // Clear on the cost keypad means "I don't know yet". The count he just
-      // walked off is worth more than the price he hasn't looked up, so the
-      // line goes on at zero and shows on the bid until it has been priced.
-      const zero = cents === null;
-      if (walkCommitItem(bid, area, part, qty, zero ? 0 : cents) && zero) {
-        showBanner('Added at $0. Put a price on it when you know it');
-      }
+    onDone: () => {
+      walkView = 'area';
+      walkPicker = pickerState();
+      render();
     },
+    onChanged: render,
+    navPush,
+    persistOr,
+    data: state.data,
   });
-}
-
-function walkCommitItem(bid, area, part, qty, costCents) {
-  // The second price comes along when the catalog has one for this part: he
-  // put it there on a line once, and the next line starts where that one
-  // ended. A part with none has none, and the line bills off its cost.
-  const listCents = part.lastListCents != null ? part.lastListCents : null;
-  const supplierName = typeof part.supplierName === 'string' && part.supplierName.trim() !== '' ? part.supplierName : null;
-  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null, listCents, supplierName };
-  const prevUses = part.uses;
-  const prevCost = part.lastCostCents;
-  area.items.push(item);
-  // One mutation, one save: the line and the catalog's memory of the price go
-  // to disk together or not at all.
-  Store.recordCatalogUse(state.data, part.id, costCents);
-  if (!persistOr(() => {
-    const i = area.items.indexOf(item);
-    if (i !== -1) area.items.splice(i, 1);
-    part.uses = prevUses;
-    part.lastCostCents = prevCost;
-  })) {
-    // Stay in the add view: nothing was saved, so nothing is behind him.
-    walkAddPending = null;
-    render();
-    return false;
-  }
-
-  // He stays in the list he was looking at. Eight items used to be eight round
-  // trips out to the area and back in through the tiles; the running strip at
-  // the top is what says the last one landed, and Done is the way out.
-  walkAddPending = null;
-  walkHighlightItem = item;
-  render();
-  setTimeout(() => {
-    if (walkHighlightItem !== item) return;
-    walkHighlightItem = null;
-    if (state.screen === 'walk') render();
-  }, WALK_HIGHLIGHT_MS);
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1457,8 +1155,7 @@ function walkAfterPlaceholder(from, forgetRow, message) {
   // belongs — the rental line itself does not live in an area.
   if (from === 'add') {
     walkView = 'area';
-    walkAddCat = null;
-    walkAddSearch = '';
+    walkPicker = pickerState();
   }
   showBanner(message || 'Added. Price it on the Costs & price screen.', 'ok');
   render();
@@ -1801,17 +1498,15 @@ function walkBackStep(peek) {
     return true;
   }
   if (walkView === 'add') {
-    if (walkAddPending || walkAddNew) {
-      if (!peek) { walkAddPending = null; walkAddNew = null; render(); }
-      return true;
-    }
-    // A search and a category are the same step out of the tiles, and both go
-    // back to them rather than all the way out of the add flow.
-    if (walkAddCat || walkAddSearch.trim() !== '') {
-      if (!peek) { walkAddCat = null; walkAddSearch = ''; render(); }
-      return true;
-    }
-    if (!peek) { walkView = 'area'; render(); }
+    // The steps INSIDE the add flow are the picker's: the price answer, the
+    // unit picker, the search and the category. This screen owns only the step
+    // out of it. Every one of them answers true, so a peek can say so without
+    // asking — which it must, because pickerBackStep moves, and a peek that
+    // moved would answer the shell's question by changing the answer.
+    if (peek) return true;
+    if (pickerBackStep(walkPicker)) { render(); return true; }
+    walkView = 'area';
+    render();
     return true;
   }
   if (walkView === 'area') {

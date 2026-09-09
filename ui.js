@@ -198,6 +198,47 @@ function row(label, value, onTap, opts) {
   return node;
 }
 
+// A two-line tappable line: name and money on top, the detail underneath.
+// Pass no onTap for an inert one (the area-cost footer), which then wears
+// .flat: no chevron, no press state, nothing to aim at. opts.keypad says the
+// tap opens a number panel, so the value goes navy instead of taking a ›.
+//
+// This was the walk's own walkRow until the add-a-part flow moved here: the
+// picker draws these, and so does every list of counted lines the picker
+// feeds — an area on the walk, a log entry at the truck. One row, one class,
+// one set of measurements, wherever the lines are shown.
+function lineRow(name, sub, value, onTap, opts) {
+  const node = document.createElement(onTap ? 'button' : 'div');
+  node.className = 'walk-row' + tapClasses(onTap, opts);
+  if (onTap) {
+    node.type = 'button';
+    node.addEventListener('click', onTap);
+  }
+
+  const text = document.createElement('div');
+  text.className = 'walk-row-text';
+  const n = document.createElement('div');
+  n.className = 'walk-row-name';
+  n.textContent = name;
+  text.appendChild(n);
+  if (sub) {
+    const s = document.createElement('div');
+    s.className = 'walk-row-sub';
+    s.textContent = sub;
+    text.appendChild(s);
+  }
+  node.appendChild(text);
+
+  if (value !== null && value !== undefined && value !== '') {
+    const v = document.createElement('div');
+    v.className = 'walk-row-value';
+    v.textContent = String(value);
+    node.appendChild(v);
+  }
+  if (onTap && !(opts && opts.keypad)) node.appendChild(chevron());
+  return node;
+}
+
 // tapCard({ title, sub, note, tag, value, onTap }) -> a whole card that is one
 // button. The areas on the walk are the reason: they were rows inside a shared
 // card, which made the most important list in the app read as a paragraph. A
@@ -1409,4 +1450,367 @@ function unpricedTarget(line, bid) {
     return { screen: 'walk', arg: { bidId, changeOrderId: line.id } };
   }
   return { screen: 'price', arg: bidId };
+}
+
+// ---------------------------------------------------------------------------
+// THE ITEM PICKER
+// ---------------------------------------------------------------------------
+// Six tiles, then a list, then two numbers. The hybrid: the catalog is there
+// so he never types "3/4 EMT" again, and + New part is there so the one thing
+// the catalog has never heard of doesn't stop the walk.
+//
+// This was the walk's add-a-part flow. It lives here because the truck log
+// needs the identical flow onto a log entry's items, and the one thing worse
+// than a second copy of a screen is a second copy of a screen that drifts.
+// The picker knows nothing about who is using it: it is handed a state object
+// and a list to push onto, and it calls back for everything else.
+//
+//   pickerState() -> { cat, search, listEl, newPart, pending, highlight }
+//   renderItemPicker(host, ps, opts) draws the whole add flow into host:
+//     opts.title        'Add to Lactose room'      (screenHead, centered)
+//     opts.items        the array a picked part is pushed onto
+//     opts.tally        (items) => string          the running strip text, or null for none
+//     opts.allowRentals boolean                    the rentals tile and rental hits in search
+//     opts.onRental     (name) => void             instead of committing, for a rentals part
+//                                                  (a null name is the rentals TILE, which the
+//                                                  caller answers its own way)
+//     opts.onDone       () => void                 the pinned Done
+//     opts.onChanged    () => void                 after a commit: the caller re-renders
+//     opts.navPush      () => void                 so the first search keystroke is one Back
+//     opts.persistOr    the shell's persistOr
+//     opts.data         the shell's own data object (catalog, settings)
+//   pickerCommitItem(ps, opts, part, qty, costCents) -> boolean
+//   pickerBackStep(ps) -> boolean: pending, then newPart, then the search, then the category.
+//
+// Every mutation goes through opts.persistOr with an exact restore.
+
+const PICKER_HIGHLIGHT_MS = 1000;
+
+function pickerState() {
+  return {
+    cat: null,          // the category being browsed
+    search: '',
+    listEl: null,       // the live list, so typing in search redraws only it
+    newPart: null,      // { category, name } while the unit picker is up
+    pending: null,      // { part, qty } waiting on the same-price answer
+    highlight: null,    // the item flashed for a second after it was added
+  };
+}
+
+function renderItemPicker(host, ps, opts) {
+  host.appendChild(screenHead(opts.title, null, { center: true }));
+
+  if (ps.pending) { host.appendChild(pickerPriceAnswer(ps, opts)); return; }
+  if (ps.newPart) { host.appendChild(pickerUnitPicker(ps, opts)); return; }
+
+  // What he has counted here so far, and what it costs him. He adds eight
+  // things in a row without leaving this screen, so the running total is the
+  // only way he can tell that any of it landed.
+  if (opts.tally) host.appendChild(pickerTallyStrip(ps, opts));
+
+  // The search is ABOVE the tiles and searches everything: knowing the name of
+  // the part is not the same as knowing which of six drawers this app filed it
+  // under, and he knows the name. Redraws only the list below it — rebuilding
+  // the input under a typing thumb would drop focus and close the keyboard.
+  host.appendChild(searchInput({
+    className: 'walk-search',
+    placeholder: 'Search all parts',
+    label: 'Search all parts',
+    value: ps.search,
+    onInput: (value) => {
+      // The first character is the step from the tiles into a list; the rest
+      // are typing. One entry, so one Back puts the tiles back.
+      if (ps.search.trim() === '' && value.trim() !== '') opts.navPush();
+      ps.search = value;
+      if (ps.listEl && ps.listEl.isConnected) pickerBody(ps, opts, ps.listEl);
+      else opts.onChanged();
+    },
+  }));
+
+  ps.listEl = document.createElement('div');
+  pickerBody(ps, opts, ps.listEl);
+  host.appendChild(ps.listEl);
+
+  // The way out of the add flow that is not Back: he is done counting here,
+  // rather than one step up the list. Pinned, because it is eleven rows down
+  // a parts list by the time he wants it.
+  pinnedBar(host, 'Done', () => opts.onDone());
+}
+
+// Tiles, or a list. A search beats a category — typing crosses all six drawers,
+// which is what Catalog.matches does with a query — and clearing it puts the
+// tiles back exactly where they were.
+function pickerBody(ps, opts, host) {
+  host.textContent = '';
+  if (ps.search.trim() === '' && !ps.cat) {
+    host.appendChild(pickerTiles(ps, opts));
+    return;
+  }
+  const box = card();
+  pickerList(ps, opts, box);
+  host.appendChild(box);
+}
+
+// "3 items · $412.00" — the running total of the list he is adding to, at
+// cost. The arithmetic is the caller's (areaTallyText for an area), where it
+// is pure and tested; this only decides whether it flashes, which it does for
+// a second after something is added.
+function pickerTallyStrip(ps, opts) {
+  const strip = document.createElement('div');
+  strip.className = 'walk-tally';
+  strip.textContent = opts.tally(opts.items);
+  if (ps.highlight) strip.classList.add('walk-row-new');
+  return strip;
+}
+
+// allowRentals drops the rentals tile when it is false: a rental line lives on
+// the bid's own rentals list, which a change order does not have and must not
+// borrow.
+function pickerTiles(ps, opts) {
+  const grid = document.createElement('div');
+  grid.className = 'walk-tiles';
+  CATALOG_CATEGORIES.filter(([key]) => !(!opts.allowRentals && key === 'rentals')).forEach(([key, label]) => {
+    grid.appendChild(textButton(label, 'walk-tile', () => {
+      // Rentals and owned equipment are not material lines — they are priced
+      // per day on the Costs & price screen. All this tile does is get the
+      // line onto the bid before he forgets it exists, and WHAT that means is
+      // the caller's: it is handed the tile with no name and answers it.
+      opts.navPush();
+      if (key === 'rentals') { opts.onRental(null); return; }
+      ps.cat = key;
+      ps.search = '';
+      opts.onChanged();
+    }));
+  });
+  return grid;
+}
+
+// Which parts to offer and in what order is a rule, not a rendering decision,
+// so it lives in catalog.js where it is pure and tested: hidden ones excluded,
+// rentals kept out of the material lists, search crossing categories, most-used
+// first. This only decides what to do with what comes back.
+function pickerMatches(ps, opts) {
+  const searching = ps.search.trim() !== '';
+  return Catalog.matches(opts.data.catalog, {
+    category: ps.cat,
+    query: ps.search,
+    // A search crosses the drawers, and rentals are one of the drawers. He
+    // types "scissor lift" because a scissor lift is the thing he needs; a
+    // search that hides it offered him "+ New part" instead, and the lift went
+    // on the bid as a gear line at material markup. Only a search reaches
+    // them — the browsing lists still keep rentals out, because they are not
+    // material — and a caller with no rentals list of its own never does.
+    includeRentals: searching && !!opts.allowRentals,
+  });
+}
+
+function pickerList(ps, opts, box) {
+  box.textContent = '';
+  const searching = ps.search.trim() !== '';
+
+  const h = document.createElement('h3');
+  h.className = 'card-title';
+  h.textContent = searching ? 'All parts' : catalogCategoryLabel(ps.cat);
+  box.appendChild(h);
+
+  const list = pickerMatches(ps, opts);
+  if (list.length === 0) {
+    box.appendChild(emptyNote(searching ? 'Nothing matches that.' : 'Nothing in here yet.'));
+  } else {
+    list.forEach((p) => {
+      // Search crosses categories on purpose — typing "3/4" should find the
+      // hubs as well as the EMT — so each row has to say which drawer it came
+      // out of, or two identical-looking names are indistinguishable.
+      const sub = searching ? catalogCategoryLabel(p.category) : '';
+      const value = p.lastCostCents === null
+        ? p.unit
+        : BidMath.fmt(p.lastCostCents) + ' / ' + p.unit;
+      box.appendChild(lineRow(p.name, sub, value, () => pickerPickPart(ps, opts, p), { keypad: true }));
+    });
+  }
+
+  box.appendChild(lineRow('+ New part', 'Something not on the list', null, () => {
+    promptText('', {
+      label: 'New part',
+      placeholder: 'What it is',
+      done: (name) => {
+        if (!name) { showBanner('A new part needs a name'); return; }
+        // A part invented while searching across everything has no category to
+        // belong to; gear is the drawer for anything that isn't the other five.
+        ps.newPart = { category: searching ? 'gear' : ps.cat, name };
+        opts.onChanged();
+      },
+    });
+  }));
+}
+
+function pickerUnitPicker(ps, opts) {
+  const box = card('How is ' + ps.newPart.name + ' counted?');
+  const nav = document.createElement('div');
+  nav.className = 'bid-nav';
+  CATALOG_UNITS.forEach((unit) => {
+    nav.appendChild(textButton(unit, 'btn btn-block', () => pickerCreatePart(ps, opts, unit)));
+  });
+  box.appendChild(nav);
+  return box;
+}
+
+function pickerCreatePart(ps, opts, unit) {
+  const { category, name } = ps.newPart;
+  const part = Store.addCatalogItem(opts.data, { category, name, unit });
+  if (!part) { showBanner('A new part needs a name'); ps.newPart = null; opts.onChanged(); return; }
+  // The catalog entry is saved on its own: if the quantity keypad is cancelled
+  // a moment from now, a part that is on screen must already be on disk rather
+  // than living in memory until some later save happens to carry it along.
+  if (!opts.persistOr(() => {
+    const i = opts.data.catalog.indexOf(part);
+    if (i !== -1) opts.data.catalog.splice(i, 1);
+  })) { opts.onChanged(); return; }
+  ps.newPart = null;
+  pickerPickPart(ps, opts, part);
+}
+
+// Quantity, then price. A part he has bought before offers the price he paid
+// last time as one button, because typing the same $3.40 for the fortieth
+// length of EMT is the kind of friction that gets an app put down.
+function pickerPickPart(ps, opts, part) {
+  // The catalog carries a rentals category, and a lift is not a material line:
+  // priced as one it would take material markup and be counted in the material
+  // total. It goes where rentals go, whatever list he found it in.
+  if (part.category === 'rentals') {
+    opts.onRental(part.name);
+    return;
+  }
+  promptNumber(null, {
+    label: partQtyLabel(part.name, part.unit || 'ea'),
+    allowDecimal: true,
+    done: (v) => {
+      if (v === null) return;
+      if (!(v > 0)) { showBanner('A count has to be more than zero'); opts.onChanged(); return; }
+      if (typeof part.lastCostCents === 'number') {
+        ps.pending = { part, qty: v };
+        opts.onChanged();
+        return;
+      }
+      pickerAskCost(ps, opts, part, v);
+    },
+  });
+}
+
+function pickerPriceAnswer(ps, opts) {
+  const { part, qty } = ps.pending;
+  const box = card();
+  box.appendChild(lineRow(part.name, itemCountText(qty, part.unit, part.lastCostCents), null, null));
+
+  const nav = document.createElement('div');
+  nav.className = 'bid-nav';
+  nav.appendChild(textButton(
+    'Same price (' + BidMath.fmt(part.lastCostCents) + ')',
+    'btn btn-primary btn-block',
+    () => pickerCommitItem(ps, opts, part, qty, part.lastCostCents)
+  ));
+  // The pending state is NOT cleared here: pickerCommitItem owns clearing it.
+  // If he cancels the cost keypad, this view is still what is on the glass and
+  // Back still walks one step, rather than the screen and the state disagreeing.
+  nav.appendChild(textButton('Different price', 'btn btn-block', () => {
+    pickerAskCost(ps, opts, part, qty);
+  }));
+  box.appendChild(nav);
+  return box;
+}
+
+// "Check price" under a cost keypad. Offline it is not offered at all rather
+// than offered and then refused: a link that opens the browser's own no-signal
+// page is a tab he has to find his way back out of, and in a plant with no
+// signal that is every tap. Nothing here blocks anything either way.
+function pickerPriceCaption() {
+  return navigator.onLine === false ? '' : 'Not sure? Check the price first.';
+}
+
+// settings rather than opts, because the walk's own Cost strip puts the same
+// caption under the same keypad and has no picker in front of it.
+function pickerPriceAction(settings, name) {
+  if (navigator.onLine === false) return null;
+  return { label: 'Check price', onTap: () => openPriceSearch(settings, name) };
+}
+
+function pickerAskCost(ps, opts, part, qty) {
+  promptMoney(part.lastCostCents, {
+    label: partCostLabel(part.name, part.unit || 'ea'),
+    // The one panel in the app with somewhere to send him. It opens the search
+    // in another tab and leaves the keypad standing, so what he was half way
+    // through typing is still here when he comes back with the number.
+    caption: pickerPriceCaption(),
+    captionAction: pickerPriceAction(opts.data.settings, part.name),
+    done: (cents) => {
+      // Clear on the cost keypad means "I don't know yet". The count he just
+      // walked off is worth more than the price he hasn't looked up, so the
+      // line goes on at zero and shows on the list until it has been priced.
+      const zero = cents === null;
+      if (pickerCommitItem(ps, opts, part, qty, zero ? 0 : cents) && zero) {
+        showBanner('Added at $0. Put a price on it when you know it');
+      }
+    },
+  });
+}
+
+function pickerCommitItem(ps, opts, part, qty, costCents) {
+  // The second price comes along when the catalog has one for this part: he
+  // put it there on a line once, and the next line starts where that one
+  // ended. A part with none has none, and the line bills off its cost.
+  const listCents = part.lastListCents != null ? part.lastListCents : null;
+  const supplierName = typeof part.supplierName === 'string' && part.supplierName.trim() !== '' ? part.supplierName : null;
+  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null, listCents, supplierName };
+  const prevUses = part.uses;
+  const prevCost = part.lastCostCents;
+  opts.items.push(item);
+  // One mutation, one save: the line and the catalog's memory of the price go
+  // to disk together or not at all.
+  Store.recordCatalogUse(opts.data, part.id, costCents);
+  if (!opts.persistOr(() => {
+    const i = opts.items.indexOf(item);
+    if (i !== -1) opts.items.splice(i, 1);
+    part.uses = prevUses;
+    part.lastCostCents = prevCost;
+  })) {
+    // Stay in the add view: nothing was saved, so nothing is behind him.
+    ps.pending = null;
+    opts.onChanged();
+    return false;
+  }
+
+  // He stays in the list he was looking at. Eight items used to be eight round
+  // trips out to the area and back in through the tiles; the running strip at
+  // the top is what says the last one landed, and Done is the way out.
+  ps.pending = null;
+  ps.highlight = item;
+  opts.onChanged();
+  setTimeout(() => {
+    // Its own flash and no other: a later line has a timer of its own, and a
+    // stale one firing must not put the newer one out.
+    if (ps.highlight !== item) return;
+    ps.highlight = null;
+    opts.onChanged();
+  }, PICKER_HIGHLIGHT_MS);
+  return true;
+}
+
+// ONE step back inside the picker: the price answer or the unit picker, then
+// the category list and the search together, and then nothing, at which point
+// the step belongs to the caller. That is what false says.
+function pickerBackStep(ps) {
+  // Both are the same one step out, and only one of them is ever set: the
+  // unit picker is gone before a part is picked, and the same-price question
+  // only comes up after it. Two clauses rather than one so the order the
+  // contract names is the order the code reads in.
+  if (ps.pending) { ps.pending = null; return true; }
+  if (ps.newPart) { ps.newPart = null; return true; }
+  // A search and a category are the same step out of the tiles, and both go
+  // back to them rather than all the way out of the add flow.
+  if (ps.cat || ps.search.trim() !== '') {
+    ps.cat = null;
+    ps.search = '';
+    return true;
+  }
+  return false;
 }
