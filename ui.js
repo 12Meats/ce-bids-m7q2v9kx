@@ -844,17 +844,10 @@ const UNIT_ONE = { ft: 'foot', roll: 'roll', lot: 'lot', day: 'day', box: 'box',
 // are already what he says at any number.
 const UNIT_PLURAL = { roll: 'rolls', lot: 'lots', day: 'days', box: 'boxes', case: 'cases' };
 
-// '3/4" EMT, how many feet?'
-function partQtyLabel(name, unit) {
-  const w = UNIT_MANY[unit];
-  return w ? name + ', how many ' + w + '?' : name + ', how many?';
-}
-
-// '3/4" EMT, cost per foot'
-function partCostLabel(name, unit) {
-  const w = UNIT_ONE[unit];
-  return w ? name + ', cost per ' + w : name + ', cost each';
-}
+// The four keypad questions a part is asked (how many, cost, bill price, the
+// lot) are written where the line strip that asks them lives, in picker.js.
+// They read UNIT_MANY and UNIT_ONE from here, the way every other sentence in
+// this app reads the catalog's vocabulary from here.
 
 // '2 rolls at $185.00' — one unit, plural when there is more than one of it,
 // and the price said once. It used to read '2 roll · $185.00 each', which is
@@ -869,20 +862,6 @@ function itemCountText(qty, unit, costCents) {
 function perUnitText(unit) {
   const w = UNIT_ONE[unit];
   return w ? ' per ' + w : ' each';
-}
-
-// '#12 wire, bill price per foot' — the second price, asked the way the cost is.
-function partBillLabel(name, unit) {
-  return name + ', bill price' + perUnitText(unit);
-}
-
-// '#12 wire, all 500 feet together' — one number for the whole line. A count
-// of one has nothing to gather ("all 1 lot together" reads like a bug), so it
-// says what it is: the whole line.
-function partLotLabel(name, qty, unit) {
-  if (qty === 1) return name + ', the whole line';
-  const w = UNIT_MANY[unit];
-  return name + ', all ' + numText(qty) + (w ? ' ' + w : '') + ' together';
 }
 
 // What a walk row says under its cost when the line carries a list price or
@@ -1066,6 +1045,13 @@ function navTarget(arg) {
 // so it agrees with the dates already stored.
 
 function fmtDate(iso) { return Dates.fmtDate(iso); }
+
+// 'Aug 24': the day without the year. The Invoices pile and the Bill these
+// review both talk about the last few weeks, where ", 2026" is four characters
+// saying nothing on a row that already says how many days old it is. Both
+// screens said it, each with a copy of this line, and two copies of one
+// sentence is how one of them ends up carrying the year and the other not.
+function dayText(iso) { return fmtDate(iso).replace(/,\s*\d{4}$/, ''); }
 
 // '9/4/26'. The home list's rows only — see dates.js for why they are the one
 // place that cannot afford the long form.

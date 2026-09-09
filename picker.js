@@ -139,6 +139,7 @@ const reviewDrafts = (function () {
     set(next) { drafts = Array.isArray(next) ? next : []; },
   };
 })();
+
 // ---------------------------------------------------------------------------
 // THE LINE STRIP
 // ---------------------------------------------------------------------------
@@ -160,6 +161,39 @@ const reviewDrafts = (function () {
 // The two callbacks are two different things and both are needed: a count of
 // zero puts a banner up and leaves the strip open to be answered again, and a
 // count that took leaves nothing to answer.
+// THE FOUR QUESTIONS A LINE IS ASKED, in words, by name.
+//
+// They live with the strip that asks them rather than in ui.js: nothing else
+// in the app asks a part how many of it there are. The catalog's vocabulary
+// (UNIT_MANY, UNIT_ONE, perUnitText) stays in ui.js, where every other
+// sentence about a unit reads it from.
+
+// '3/4" EMT, how many feet?'
+function partQtyLabel(name, unit) {
+  const w = UNIT_MANY[unit];
+  return w ? name + ', how many ' + w + '?' : name + ', how many?';
+}
+
+// '3/4" EMT, cost per foot'
+function partCostLabel(name, unit) {
+  const w = UNIT_ONE[unit];
+  return w ? name + ', cost per ' + w : name + ', cost each';
+}
+
+// '#12 wire, bill price per foot' — the second price, asked the way the cost is.
+function partBillLabel(name, unit) {
+  return name + ', bill price' + perUnitText(unit);
+}
+
+// '#12 wire, all 500 feet together' — one number for the whole line. A count
+// of one has nothing to gather ("all 1 lot together" reads like a bug), so it
+// says what it is: the whole line.
+function partLotLabel(name, qty, unit) {
+  if (qty === 1) return name + ', the whole line';
+  const w = UNIT_MANY[unit];
+  return name + ', all ' + numText(qty) + (w ? ' ' + w : '') + ' together';
+}
+
 function lineCatalogPart(it, data) {
   return it.catalogId ? ((data.catalog || []).find((p) => p.id === it.catalogId) || null) : null;
 }

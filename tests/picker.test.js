@@ -47,7 +47,8 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
-const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker } = sandbox;
+const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
+  partQtyLabel, partCostLabel, partBillLabel, partLotLabel } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -205,6 +206,39 @@ test('renderItemPicker refuses rentals with nobody to answer them', () => {
   const w = world();
   assert.throws(() => renderItemPicker({}, w.ps, { ...w.opts, onRental: undefined }),
     /renderItemPicker needs opts\.onRental when allowRentals is true/);
+});
+
+// ---------------------------------------------------------------------------
+// THE FOUR QUESTIONS A LINE IS ASKED
+// ---------------------------------------------------------------------------
+// They moved here from ui.js with the strip that asks them: nothing else in
+// the app asks a part how many of it there are. Pure string work, and every
+// one of them is a sentence he reads standing in a plant with one thumb free.
+
+test('a keypad asks about the part by name, in words', () => {
+  assert.equal(partQtyLabel('3/4" EMT', 'ft'), '3/4" EMT, how many feet?');
+  assert.equal(partCostLabel('3/4" EMT', 'ft'), '3/4" EMT, cost per foot');
+  assert.equal(partQtyLabel('Wire nuts', 'box'), 'Wire nuts, how many boxes?');
+  assert.equal(partCostLabel('Wire nuts', 'box'), 'Wire nuts, cost per box');
+  // 'ea' has no English form that reads: "how many each?" is not a question.
+  assert.equal(partQtyLabel('4-square', 'ea'), '4-square, how many?');
+  assert.equal(partCostLabel('4-square', 'ea'), '4-square, cost each');
+  // An unknown unit is passed through rather than dropped.
+  assert.equal(partQtyLabel('Thing', 'crate'), 'Thing, how many?');
+  assert.equal(partCostLabel('Thing', 'crate'), 'Thing, cost each');
+});
+
+test('partBillLabel and partLotLabel read the way partCostLabel does', () => {
+  assert.equal(partBillLabel('#12 wire', 'ft'), '#12 wire, bill price per foot');
+  assert.equal(partBillLabel('20 A breaker', 'ea'), '20 A breaker, bill price each');
+  assert.equal(partBillLabel('#12 THHN', 'roll'), '#12 THHN, bill price per roll');
+  assert.equal(partLotLabel('#12 wire', 500, 'ft'), '#12 wire, all 500 feet together');
+  assert.equal(partLotLabel('#12 THHN', 2, 'roll'), '#12 THHN, all 2 rolls together');
+  assert.equal(partLotLabel('20 A breaker', 6, 'ea'), '20 A breaker, all 6 together');
+  // A count of one has nothing to gather up. "Permits, all 1 lot together" is
+  // what the rule would say, and it reads like a bug; the line is the line.
+  assert.equal(partLotLabel('Permits', 1, 'lot'), 'Permits, the whole line');
+  assert.equal(partLotLabel('VFD', 1, 'ea'), 'VFD, the whole line');
 });
 
 test('the picker knows nothing about the walk', () => {

@@ -44,26 +44,50 @@ function reviewBuildDrafts() {
   reviewDrafts.set((reviewGroups || []).map((g) => InvMath.draftInvoice(g, d, now)));
 }
 
-// Every unbilled entry the pile has ticked, as one string. Two of these are
-// compared on the way in: if the drafts on hand still cover exactly the same
-// entries, they are the ones he was working on and they stay — Combine, Split
-// and anything he changed on a draft survive a trip into an invoice and back.
-// Anything else (a visit logged since, a row unticked on the home, a batch he
-// has already numbered) is a different pile and gets different drafts.
+// WHAT THE DRAFTS WERE BUILT FROM, as one string.
+//
+// The drafts on hand are kept across a trip into an invoice and back, so
+// Combine, Split and every billed hour he changed survive it. They may only be
+// kept while they are still TRUE, and the ids of the entries under them do not
+// answer that: he can open a visit from the pile, correct eight hours to four
+// or move it to the Friday, and come back to a review still holding the old
+// draft — which would then bill the old hours under a real invoice number.
+//
+// So the key is a fingerprint of the CONTENT: who the visit was for, the job,
+// the day, every man's hours, and every line on it. Anything that would make a
+// different invoice makes a different key, and a different key is rebuilt.
+function reviewLineStamp(x) {
+  // items count a qty, rentals and equipment count days; items carry a cost,
+  // a rental carries the whole hire, a tool carries its day rate. One line
+  // reads all three shapes, because what is being compared is "is this the
+  // same line as before", not "what is this line worth".
+  const count = x.qty === undefined ? x.days : x.qty;
+  const money = x.costCents === undefined ? (x.cents === undefined ? x.dayCents : x.cents) : x.costCents;
+  return [x.name, count, money, x.lotCents, x.listCents].join(':');
+}
+function reviewEntryStamp(e) {
+  const crew = (e.crew || []).map((m) => m.crewId + '=' + m.hours).join(',');
+  const lines = (e.items || []).concat(e.rentals || [], e.equipment || []).map(reviewLineStamp).join(',');
+  return [e.id, e.customerId, e.projectId, e.dateISO, crew, lines].join('|');
+}
 function reviewPileKey() {
   return (reviewData().logs || [])
     .filter((e) => !e.invoiceId && pileSelection.isOn(e.id))
-    .map((e) => e.id).sort().join('|');
-}
-function reviewDraftsKey() {
-  return reviewDrafts.get().reduce((ids, inv) => ids.concat(inv.logIds || []), []).sort().join('|');
+    .map(reviewEntryStamp).sort().join('\n');
 }
 
+// The key the drafts on hand were built from. Combine and Split do not touch
+// it: they make different invoices out of the same visits, which is exactly
+// the work this screen exists for and exactly what must not be thrown away.
+let reviewBuiltKey = null;
+
 function enterBillreview() {
-  if (reviewGroups && reviewDraftsKey() === reviewPileKey()) return;
+  const key = reviewPileKey();
+  if (reviewGroups && reviewBuiltKey === key) return;
   reviewGroups = InvMath.group(reviewData().logs || [], reviewData(), Store.mondayOf,
     { exclude: reviewExclude() });
   reviewBuildDrafts();
+  reviewBuiltKey = key;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,12 +101,6 @@ function reviewCustomerName(id) {
   return c ? c.name : 'Customer';
 }
 
-// "Aug 24", the day without the year. The pile row on the home says a day the
-// same way; the two lines are about the same weeks and would read as two
-// different apps if one of them carried ", 2026". Written out here rather than
-// borrowed, because a screen never calls another screen's file.
-function reviewDayText(iso) { return fmtDate(iso).replace(/,\s*\d{4}$/, ''); }
-
 // "Mon Aug 24". The weekday is what tells him which visit this was without
 // counting back through the month.
 const REVIEW_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -90,8 +108,8 @@ function reviewWeekdayText(iso) {
   // Noon, like every other date this app reads, so a DST shift cannot move a
   // Monday onto the Sunday before it.
   const dt = new Date(iso + 'T12:00:00');
-  if (isNaN(dt.getTime())) return reviewDayText(iso);
-  return REVIEW_WEEKDAYS[dt.getDay()] + ' ' + reviewDayText(iso);
+  if (isNaN(dt.getTime())) return dayText(iso);
+  return REVIEW_WEEKDAYS[dt.getDay()] + ' ' + dayText(iso);
 }
 
 // "$85" for a whole-dollar rate, "$85.50" for one that isn't. The rate is the
@@ -106,10 +124,13 @@ function reviewRateText(cents) {
 // customer will read. A draft with no parts on it does not say "$0.00 parts".
 function reviewCardSub(draft) {
   const t = InvMath.totals(draft);
-  const hours = (draft.labor || []).reduce((s, l) => s + l.billedHours, 0);
+  // InvMath's, not a reduce of this screen's own: the paper's labor row and
+  // the invoice screen count the same hours, and three copies of one sum is
+  // three chances for one of them to drift.
+  const hours = InvMath.billedHours(draft);
   const span = draft.serviceFrom === draft.serviceTo
-    ? reviewDayText(draft.serviceFrom)
-    : reviewDayText(draft.serviceFrom) + ' to ' + reviewDayText(draft.serviceTo);
+    ? dayText(draft.serviceFrom)
+    : dayText(draft.serviceFrom) + ' to ' + dayText(draft.serviceTo);
   return span
     + (hours > 0 ? ' · ' + numText(hours) + ' hrs at ' + reviewRateText(draft.rateCents) : '')
     + (t.materials > 0 ? ' · ' + moneyText(t.materials) + ' parts' : '');
@@ -206,6 +227,12 @@ function reviewSplit(i) {
 
 function billreviewSend() {
   const d = reviewData();
+  // A file restored from a backup written before this release has no invoices
+  // array at all: every new key is optional on disk, and nothing else in the
+  // app creates this one. Making it here rather than reading (d.invoices || [])
+  // is deliberate — the invoices about to be pushed have to land on the
+  // document itself, not on a throwaway copy of a missing array.
+  if (!d.invoices) d.invoices = [];
   const drafts = reviewDrafts.get();
   if (!reviewCanSend(drafts)) { showBanner(REVIEW_ZERO_TEXT); render(); return; }
   // Numbered in service-date order, because the groups are already oldest
@@ -239,6 +266,12 @@ function billreviewSend() {
   // The pile is empty now: every entry that was in it is locked to an invoice,
   // and what he turned off is a decision about entries that are still waiting.
   pileSelection.clear();
+  // And so is the review. These drafts are invoices on the file now; left
+  // standing they would be a second, editable copy of a numbered invoice, and
+  // the next Bill these would open holding last Friday's batch.
+  reviewGroups = null;
+  reviewDrafts.set([]);
+  reviewBuiltKey = null;
   // The share sheet needs a tap, so the invoice screen owns sending and they
   // go out one at a time. This lands on the first one with the rest queued
   // behind it, and replaces: the review is finished, and Back from an invoice

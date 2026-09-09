@@ -694,7 +694,24 @@ function logBackStep(peek) {
     confirmPanel('Throw this visit away?', { ok: 'Throw it away', cancel: 'Keep it', danger: true })
       .then((ok) => {
         logDiscardAsking = false;
-        if (!ok) { render(); return; }
+        if (!ok) {
+          // He kept the visit, so nothing moved — but the gesture that asked
+          // the question already spent a history entry on the way in
+          // (onPopState runs goBack, goBack runs this, and a backStep that
+          // answers true tells the shell not to re-anchor). Without this the
+          // entry is gone: the NEXT swipe has nothing of ours to spend and
+          // walks out of the app with the visit still on the glass.
+          //
+          // Unconditional on purpose. The Back BUTTON spends an entry too
+          // (backTapped calls history.back()), so both ways in are the same
+          // way; the one path that spent nothing is a Back at depth zero,
+          // where onPopState's own "if (!moved) navPush()" would have put an
+          // entry there anyway. navPush is safe here because navSuppress is
+          // only up for the length of goBack, and this runs after it.
+          navPush();
+          render();
+          return;
+        }
         logDraft = null;
         logId = null;
         // Replace: the gesture that asked the question already spent its own

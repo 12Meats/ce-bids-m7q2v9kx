@@ -21,18 +21,29 @@ function invToday() { return Store.todayISO(); }
 // may not call another screen's file. It remembers what he turned OFF, so an
 // entry logged after the last time he touched this list is on by default.
 function invAllGroups() { return InvMath.group(invData().logs || [], invData(), Store.mondayOf); }
-// A group is checked when every entry in it is: the store holds entry ids, not
-// groups, because Combine and Split on the review change what a group is.
-function invGroupOn(g) { return g.entries.every((e) => pileSelection.isOn(e.id)); }
+// A group is checked when ANY entry in it is. The store holds entry ids, not
+// groups, because Combine and Split on the review change what a group is — and
+// the review bills every entry that is on, one at a time. Read with every(),
+// a group with one entry off drew an unchecked row on the home and was still
+// billed by the review, which is the one disagreement these two screens may
+// never have. Tapping the check sets every entry in the group, so the two
+// readings only come apart on a row nobody has touched since the pile changed.
+function invGroupOn(g) { return g.entries.some((e) => pileSelection.isOn(e.id)); }
 function invCustomerName(id) {
   const c = (invData().customers || []).find((x) => x.id === id);
   return c ? c.name : 'Customer';
 }
 
-// "Aug 24", the day without the year. fmtDate ends in ", 2026" and a pile row
-// is a job from the last few weeks: the year is four characters saying nothing
-// on a row that already says how many days old it is.
-function pileDayText(iso) { return fmtDate(iso).replace(/,\s*\d{4}$/, ''); }
+// What the pile says when there is nothing in it. Two different pieces of
+// news wearing one sentence: a phone with no visits on it yet is waiting to be
+// used, and a phone whose every visit is already on an invoice is finished for
+// the week. "Nothing logged yet" said to a man who logged five visits and
+// billed them all on Friday is the app telling him his work is not there.
+function pileEmptyText(data) {
+  return ((data.logs || []).length > 0)
+    ? 'Nothing waiting to bill.'
+    : 'Nothing logged yet. Tap + Log hours after a visit.';
+}
 
 // The second line of a pile row: what it covers, how old it is, and how much
 // is in it. "Aug 24 to Aug 28 · 15 days · 2 entries · 21 hrs · $216.00 parts".
@@ -44,7 +55,7 @@ function pileRowText(g, today) {
   // nothing of its own.
   const hours = InvMath.pileHours(g);
   const parts = InvMath.pileParts(g);
-  const span = g.from === g.to ? pileDayText(g.from) : pileDayText(g.from) + ' to ' + pileDayText(g.to);
+  const span = g.from === g.to ? dayText(g.from) : dayText(g.from) + ' to ' + dayText(g.to);
   return span
     + ' · ' + InvMath.ageDays(g.from, today) + ' days'
     + (g.entries.length > 1 ? ' · ' + g.entries.length + ' entries' : '')
@@ -113,7 +124,7 @@ function buildPile(host) {
   head.textContent = 'Ready to bill' + (all.length ? '  ·  ' + checkedCount + ' checked' : '');
   box.appendChild(head);
   if (!all.length) {
-    box.appendChild(emptyNote('Nothing logged yet. Tap + Log hours after a visit.'));
+    box.appendChild(emptyNote(pileEmptyText(invData())));
     host.appendChild(box);
     return;
   }

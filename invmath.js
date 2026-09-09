@@ -194,6 +194,14 @@
   // -------------------------------------------------------------------------
   // MONEY
   // -------------------------------------------------------------------------
+  // The hours ON this invoice, which is what he decided to bill and not what
+  // the men logged. Three places were summing it with a reduce of their own —
+  // the paper's labor row, the review card, and the invoice screen's own muted
+  // line — and three copies of a sum is three chances for one of them to keep
+  // counting a man the other two have dropped.
+  function billedHours(inv) {
+    return ((inv && inv.labor) || []).reduce((s, l) => s + l.billedHours, 0);
+  }
   function laborCents(inv) {
     return (inv.labor || []).reduce((s, l) => s + r(l.billedHours * inv.rateCents), 0);
   }
@@ -268,7 +276,7 @@
     const equipment = (inv.equipment || []).map((x) => ({
       qtyText: qtyNum(x.days) + (x.days === 1 ? ' day' : ' days'), desc: x.name, unitCents: x.dayCents, cents: B.equipmentLine(x),
     }));
-    const hours = (inv.labor || []).reduce((s, l) => s + l.billedHours, 0);
+    const hours = billedHours(inv);
     const labor = hours > 0 ? [{
       qtyText: hoursText(hours),
       desc: inv.serviceFrom === inv.serviceTo ? 'Labor hours' : 'Labor hours, ' + rangeText(inv.serviceFrom, inv.serviceTo),
@@ -280,7 +288,7 @@
   return {
     AMBER_AFTER_DAYS, group, canCombine, combine, split, pileHours, pileParts,
     draftInvoice, draftProjectInvoice, projectRemainingCents,
-    laborCents, totals, paidCents, balanceCents, statusOf,
+    billedHours, laborCents, totals, paidCents, balanceCents, statusOf,
     ageDays, isStale, whoOwes, invoiceRows, rangeText,
   };
 });

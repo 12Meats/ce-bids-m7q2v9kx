@@ -60,8 +60,9 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'log.js'), 'utf8'), s
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'billreview.js'), 'utf8'), sandbox,
   { filename: 'billreview.js' });
 
-const { pileRowText, invoiceListText, logMissing, logCrewValue, invGroupOn,
-  reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend } = sandbox;
+const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, invGroupOn,
+  reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview,
+  reviewCombine } = sandbox;
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
@@ -145,10 +146,27 @@ test('a group he never touched is checked, and clear puts everything back on', (
   pileSelection.clear();
   const g = groups(w)[0];
   assert.strictEqual(invGroupOn(g), true, 'nothing said means everything billed');
+  // ANY entry on reads as checked, because the review bills every entry that
+  // is on: a row drawn unchecked while one of its two visits was still going
+  // to be billed is the one lie these two screens may never tell.
   pileSelection.setOn(g.entries[0].id, false);
-  assert.strictEqual(invGroupOn(g), false, 'one entry off takes the group off');
+  assert.strictEqual(invGroupOn(g), true, 'one entry left on keeps the group checked');
+  pileSelection.setOn(g.entries[1].id, false);
+  assert.strictEqual(invGroupOn(g), false, 'every entry off is the row he unchecked');
   pileSelection.clear();
   assert.strictEqual(invGroupOn(g), true, 'the send clears the pile');
+});
+
+// The other half of the same rule: the tap sets EVERY entry, so the two
+// readings only ever come apart on a row he has not touched.
+test('the empty pile says whether there is nothing yet or nothing left', () => {
+  const d = S.emptyData();
+  assert.strictEqual(pileEmptyText(d), 'Nothing logged yet. Tap + Log hours after a visit.');
+  const w = world();
+  // Five visits logged and every one of them billed. "Nothing logged yet" here
+  // is the app telling him his week is not there.
+  w.d.logs.forEach((e) => { e.invoiceId = 'inv1'; });
+  assert.strictEqual(pileEmptyText(w.d), 'Nothing waiting to bill.');
 });
 
 // ---------------------------------------------------------------------------
@@ -355,17 +373,29 @@ function sendWorld() {
   return { w, gs };
 }
 
-test('the send numbers in date order, locks the entries, and clears the pile', () => {
+// Stubs are restored with t.after rather than by hand at the bottom of the
+// test: an assertion that fires early used to leave persistOr throwing or show
+// navigating for every test after it, and the failure that got reported was
+// the wrong one.
+function stub(t, over) {
+  const before = {};
+  Object.keys(over).forEach((k) => { before[k] = sandbox[k]; sandbox[k] = over[k]; });
+  t.after(() => { Object.keys(before).forEach((k) => { sandbox[k] = before[k]; }); });
+}
+
+test('the send numbers in date order, locks the entries, and clears the pile', (t) => {
   const { w, gs } = sendWorld();
   pileSelection.setOn(w.d.logs[0].id, false);   // something for clear() to undo
   const saves = [];
   const banners = [];
   const shown = [];
   const order = [];
-  sandbox.persistOr = (revert) => { saves.push(revert); return true; };
-  sandbox.showBanner = (text, kind) => { banners.push([text, kind]); order.push('banner'); };
-  sandbox.show = (screen, arg, opts) => { shown.push([screen, arg, opts]); order.push('show'); };
-  sandbox.render = () => {};
+  stub(t, {
+    persistOr: (revert) => { saves.push(revert); return true; },
+    showBanner: (text, kind) => { banners.push([text, kind]); order.push('banner'); },
+    show: (screen, arg, opts) => { shown.push([screen, arg, opts]); order.push('show'); },
+    render: () => {},
+  });
   w.d.settings.nextInvoiceNumber = 166818;
 
   billreviewSend();
@@ -398,20 +428,44 @@ test('the send numbers in date order, locks the entries, and clears the pile', (
   // screen it is leaving, so a banner raised first is a banner he never sees.
   assert.deepStrictEqual(banners, [['2 invoices numbered.', 'ok']]);
   assert.ok(order.indexOf('show') < order.indexOf('banner'), 'the banner comes after the navigation');
-  sandbox.persistOr = () => true;
-  sandbox.showBanner = () => {};
-  sandbox.show = () => {};
+  // The review is put away with the pile. These drafts are invoices on the
+  // file now; left standing they would be a second, editable copy of a
+  // numbered invoice, and the next Bill these would open holding this batch.
+  // The length, not deepStrictEqual: the array was built inside the VM and
+  // carries that realm's Array prototype, which strict equality compares.
+  assert.strictEqual(reviewDrafts.get().length, 0);
 });
 
-test('a refused save puts the numbers, the invoices and the locks back', () => {
+// A backup written before this release has no invoices array at all: every new
+// key is optional on disk, and nothing else in the app creates this one.
+test('the send creates the invoices array on a restored pre-v3 file', (t) => {
   const { w } = sendWorld();
-  const before = w.d.settings.nextInvoiceNumber;
-  sandbox.persistOr = (revert) => { revert(); return false; };
-  sandbox.showBanner = () => {};
-  sandbox.show = () => { throw new Error('a refused save must not navigate'); };
-  sandbox.render = () => {};
+  delete w.d.invoices;
+  stub(t, { persistOr: () => true, showBanner: () => {}, show: () => {}, render: () => {} });
 
   billreviewSend();
+
+  assert.strictEqual(w.d.invoices.length, 2, 'the invoices landed on the document itself');
+  w.d.logs.forEach((e) => assert.ok(e.invoiceId, 'and the entries are locked to them'));
+});
+
+test('a refused save puts the numbers, the invoices and the locks back', (t) => {
+  const { w } = sendWorld();
+  const before = w.d.settings.nextInvoiceNumber;
+  // Something he turned off on the home, which a refused send may not forget:
+  // the entry he decided not to bill is still not billed.
+  pileSelection.setOn(w.d.logs[0].id, false);
+  t.after(() => pileSelection.clear());
+  stub(t, {
+    persistOr: (revert) => { revert(); return false; },
+    showBanner: () => {},
+    show: () => { throw new Error('a refused save must not navigate'); },
+    render: () => {},
+  });
+
+  billreviewSend();
+
+  assert.strictEqual(pileSelection.isOn(w.d.logs[0].id), false, 'the entry he set off stays off');
 
   assert.deepStrictEqual(w.d.invoices, [], 'nothing was left on the file');
   assert.strictEqual(w.d.settings.nextInvoiceNumber, before, 'the number was not spent');
@@ -423,22 +477,79 @@ test('a refused save puts the numbers, the invoices and the locks back', () => {
     assert.strictEqual(inv.number, null);
     assert.strictEqual(inv.dateISO, null);
   });
-  sandbox.persistOr = () => true;
-  sandbox.show = () => {};
 });
 
-test('the send refuses a batch with a $0 invoice in it and writes nothing', () => {
+test('the send refuses a batch with a $0 invoice in it and writes nothing', (t) => {
   const { w } = sendWorld();
   reviewDrafts.get()[1].labor = [];
   const banners = [];
-  sandbox.persistOr = () => { throw new Error('nothing may be written'); };
-  sandbox.showBanner = (text) => banners.push(text);
-  sandbox.render = () => {};
+  stub(t, {
+    persistOr: () => { throw new Error('nothing may be written'); },
+    showBanner: (text) => banners.push(text),
+    render: () => {},
+  });
 
   billreviewSend();
 
   assert.deepStrictEqual(w.d.invoices, []);
   assert.deepStrictEqual(banners, ['One of these bills nothing. Put hours or a line on it, or uncheck it.']);
-  sandbox.persistOr = () => true;
-  sandbox.showBanner = () => {};
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE DRAFTS WERE BUILT FROM
+// ---------------------------------------------------------------------------
+// The review keeps its drafts across a trip into an invoice and back, so a
+// Combine and every billed hour he changed survive it. They may only be kept
+// while they are still TRUE: he can open a visit from the pile, correct the
+// hours or move it to the Friday, and a draft carried across would then bill
+// the old hours under a real invoice number.
+
+function enterWorld() {
+  const w = world();
+  pileSelection.clear();
+  // A second week of the same job: the catch-up case, and the one place
+  // Combine has somewhere to reach.
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-02', createdAt: 5 });
+  e.crew = [{ crewId: w.c1, hours: 4 }];
+  reviewDrafts.set([]);
+  vm.runInContext('reviewGroups = null; reviewBuiltKey = null;', sandbox);
+  return w;
+}
+
+test('the same pile twice keeps the drafts, so a Combine survives a re-enter', () => {
+  const w = enterWorld();
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get().length, 2, 'two weeks of the one job');
+  reviewCombine(0);
+  assert.strictEqual(reviewDrafts.get().length, 1, 'his old one-invoice habit');
+  const kept = reviewDrafts.get()[0];
+  kept.labor[0].billedHours = 3;
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get().length, 1, 'the Combine is still there');
+  assert.strictEqual(reviewDrafts.get()[0], kept, 'and so is the hour he changed');
+});
+
+test('an hour corrected on a visit rebuilds the drafts', () => {
+  const w = enterWorld();
+  enterBillreview();
+  const first = reviewDrafts.get()[0];
+  assert.strictEqual(I.billedHours(first), 21);
+  // He opened Monday from the pile and corrected eight hours to four.
+  w.d.logs[0].crew[0].hours = 4;
+  enterBillreview();
+  assert.notStrictEqual(reviewDrafts.get()[0], first, 'a different pile, different drafts');
+  assert.strictEqual(I.billedHours(reviewDrafts.get()[0]), 17, 'and it bills what the visit says now');
+});
+
+test('a visit moved to another day rebuilds the drafts', () => {
+  const w = enterWorld();
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get().length, 2);
+  // Friday's visit was really the Friday after: a different week, a different
+  // invoice, and the same entry ids all the way through.
+  w.d.logs[1].dateISO = '2026-09-04';
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get().length, 2);
+  assert.deepStrictEqual(reviewDrafts.get().map((inv) => inv.logIds.length), [1, 2],
+    'Monday alone, and the two visits that share the new week');
 });

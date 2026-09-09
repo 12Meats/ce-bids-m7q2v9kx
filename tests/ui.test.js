@@ -34,7 +34,7 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
-  crewDaysText, detailCaption, partQtyLabel, partCostLabel, partBillLabel, partLotLabel, itemCountText,
+  crewDaysText, detailCaption, itemCountText,
   itemBillText, areaNoteLine, perUnitText,
   priceSearchUrl } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
@@ -413,21 +413,8 @@ test('the misc line has ONE name, and it is the one a new bid is created with', 
   assert.equal(S.newBid(S.emptyData(), { customerName: 'UDA' }).misc.label, MISC_LABEL);
 });
 
-// The two questions a keypad asks about a part, and the line that says how
-// many of it are on the bid. Pure string work, and every one of them is a
-// sentence he reads standing in a plant with one thumb free.
-test('a keypad asks about the part by name, in words', () => {
-  assert.equal(partQtyLabel('3/4" EMT', 'ft'), '3/4" EMT, how many feet?');
-  assert.equal(partCostLabel('3/4" EMT', 'ft'), '3/4" EMT, cost per foot');
-  assert.equal(partQtyLabel('Wire nuts', 'box'), 'Wire nuts, how many boxes?');
-  assert.equal(partCostLabel('Wire nuts', 'box'), 'Wire nuts, cost per box');
-  // 'ea' has no English form that reads: "how many each?" is not a question.
-  assert.equal(partQtyLabel('4-square', 'ea'), '4-square, how many?');
-  assert.equal(partCostLabel('4-square', 'ea'), '4-square, cost each');
-  // An unknown unit is passed through rather than dropped.
-  assert.equal(partQtyLabel('Thing', 'crate'), 'Thing, how many?');
-  assert.equal(partCostLabel('Thing', 'crate'), 'Thing, cost each');
-});
+// The four questions a keypad asks about a part moved to picker.js with the
+// line strip that asks them; they are pinned in tests/picker.test.js now.
 
 test('an item line says its count in a plural and its price once', () => {
   assert.equal(itemCountText(2, 'roll', 18500), '2 rolls at $185.00');
@@ -805,19 +792,9 @@ test('the home nudge and the backup caption are amber, not red', () => {
     'no screen asks for a red band');
 });
 
-// The keypad questions for the second price and the lot, in the words the
-// cost question already uses.
-test('partBillLabel and partLotLabel read the way partCostLabel does', () => {
-  assert.equal(partBillLabel('#12 wire', 'ft'), '#12 wire, bill price per foot');
-  assert.equal(partBillLabel('20 A breaker', 'ea'), '20 A breaker, bill price each');
-  assert.equal(partBillLabel('#12 THHN', 'roll'), '#12 THHN, bill price per roll');
-  assert.equal(partLotLabel('#12 wire', 500, 'ft'), '#12 wire, all 500 feet together');
-  assert.equal(partLotLabel('#12 THHN', 2, 'roll'), '#12 THHN, all 2 rolls together');
-  assert.equal(partLotLabel('20 A breaker', 6, 'ea'), '20 A breaker, all 6 together');
-  // A count of one has nothing to gather up. "Permits, all 1 lot together" is
-  // what the rule would say, and it reads like a bug; the line is the line.
-  assert.equal(partLotLabel('Permits', 1, 'lot'), 'Permits, the whole line');
-  assert.equal(partLotLabel('VFD', 1, 'ea'), 'VFD, the whole line');
+// The tail of every sentence that names a unit price. The four part labels
+// that used to be asserted beside it are picker.js's now.
+test('perUnitText names the unit, or says each', () => {
   assert.equal(perUnitText('ft'), ' per foot');
   assert.equal(perUnitText('ea'), ' each');
   assert.equal(perUnitText('pcs'), ' each');
