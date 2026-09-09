@@ -1501,6 +1501,151 @@ function unpricedTarget(line, bid) {
 }
 
 // ---------------------------------------------------------------------------
+// THE LINE STRIP
+// ---------------------------------------------------------------------------
+// What a counted line can be after it is on the list: Quantity, Cost, Bills at,
+// Delete. This was the walk's buildItemActions, and it moved here for the same
+// reason the picker did — the truck log holds the same lines and had to be able
+// to fix a fat-fingered count without a second copy of these four buttons
+// drifting away from the first.
+//
+//   lineActions(box, lineEl, items, it, opts)
+//     items          the array the line is IN, so Delete can take it out
+//     opts.markupPct what this line bills at, for the Bills at caption
+//     opts.data      the shell's data (the catalog's memory of the price, the
+//                    settings the price search reads)
+//     opts.persistOr the shell's persistOr
+//     opts.onChanged () => void   redraw; the strip stays where it is
+//     opts.onClose   () => void   the strip is answered: close it and redraw
+//
+// The two callbacks are two different things and both are needed: a count of
+// zero puts a banner up and leaves the strip open to be answered again, and a
+// count that took leaves nothing to answer.
+function lineCatalogPart(it, data) {
+  return it.catalogId ? ((data.catalog || []).find((p) => p.id === it.catalogId) || null) : null;
+}
+
+function lineActions(box, lineEl, items, it, opts) {
+  const strip = attachedStrip(lineEl, [
+    { label: 'Quantity', onTap: () => {
+      promptNumber(it.qty, {
+        label: partQtyLabel(it.name, it.unit),
+        allowDecimal: true,
+        done: (v) => {
+          if (v === null) return;
+          if (!(v > 0)) { showBanner('A count has to be more than zero'); opts.onChanged(); return; }
+          const prev = it.qty;
+          it.qty = v;
+          opts.persistOr(() => { it.qty = prev; });
+          opts.onClose();
+        },
+      });
+    } },
+    { label: 'Cost', onTap: () => {
+      promptMoney(it.costCents, {
+        label: partCostLabel(it.name, it.unit),
+        caption: pickerPriceCaption(),
+        captionAction: pickerPriceAction(opts.data.settings, it.name),
+        done: (cents) => {
+          const part = lineCatalogPart(it, opts.data);
+          const prev = it.costCents;
+          const prevLast = part ? part.lastCostCents : null;
+          it.costCents = cents === null ? 0 : cents;
+          // The catalog remembers the last price he actually paid, so correcting
+          // a fat-fingered cost here also corrects what the next bid offers him.
+          if (part) part.lastCostCents = it.costCents;
+          opts.persistOr(() => {
+            it.costCents = prev;
+            if (part) part.lastCostCents = prevLast;
+          });
+          opts.onClose();
+        },
+      });
+    } },
+    { label: 'Bills at', onTap: () => lineAskBillsAt(it, opts) },
+    { label: 'Delete', quiet: true, onTap: async () => {
+      const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
+      if (!ok) { opts.onChanged(); return; }
+      const i = items.indexOf(it);
+      if (i !== -1) {
+        items.splice(i, 1);
+        opts.persistOr(() => { items.splice(i, 0, it); });
+      }
+      opts.onClose();
+    } },
+  ], { cancel: () => opts.onClose() });
+  // The row is already in the card, so attachedStrip has placed it. This is the
+  // belt-and-braces path for a caller that built the row off-screen.
+  if (!strip.parentNode) box.appendChild(strip);
+}
+
+// The SECOND price. His supply houses sell him a part under list and the
+// customer is billed at list, then the markup, so a line has two numbers:
+// Cost, which the margin is figured on, and this, which the paper prints.
+// Absent, the markup goes on the cost, which is what every line did before
+// this button existed, and Clear puts a line back there. The catalog
+// remembers it the way it remembers the cost, so the next bid offers both.
+//
+// The caption's link is the door to the lot: one number for the whole line.
+// It CLOSES this keypad (captionAction.closes) because promptMoney will not
+// open over an open panel, and a link that did nothing would read as broken.
+// A line restored from an old file with a per-unit price of its own
+// (priceCents, which no screen writes any more) says so, because that price
+// wins over this one and a Done that moved nothing would look like a bug.
+function lineAskBillsAt(it, opts) {
+  const part = lineCatalogPart(it, opts.data);
+  promptMoney(it.listCents != null ? it.listCents : null, {
+    label: partBillLabel(it.name, it.unit),
+    caption: it.lotCents != null
+      ? 'This line is priced as a lot at ' + moneyText(it.lotCents) + '. The lot wins until you clear it.'
+      : it.priceCents != null
+        ? 'This line has a price of its own at ' + moneyText(it.priceCents) + ', and that wins.'
+        : 'Before the ' + pctText(opts.markupPct) + ' markup. Clear to bill off the cost instead.',
+    captionAction: {
+      label: it.lotCents != null ? "Change the whole line's price" : 'Price the whole line instead',
+      closes: true,
+      onTap: () => lineAskLot(it, opts),
+    },
+    done: (cents) => {
+      const prev = it.listCents;
+      const prevLast = part ? part.lastListCents : undefined;
+      const prevChecked = part ? part.priceCheckedISO : undefined;
+      it.listCents = cents;                       // null is "back to the cost"
+      // A price he types here is his own, typed by hand, not QED's. If the
+      // part still carried the date of an earlier import, that date now lies
+      // about where this number came from, so it comes off with it.
+      if (part) { part.lastListCents = cents; part.priceCheckedISO = null; }
+      opts.persistOr(() => {
+        it.listCents = prev;
+        if (part) { part.lastListCents = prevLast; part.priceCheckedISO = prevChecked; }
+      });
+      opts.onClose();
+    },
+  });
+}
+
+// THE LOT. $216.00 for 500 ft of #12 is 43.2 cents a foot, which the cost
+// keypad cannot take, so the line takes one number instead: what the customer
+// pays for all of it, markup included. The paper prints the quantity, a blank
+// unit price and the amount, which is how his own invoices do a roll of wire.
+// Clear takes the line back to per-unit pricing. A lot does not follow the
+// quantity: change the count and the lot is still the lot, and the row says
+// so in words.
+function lineAskLot(it, opts) {
+  const per = perUnitText(it.unit);             // ' per foot' / ' each'
+  promptMoney(it.lotCents != null ? it.lotCents : null, {
+    label: partLotLabel(it.name, it.qty, it.unit),
+    caption: 'The whole line, markup included. No price' + per + ' prints. Clear to price it' + per + ' again.',
+    done: (cents) => {
+      const prev = it.lotCents;
+      it.lotCents = cents;
+      opts.persistOr(() => { it.lotCents = prev; });
+      opts.onClose();
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // THE ITEM PICKER
 // ---------------------------------------------------------------------------
 // Six tiles, then a list, then two numbers. The hybrid: the catalog is there

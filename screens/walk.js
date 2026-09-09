@@ -171,10 +171,6 @@ function walkAreaRentals(bid, area) {
   return (bid.rentals || []).filter((x) => x && x.areaId === area.id);
 }
 
-function walkCatalogPart(it) {
-  return it.catalogId ? (state.data.catalog.find((p) => p.id === it.catalogId) || null) : null;
-}
-
 // The walk's own walkRow moved to ui.js as lineRow when the add-a-part flow
 // did: the picker draws the same two-line row, and one row shared beats two
 // that drift apart. The name stays here because every list on this screen is
@@ -497,130 +493,18 @@ async function walkDeleteArea(edit, area) {
   render();
 }
 
+// The four things a counted line can become after it is on the list. The strip
+// itself is lineActions in ui.js: the truck log holds the same lines and needed
+// the same four buttons, and one strip shared beats two that drift.
 function buildItemActions(box, lineEl, area, it) {
-  const strip = attachedStrip(lineEl, [
-    { label: 'Quantity', onTap: () => {
-      promptNumber(it.qty, {
-        label: partQtyLabel(it.name, it.unit),
-        allowDecimal: true,
-        done: (v) => {
-          if (v === null) return;
-          if (!(v > 0)) { showBanner('A count has to be more than zero'); render(); return; }
-          const prev = it.qty;
-          it.qty = v;
-          persistOr(() => { it.qty = prev; });
-          walkItemMenu = null;
-          render();
-        },
-      });
-    } },
-    { label: 'Cost', onTap: () => {
-      promptMoney(it.costCents, {
-        label: partCostLabel(it.name, it.unit),
-        caption: pickerPriceCaption(),
-        captionAction: pickerPriceAction(state.data.settings, it.name),
-        done: (cents) => {
-          const part = walkCatalogPart(it);
-          const prev = it.costCents;
-          const prevLast = part ? part.lastCostCents : null;
-          it.costCents = cents === null ? 0 : cents;
-          // The catalog remembers the last price he actually paid, so correcting
-          // a fat-fingered cost here also corrects what the next bid offers him.
-          if (part) part.lastCostCents = it.costCents;
-          persistOr(() => {
-            it.costCents = prev;
-            if (part) part.lastCostCents = prevLast;
-          });
-          walkItemMenu = null;
-          render();
-        },
-      });
-    } },
-    { label: 'Bills at', onTap: () => walkAskBillsAt(it) },
-    { label: 'Delete', quiet: true, onTap: async () => {
-      const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
-      if (!ok) { render(); return; }
-      const i = area.items.indexOf(it);
-      if (i !== -1) {
-        area.items.splice(i, 1);
-        persistOr(() => { area.items.splice(i, 0, it); });
-      }
-      walkItemMenu = null;
-      render();
-    } },
-  ], { cancel: () => { walkItemMenu = null; render(); } });
-  // The row is already in the card, so attachedStrip has placed it. This is the
-  // belt-and-braces path for a caller that built the row off-screen.
-  if (!strip.parentNode) box.appendChild(strip);
-}
-
-// The SECOND price. His supply houses sell him a part under list and the
-// customer is billed at list, then the markup, so a line has two numbers:
-// Cost, which the margin is figured on, and this, which the paper prints.
-// Absent, the markup goes on the cost, which is what every line did before
-// this button existed, and Clear puts a line back there. The catalog
-// remembers it the way it remembers the cost, so the next bid offers both.
-//
-// The caption's link is the door to the lot: one number for the whole line.
-// It CLOSES this keypad (captionAction.closes) because promptMoney will not
-// open over an open panel, and a link that did nothing would read as broken.
-// A line restored from an old file with a per-unit price of its own
-// (priceCents, which no screen writes any more) says so, because that price
-// wins over this one and a Done that moved nothing would look like a bug.
-function walkAskBillsAt(it) {
-  const bid = walkBid();
-  const markup = BidMath.resolveMarkup(bid, state.data.settings);
-  const part = walkCatalogPart(it);
-  promptMoney(it.listCents != null ? it.listCents : null, {
-    label: partBillLabel(it.name, it.unit),
-    caption: it.lotCents != null
-      ? 'This line is priced as a lot at ' + moneyText(it.lotCents) + '. The lot wins until you clear it.'
-      : it.priceCents != null
-        ? 'This line has a price of its own at ' + moneyText(it.priceCents) + ', and that wins.'
-        : 'Before the ' + pctText(markup) + ' markup. Clear to bill off the cost instead.',
-    captionAction: {
-      label: it.lotCents != null ? "Change the whole line's price" : 'Price the whole line instead',
-      closes: true,
-      onTap: () => walkAskLot(it),
-    },
-    done: (cents) => {
-      const prev = it.listCents;
-      const prevLast = part ? part.lastListCents : undefined;
-      const prevChecked = part ? part.priceCheckedISO : undefined;
-      it.listCents = cents;                       // null is "back to the cost"
-      // A price he types here is his own, typed by hand, not QED's. If the
-      // part still carried the date of an earlier import, that date now lies
-      // about where this number came from, so it comes off with it.
-      if (part) { part.lastListCents = cents; part.priceCheckedISO = null; }
-      persistOr(() => {
-        it.listCents = prev;
-        if (part) { part.lastListCents = prevLast; part.priceCheckedISO = prevChecked; }
-      });
-      walkItemMenu = null;
-      render();
-    },
-  });
-}
-
-// THE LOT. $216.00 for 500 ft of #12 is 43.2 cents a foot, which the cost
-// keypad cannot take, so the line takes one number instead: what the customer
-// pays for all of it, markup included. The paper prints the quantity, a blank
-// unit price and the amount, which is how his own invoices do a roll of wire.
-// Clear takes the line back to per-unit pricing. A lot does not follow the
-// quantity: change the count and the lot is still the lot, and the row says
-// so in words.
-function walkAskLot(it) {
-  const per = perUnitText(it.unit);             // ' per foot' / ' each'
-  promptMoney(it.lotCents != null ? it.lotCents : null, {
-    label: partLotLabel(it.name, it.qty, it.unit),
-    caption: 'The whole line, markup included. No price' + per + ' prints. Clear to price it' + per + ' again.',
-    done: (cents) => {
-      const prev = it.lotCents;
-      it.lotCents = cents;
-      persistOr(() => { it.lotCents = prev; });
-      walkItemMenu = null;
-      render();
-    },
+  lineActions(box, lineEl, area.items, it, {
+    markupPct: BidMath.resolveMarkup(walkBid(), state.data.settings),
+    data: state.data,
+    persistOr,
+    // A count of zero leaves the strip open to be answered again; anything
+    // that took closes it, which is what the menu being answered means here.
+    onChanged: render,
+    onClose: () => { walkItemMenu = null; render(); },
   });
 }
 

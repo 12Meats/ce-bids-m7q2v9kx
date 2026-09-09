@@ -50,8 +50,10 @@ const root = path.join(__dirname, '..');
 vm.runInContext(fs.readFileSync(path.join(root, 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoices.js'), 'utf8'), sandbox,
   { filename: 'invoices.js' });
+vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'log.js'), 'utf8'), sandbox,
+  { filename: 'log.js' });
 
-const { pileRowText, invoiceListText } = sandbox;
+const { pileRowText, invoiceListText, logMissing, logCrewValue } = sandbox;
 
 const TODAY = '2026-09-08';
 
@@ -180,4 +182,48 @@ test('a sent invoice for nothing reads paid without a payment to date it by', ()
   const t = invoiceListText(inv, TODAY);
   assert.strictEqual(t.value, '$0.00');
   assert.strictEqual(t.sub, 'Paid');
+});
+
+// ---------------------------------------------------------------------------
+// THE LOG SCREEN'S TWO ANSWERS
+// ---------------------------------------------------------------------------
+// Save is refused for exactly three reasons and it names ONE of them, the
+// first one he can do something about. A sentence that says three things are
+// missing is a sentence he reads none of.
+
+function draftEntry(over) {
+  return Object.assign({
+    customerId: null, projectId: null, dateISO: '2026-09-08',
+    crew: [], items: [], rentals: [], equipment: [], notes: '',
+  }, over || {});
+}
+
+test('logMissing names the first thing Save is waiting for', () => {
+  assert.strictEqual(logMissing(draftEntry()), 'customer');
+  assert.strictEqual(logMissing(draftEntry({ customerId: 'c1' })), 'project');
+  assert.strictEqual(logMissing(draftEntry({ customerId: 'c1', projectId: 'p1' })), 'hours or a line');
+  // A screen with nothing on it at all is still asked for a customer first,
+  // rather than throwing on the way to finding that out.
+  assert.strictEqual(logMissing(null), 'customer');
+});
+
+test('logMissing: hours OR a line is enough, and zero hours is not hours', () => {
+  const base = { customerId: 'c1', projectId: 'p1' };
+  assert.strictEqual(logMissing(draftEntry({ ...base, crew: [{ crewId: 'x', hours: 4 }] })), null);
+  // A visit that dropped off a lift and left is a real visit.
+  assert.strictEqual(logMissing(draftEntry({ ...base, rentals: [{ name: 'Boom lift', days: 1, cents: 28500, markup: false }] })), null);
+  assert.strictEqual(logMissing(draftEntry({ ...base, equipment: [{ equipmentId: null, name: 'Bender', days: 1, dayCents: 5000 }] })), null);
+  assert.strictEqual(logMissing(draftEntry({ ...base, items: [{ catalogId: null, name: 'Wire', unit: 'ft', qty: 1, costCents: 10, priceCents: null }] })), null);
+  // A man put on the visit and then cleared back to nothing is not hours.
+  assert.strictEqual(logMissing(draftEntry({ ...base, crew: [{ crewId: 'x', hours: 0 }] })), 'hours or a line');
+});
+
+test('logCrewValue says the hours, or says he was not on this one', () => {
+  const draft = draftEntry({ crew: [{ crewId: 'c1', hours: 8 }, { crewId: 'c2', hours: 4.5 }] });
+  assert.strictEqual(logCrewValue(draft, 'c1'), '8 hrs');
+  assert.strictEqual(logCrewValue(draft, 'c2'), '4.5 hrs');
+  // Not blank: an empty right-hand side reads as a number the app failed to
+  // show, and this is an answer, not a gap.
+  assert.strictEqual(logCrewValue(draft, 'c3'), 'not on this one');
+  assert.strictEqual(logCrewValue(null, 'c1'), 'not on this one');
 });
