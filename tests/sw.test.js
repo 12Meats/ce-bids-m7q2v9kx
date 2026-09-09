@@ -156,18 +156,22 @@ test('catalog.js loads before storage.js', () => {
   assert.ok(catalog < storage, 'catalog.js must be loaded before storage.js');
 });
 
-// invmath.js reads both Docmodel (a project invoice's amount) and Dates (age,
-// range text) at load time via require, so both have to exist first. On the
-// phone that means both script tags have to run first too.
-test('docmodel.js and dates.js load before invmath.js', () => {
+// invmath.js reads Docmodel (a project invoice's amount), Bidmath (the
+// shared qtyNum/unitText formatters) and Dates (age, range text) at load
+// time via require, so all three have to exist first. On the phone that
+// means all three script tags have to run first too.
+test('docmodel.js, bidmath.js and dates.js load before invmath.js', () => {
   const at = (src) => HTML.indexOf('<script src="' + src + '"');
   const docmodel = at('docmodel.js');
+  const bidmath = at('bidmath.js');
   const dates = at('dates.js');
   const invmath = at('invmath.js');
   assert.notStrictEqual(docmodel, -1, 'index.html loads docmodel.js');
+  assert.notStrictEqual(bidmath, -1, 'index.html loads bidmath.js');
   assert.notStrictEqual(dates, -1, 'index.html loads dates.js');
   assert.notStrictEqual(invmath, -1, 'index.html loads invmath.js');
   assert.ok(docmodel < invmath, 'docmodel.js must be loaded before invmath.js');
+  assert.ok(bidmath < invmath, 'bidmath.js must be loaded before invmath.js');
   assert.ok(dates < invmath, 'dates.js must be loaded before invmath.js');
 });
 

@@ -617,3 +617,17 @@ test('a change order is figured at the parent bid s wages, not at today s', () =
   assert.strictEqual(B.changeOrderStack(co, parent, raised).wageCents,
     B.changeOrderStack(co, parent, settings).wageCents);
 });
+
+// Fix round: qtyNum/unitText/fileNameSegment moved here from docmodel.js and
+// invdoc.js so a part and a file name read the same way on a bid and on an
+// invoice, rather than two hand-synced copies of the same rule.
+test('qtyNum/unitText/fileNameSegment: shared by the bid and invoice documents', () => {
+  assert.strictEqual(B.qtyNum(500), '500');
+  assert.strictEqual(B.qtyNum(0.1 + 0.2), '0.3', 'float noise rounds off at 3 decimals');
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'ea' }), '1', 'a single each prints as just the number');
+  assert.strictEqual(B.unitText({ qty: 500, unit: 'ft' }), '500 ft');
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'day' }), '1 day', 'a single non-ea unit keeps its unit');
+  assert.strictEqual(B.fileNameSegment('Kraft/Foods: "Tolleson" <Plant>'), 'Kraft Foods Tolleson Plant');
+  assert.strictEqual(B.fileNameSegment('  extra   spaces  '), 'extra spaces');
+  assert.strictEqual(B.fileNameSegment(null), '');
+});

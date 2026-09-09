@@ -19,14 +19,10 @@
     return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
   }
 
-  // Formats a quantity for a document row: "1 ea" prints as "1"; whole
-  // numbers print without a decimal; fractional quantities round to 3
-  // decimal places so float noise (0.1 + 0.2 style) never leaks into print.
-  function qtyNum(q) { return String(Math.round(q * 1000) / 1000); }
-  function unitText(it) {
-    if (it.qty === 1 && it.unit === 'ea') return '1';
-    return `${qtyNum(it.qty)} ${it.unit}`;
-  }
+  // qtyNum/unitText live in bidmath.js now, shared with invmath.js so a part
+  // reads the same way on a bid and on an invoice.
+  const qtyNum = B.qtyNum;
+  const unitText = B.unitText;
 
   // Lower-cases only the first character of a name, and only when that first
   // character is an uppercase letter followed by a lowercase letter — so
@@ -105,9 +101,8 @@
   function customerName(bid, data) { return customerOf(bid, data).name; }
 
   function fileName(bid, data) {
-    const clean = (t) => t.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
-    const cust = clean(customerName(bid, data));
-    const title = clean(bid.title || '').slice(0, 80).replace(/[.\s]+$/, '');
+    const cust = B.fileNameSegment(customerName(bid, data));
+    const title = B.fileNameSegment(bid.title || '').slice(0, 80).replace(/[.\s]+$/, '');
     const segments = [`CE Bid ${bid.number}`, cust, title].filter((s) => s !== '');
     return `${segments.join(' - ')}.pdf`;
   }

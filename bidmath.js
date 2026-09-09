@@ -84,6 +84,24 @@
   function rentalPrice(x, markupPct) { return x.markup ? unitPrice(x.cents, markupPct) : x.cents; }
   function equipmentLine(x) { return r(x.days * x.dayCents); }
 
+  // Formats a quantity for a document row: "1 ea" prints as "1"; whole
+  // numbers print without a decimal; fractional quantities round to 3 decimal
+  // places so float noise (0.1 + 0.2 style) never leaks into print. Shared by
+  // docmodel.js (the bid paper) and invmath.js (the invoice paper) so the
+  // same part reads the same way on both documents.
+  function qtyNum(q) { return String(Math.round(q * 1000) / 1000); }
+  function unitText(it) {
+    if (it.qty === 1 && it.unit === 'ea') return '1';
+    return qtyNum(it.qty) + ' ' + it.unit;
+  }
+
+  // A file name's one segment: stripped of the characters no filesystem this
+  // app runs on will accept in a name, squeezed to single spaces, trimmed.
+  // Shared by docmodel.js (a bid's file name) and invdoc.js (an invoice's).
+  function fileNameSegment(t) {
+    return String(t == null ? '' : t).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
   function materialPrice(bid, markupPct) {
     return items(bid).reduce((s, it) => s + itemPrice(it, markupPct).cents, 0);
   }
@@ -654,5 +672,6 @@
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,
     resolveMarkup, itemBillBase, itemPrice, rentalPrice, equipmentLine, changeOrderIsEmpty,
+    qtyNum, unitText, fileNameSegment,
   };
 });

@@ -2,20 +2,19 @@
 // Pure. The renderer in docgen.js draws exactly this and nothing else, and
 // the invoice screen's preview mirrors it row for row.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./invmath.js'), require('./dates.js'));
-  else root.InvDoc = factory(root.InvMath, root.Dates);
-})(typeof self !== 'undefined' ? self : this, function (I, Dates) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./bidmath.js'), require('./invmath.js'), require('./dates.js'));
+  else root.InvDoc = factory(root.BidMath, root.InvMath, root.Dates);
+})(typeof self !== 'undefined' ? self : this, function (B, I, Dates) {
   'use strict';
 
   const FOOTER = 'Thank you for choosing Cantu Electric LLC. We appreciate your business';
 
   function customerOf(inv, data) { return (data.customers || []).find((c) => c.id === inv.customerId) || null; }
-  function clean(t) { return String(t == null ? '' : t).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 
   function fileName(inv, data) {
     const cust = customerOf(inv, data);
-    const name = clean(cust && cust.name ? cust.name : 'Customer');
-    const title = clean(inv.projectTitle || '').slice(0, 80).replace(/[.\s]+$/, '');
+    const name = B.fileNameSegment(cust && cust.name ? cust.name : 'Customer');
+    const title = B.fileNameSegment(inv.projectTitle || '').slice(0, 80).replace(/[.\s]+$/, '');
     const num = inv.number === null ? 'draft' : String(inv.number);
     return ['CE Invoice ' + num, name, title].filter((s) => s !== '').join(' - ') + '.pdf';
   }

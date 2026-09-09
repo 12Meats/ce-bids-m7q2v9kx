@@ -52,7 +52,7 @@ test('build: a draft has no number and a range prints as dates; empty sections a
 test('build: no PO means no PO cell; a project invoice is one line as proposed', () => {
   const { d, inv, uda } = world();
   uda.po = '';
-  const doc = V.build(I.draftInvoice(I.group(d.logs, d, S.mondayOf)[0] || { customerId: uda.id, projectId: d.projects[0].id, title: 'x', entries: [d.logs[0]], from: '2026-07-02', to: '2026-07-02' }, d, 1), d);
+  const doc = V.build(I.draftInvoice(I.group(d.logs, d, S.mondayOf)[0], d, 1), d);
   assert.strictEqual(doc.meta.po, '');
   const b = S.newBid(d, { customerName: 'United Dairymen of Arizona', title: 'Cheese plant lighting', jobType: 'project', dateISO: '2026-06-01' });
   b.areas.push({ id: 'a', name: 'Plant', items: [{ catalogId: null, name: 'Fixture', unit: 'ea', qty: 1, costCents: 100000, priceCents: null }], photoIds: [] });

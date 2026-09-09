@@ -823,8 +823,20 @@
         if (!validRentals(inv.rentals)) return null;
         if (!validEquipmentLines(inv.equipment)) return null;
         if (!strArr(inv.logIds)) return null;   // existence and the two-sided link are checked after the logs loop
-        if (inv.bidId !== null && !bidIds.has(inv.bidId)) return null;
-        if (inv.partCents !== null && !isIntGte0(inv.partCents)) return null;
+        // kind decides which half of the record is real. Crossing them makes
+        // an invoice that totals nothing (a project invoice with no
+        // partCents) while its logs still read as billed, or one that bills
+        // a bid nobody agreed to (a tm invoice with a bidId) — either way an
+        // invoice the pile cannot re-derive and the job stays billable a
+        // second time.
+        if (inv.kind === 'project') {
+          if (!isStr(inv.bidId) || !bidIds.has(inv.bidId)) return null;
+          if (!isIntGte0(inv.partCents)) return null;
+          if (inv.logIds.length !== 0) return null;
+        } else {
+          if (inv.bidId !== null) return null;
+          if (inv.partCents !== null) return null;
+        }
         if (!strArr(inv.notes)) return null;
         if (!isIn(inv.status, INVOICE_STATUS)) return null;
         if (inv.sentAt !== null && !isISO(inv.sentAt)) return null;
@@ -1132,7 +1144,11 @@
   // means a new job, not reopening the paperwork on a closed one. Stays
   // offered under its customer until done.
   function newProject(d, customerId, title, createdISO) {
-    const t = String(title == null ? '' : title).replace(/\s+/g, ' ').trim().slice(0, PROJECT_TITLE_MAX);
+    // Slice to the cap BEFORE trimming: a title cut off mid-run-of-spaces
+    // (the 80th character landing on a space) must not leave that space on
+    // the end. Trimming first would only catch a space typed at the very
+    // edge of the whole string, not one the slice itself exposes.
+    const t = String(title == null ? '' : title).replace(/\s+/g, ' ').slice(0, PROJECT_TITLE_MAX).trim();
     if (!t) return null;
     if (!d.projects) d.projects = [];
     const key = t.toLowerCase();
@@ -1173,8 +1189,11 @@
     s.nextInvoiceNumber = n + 1;
     return n;
   }
+  // Number.isInteger(number) guards a null: a draft invoice's own number is
+  // null, and without the guard asking "is null in use" would find every
+  // draft on the file and read as taken.
   function invoiceNumberInUse(d, number, exceptInvoiceId) {
-    return (d.invoices || []).some((inv) => inv.number === number && inv.id !== exceptInvoiceId);
+    return Number.isInteger(number) && (d.invoices || []).some((inv) => inv.number === number && inv.id !== exceptInvoiceId);
   }
 
   function addCatalogItem(d, { category, name, unit }) {
@@ -1377,9 +1396,17 @@
   // small, so the guards below simply walk them alongside the bids.
   function logsAndInvoices(d) { return (d.logs || []).concat(d.invoices || []); }
 
+  // A malformed record — a hand edit, a half-pasted restore — must not crash
+  // the count that decides whether Delete is even offered. bidsReferencing
+  // already swallows a bad bid this way; this is the same guard for the log
+  // and invoice arrays the InUse checks below now also walk.
+  function safeSome(arr, test) {
+    return (arr || []).filter((x) => { try { return !!test(x); } catch (e) { return false; } }).length;
+  }
+
   function equipmentInUse(d, id) {
     const bids = bidsReferencing(d, (b) => (b.equipment || []).some((e) => e.equipmentId === id));
-    const rest = logsAndInvoices(d).filter((x) => (x.equipment || []).some((e) => e.equipmentId === id)).length;
+    const rest = safeSome(logsAndInvoices(d), (x) => (x.equipment || []).some((e) => e.equipmentId === id));
     return bids + rest;
   }
 
@@ -1396,14 +1423,14 @@
     // is later taken off Settings. A LOG entry's crew is the live reference
     // (it is what draftInvoice reads to build that snapshot), so only logs
     // block a delete.
-    const logs = (d.logs || []).filter((e) => (e.crew || []).some((m) => m.crewId === id)).length;
+    const logs = safeSome(d.logs, (e) => (e.crew || []).some((m) => m.crewId === id));
     return bids + logs;
   }
 
   function catalogInUse(d, id) {
     const inAreas = (areas) => (areas || []).some((a) => (a.items || []).some((it) => it.catalogId === id));
     const bids = bidsReferencing(d, (b) => inAreas(b.areas) || changeOrdersOf(b).some((co) => inAreas(co.areas)));
-    const rest = logsAndInvoices(d).filter((x) => (x.items || []).some((it) => it.catalogId === id)).length;
+    const rest = safeSome(logsAndInvoices(d), (x) => (x.items || []).some((it) => it.catalogId === id));
     return bids + rest;
   }
 

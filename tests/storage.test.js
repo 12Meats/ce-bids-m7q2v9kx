@@ -1166,6 +1166,9 @@ test('validateImport accepts the invoice shapes and refuses the wrong ones', () 
   assert.ok(!ok((f) => { f.inv.logIds = ['ghost']; }), 'logIds must exist');
   assert.ok(!ok((f) => { f.inv.bidId = 'ghost'; }), 'bidId must exist when set');
   assert.ok(ok((f) => { f.inv.kind = 'project'; f.inv.bidId = f.b.id; f.inv.partCents = 100000; f.inv.logIds = []; f.log.invoiceId = null; }));
+  assert.ok(!ok((f) => { f.inv.kind = 'project'; f.inv.bidId = f.b.id; f.inv.partCents = null; f.inv.logIds = []; f.log.invoiceId = null; }), 'a project invoice needs a part amount');
+  assert.ok(!ok((f) => { f.inv.kind = 'project'; f.inv.bidId = f.b.id; f.inv.partCents = 100000; }), 'a project invoice carries no logIds');
+  assert.ok(!ok((f) => { f.inv.partCents = 100000; }), 'a tm invoice carries no partCents');
   assert.ok(!ok((f) => { f.d.invoices.push({ ...f.inv }); }), 'duplicate invoice id');
   assert.ok(!ok((f) => { f.d.invoices.push({ ...f.inv, id: 'inv2', logIds: [] }); }), 'two invoices with the same number');
 });
@@ -1276,4 +1279,45 @@ test('newProject finds an open project by title, case-insensitively, and never m
   const revived = S.newProject(d, c.id, 'UF Project', '2026-09-05');
   assert.notStrictEqual(revived, first, 'a done project does not match; a new one is created');
   assert.strictEqual(d.projects.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// FIX ROUND 2 (quality review of Tasks 2-3)
+// ---------------------------------------------------------------------------
+
+test('newProject slices to the cap before trimming, so a title cut off on a space carries none', () => {
+  const d = S.emptyData();
+  const c = S.findOrCreateCustomer(d, 'UDA');
+  // 79 'a's then a space then more text: 81 characters. The 80th character
+  // (index 79) is the space, so a naive trim-then-slice would leave it on
+  // the end of the title.
+  const spaced = 'a'.repeat(79) + ' ' + 'more text';
+  const p = S.newProject(d, c.id, spaced, '2026-09-01');
+  assert.strictEqual(p.title, 'a'.repeat(79));
+  assert.strictEqual(p.title.length, 79);
+  assert.notStrictEqual(p.title.slice(-1), ' ');
+});
+
+test('invoiceNumberInUse never matches a draft\'s null number', () => {
+  const f = invoiceFixture();
+  const draft = { ...f.inv, id: 'inv-draft', number: null, status: 'draft', sentAt: null, dateISO: null, payments: [], logIds: [] };
+  f.d.invoices.push(draft);
+  assert.strictEqual(S.invoiceNumberInUse(f.d, null), false, 'null is never "in use"');
+  assert.strictEqual(S.invoiceNumberInUse(f.d, undefined), false);
+  assert.strictEqual(S.invoiceNumberInUse(f.d, 166818), true, 'a real number is still found');
+});
+
+test('equipmentInUse/crewInUse/catalogInUse swallow a malformed log or invoice rather than throwing', () => {
+  const f = invoiceFixture();
+  const wantCrew = S.crewInUse(f.d, f.crewId);
+  const wantCatalog = S.catalogInUse(f.d, 'anything');
+  const wantEquip = S.equipmentInUse(f.d, 'anything');
+  f.d.logs.push({ id: 'bad', customerId: f.cust.id, crew: 'oops', items: 'oops', equipment: 'oops' });
+  assert.doesNotThrow(() => S.crewInUse(f.d, f.crewId));
+  assert.doesNotThrow(() => S.catalogInUse(f.d, 'anything'));
+  assert.doesNotThrow(() => S.equipmentInUse(f.d, 'anything'));
+  // The malformed record contributes nothing rather than corrupting the count.
+  assert.strictEqual(S.crewInUse(f.d, f.crewId), wantCrew);
+  assert.strictEqual(S.catalogInUse(f.d, 'anything'), wantCatalog);
+  assert.strictEqual(S.equipmentInUse(f.d, 'anything'), wantEquip);
 });

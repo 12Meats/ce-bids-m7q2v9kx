@@ -17,7 +17,8 @@ function world() {
   const uf = S.newProject(d, uda.id, 'UF Project', '2026-08-20');
   const pump = S.newProject(d, uda.id, 'R2 condensate pump', '2026-09-01');
   const lights = S.newProject(d, sch.id, 'Freezer lights', '2026-09-01');
-  const [c1, c2] = d.settings.crew.map((c) => c.id);           // Shawn 3200, George 3000
+  const c1 = d.settings.crew.find((c) => c.name === 'Shawn').id;
+  const c2 = d.settings.crew.find((c) => c.name === 'George').id;
   const e = (customerId, projectId, dateISO, crew, items) => {
     const x = S.newLogEntry(d, { customerId, projectId, dateISO, createdAt: 1 });
     x.crew = crew; x.items = items || [];
@@ -70,8 +71,49 @@ test('combine joins two neighbouring groups of the same project; split makes one
   assert.strictEqual(I.combine(groups, 1), groups, 'different projects do not combine (returns the same array)');
   const parts = I.split(groups, 1);
   assert.strictEqual(parts.length, 6);
-  assert.deepStrictEqual(parts.slice(1, 4).map((g) => g.from), ['2026-08-31', '2026-09-01', '2026-09-04']);
+  // Split re-sorts the WHOLE list by date, so the pump's Sep 2 visit — which
+  // sat after this card before it was split — now falls between the Aug 31
+  // and Sep 1 pieces and the Sep 4 piece.
+  assert.deepStrictEqual(parts.slice(1, 4).map((g) => g.from), ['2026-08-31', '2026-09-01', '2026-09-02']);
   assert.ok(I.canCombine(groups, 0) && !I.canCombine(groups, 1) && !I.canCombine(groups, 3));
+});
+
+// Fix round: Combine has to reach past a different job that lands, by date,
+// between two weeks of the SAME job — not merely stop at the next card.
+test('combine reaches the next group of the SAME job, not merely the next card', () => {
+  const w = world();
+  w.entries[6].dateISO = '2026-08-29';   // the Schreiber week now starts between the two UF weeks
+  const groups = I.group(w.entries, w.d, monday);
+  assert.deepStrictEqual(groups.map((g) => g.title), ['UF Project', 'Freezer lights', 'UF Project', 'R2 condensate pump']);
+  assert.ok(I.canCombine(groups, 0));
+  const joined = I.combine(groups, 0);
+  assert.deepStrictEqual([joined[0].from, joined[0].to, joined[0].entries.length], ['2026-08-24', '2026-09-04', 5]);
+  assert.strictEqual(joined[1].title, 'Freezer lights', 'the group that sat between the two keeps its place');
+  assert.strictEqual(I.combine(groups, 1), groups, 'different projects still do not combine (returns the same array)');
+  assert.ok(!I.canCombine(groups, 3));
+});
+
+// Fix round: split's pieces belong wherever their own dates put them, not in
+// a run where the combined card used to sit.
+test('split re-sorts its pieces back into the list, by date', () => {
+  const d = S.emptyData();
+  const uda = S.findOrCreateCustomer(d, 'UDA');
+  const sch = S.findOrCreateCustomer(d, 'Schreiber');
+  const uf = S.newProject(d, uda.id, 'UF Project', '2026-08-20');
+  const lights = S.newProject(d, sch.id, 'Freezer lights', '2026-09-01');
+  const shawn = d.settings.crew.find((c) => c.name === 'Shawn').id;
+  const a1 = S.newLogEntry(d, { customerId: uda.id, projectId: uf.id, dateISO: '2026-08-31', createdAt: 1 });
+  a1.crew = [{ crewId: shawn, hours: 4 }];
+  const a2 = S.newLogEntry(d, { customerId: uda.id, projectId: uf.id, dateISO: '2026-09-04', createdAt: 1 });
+  a2.crew = [{ crewId: shawn, hours: 4 }];
+  const b1 = S.newLogEntry(d, { customerId: sch.id, projectId: lights.id, dateISO: '2026-09-02', createdAt: 1 });
+  b1.crew = [{ crewId: shawn, hours: 4 }];
+  const groups = I.group([a1, a2, b1], d, monday);
+  assert.deepStrictEqual(groups.map((g) => [g.title, g.from]), [['UF Project', '2026-08-31'], ['Freezer lights', '2026-09-02']]);
+  const parts = I.split(groups, 0);
+  assert.deepStrictEqual(parts.map((g) => [g.title, g.from]), [
+    ['UF Project', '2026-08-31'], ['Freezer lights', '2026-09-02'], ['UF Project', '2026-09-04'],
+  ]);
 });
 
 test('draftInvoice: labor per man summed, materials carried, snapshots taken from the customer and settings', () => {
@@ -96,6 +138,19 @@ test('draftInvoice: labor per man summed, materials carried, snapshots taken fro
   const sch = I.draftInvoice(I.group(w.entries, w.d, monday)[3], w.d, 1);
   assert.strictEqual(sch.rateCents, w.d.settings.rateCents);
   assert.strictEqual(sch.po, '');
+});
+
+// Fix round: labor rows follow the crew's position in Settings, not the
+// order the men happened to appear on the truck that week.
+test('draftInvoice: labor rows follow the crew\'s order in Settings, not first appearance', () => {
+  const w = world();
+  const george = w.d.settings.crew.find((c) => c.name === 'George').id;
+  const shawn = w.d.settings.crew.find((c) => c.name === 'Shawn').id;
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-10', createdAt: 1 });
+  e.crew = [{ crewId: george, hours: 3 }, { crewId: shawn, hours: 2 }];   // George logged first this week
+  const g = I.group([e], w.d, monday)[0];
+  const inv = I.draftInvoice(g, w.d, 1);
+  assert.deepStrictEqual(inv.labor.map((l) => l.name), ['Shawn', 'George'], 'Shawn is first in the seed crew');
 });
 
 test('totals: hours × rate per man, materials by itemPrice, rentals and equipment by bidmath, tax 0', () => {
@@ -137,6 +192,18 @@ test('statusOf and balance: draft, sent, partly paid, paid', () => {
   assert.strictEqual(I.balanceCents(inv), 0, 'an overpayment is not a negative balance');
 });
 
+// Fix round: sent gates paid, so a sent $0 invoice reads paid immediately
+// rather than sitting "sent" forever, and a $0 draft (never sent) stays draft.
+test('statusOf: a sent invoice with nothing left to bill reads paid; an unsent one stays draft', () => {
+  const w = world();
+  const inv = I.draftInvoice(I.group(w.entries, w.d, monday)[2], w.d, 1);
+  inv.labor = [];   // nothing billed: total is 0
+  assert.strictEqual(I.totals(inv).total, 0);
+  assert.strictEqual(I.statusOf(inv), 'draft');
+  inv.sentAt = '2026-09-05';
+  assert.strictEqual(I.statusOf(inv), 'paid');
+});
+
 test('whoOwes: open balances over sent invoices, the oldest by sent date', () => {
   const w = world();
   const groups = I.group(w.entries, w.d, monday);
@@ -176,6 +243,22 @@ test('projectInvoice: the bid\'s document total plus change orders, less what wa
   const rest = I.draftProjectInvoice(b, w.d, null, 2, [first]);
   assert.strictEqual(I.totals(rest).total, whole - 100000, 'null part = the whole remaining amount');
   assert.strictEqual(I.projectRemainingCents(b, w.d, [first, rest]), 0);
+});
+
+// Fix round: forgetting the fifth argument must not read as "nothing billed
+// yet" — the one wrong answer, since it bills the job a second time.
+test('draftProjectInvoice defaults prior invoices to the file\'s own, not to none billed yet', () => {
+  const w = world();
+  const b = S.newBid(w.d, { customerName: 'UDA', title: 'Cheese plant lighting', jobType: 'project', dateISO: '2026-08-01' });
+  b.areas.push({ id: 'a1', name: 'Plant', items: [{ catalogId: null, name: 'Fixture', unit: 'ea', qty: 10, costCents: 10000, priceCents: null }], photoIds: [] });
+  b.labor.days = 2; b.status = 'won'; b.job = S.newJob();
+  w.d.bids.push(b);
+  const whole = D.build(b, w.d, 'full').totalCents;
+  const first = I.draftProjectInvoice(b, w.d, 100000, 1);
+  first.id = 'inv1'; first.number = 1;
+  w.d.invoices.push(first);
+  const rest = I.draftProjectInvoice(b, w.d, null, 2);   // no fifth argument
+  assert.strictEqual(I.totals(rest).total, whole - 100000, 'partCents = whole - first, read straight off the file');
 });
 
 test('invoiceRows: what the paper prints, in order, from one primitive', () => {

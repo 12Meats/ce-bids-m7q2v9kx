@@ -47,25 +47,49 @@
     return groups;
   }
 
-  function canCombine(groups, i) {
-    const a = groups[i], b = groups[i + 1];
-    return !!(a && b && a.customerId === b.customerId && a.projectId === b.projectId);
+  // The comparator group() sorts by: oldest from() first. Combine and split
+  // both hand back an array under this same order, so a caller never has to
+  // re-sort what either one returns.
+  function byFrom(a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; }
+
+  // The first LATER group of the SAME job (customer + project), not merely
+  // the next card on the list: a catch-up invoice can have another
+  // customer's week land, by date, between two weeks of the one job he fell
+  // behind on, and Combine has to reach past it rather than stop at it.
+  function nextSameJob(groups, i) {
+    const a = groups[i];
+    if (!a) return -1;
+    for (let j = i + 1; j < groups.length; j += 1) {
+      if (groups[j].customerId === a.customerId && groups[j].projectId === a.projectId) return j;
+    }
+    return -1;
   }
-  // Combine groups[i] with the next one when they are the same job: the
-  // catch-up case. Returns the SAME array when they are not, so a caller can
-  // test identity rather than re-deriving the rule.
+  function canCombine(groups, i) { return nextSameJob(groups, i) !== -1; }
+  // Combine groups[i] with the next group of the SAME job, wherever it sits.
+  // The entries are concatenated and re-sorted by date (they came from two
+  // different weeks); the groups that sat between the two keep their own
+  // place on the list, merely shifted down by the one slot that closed up.
+  // Returns the SAME array when there is no later group of this job, so a
+  // caller can test identity rather than re-deriving the rule.
   function combine(groups, i) {
-    if (!canCombine(groups, i)) return groups;
-    const a = groups[i], b = groups[i + 1];
-    const merged = { ...a, key: a.key + '+' + b.key, entries: a.entries.concat(b.entries),
+    const j = nextSameJob(groups, i);
+    if (j === -1) return groups;
+    const a = groups[i], b = groups[j];
+    const merged = { ...a, key: a.key + '+' + b.key,
+      entries: a.entries.concat(b.entries).sort((x, y) => (x.dateISO < y.dateISO ? -1 : x.dateISO > y.dateISO ? 1 : 0)),
       from: a.from < b.from ? a.from : b.from, to: a.to > b.to ? a.to : b.to };
-    return groups.slice(0, i).concat([merged], groups.slice(i + 2));
+    return groups.slice(0, i).concat([merged], groups.slice(i + 1, j), groups.slice(j + 1));
   }
+  // One group per entry. The pieces come back in the SAME position as the
+  // group they replaced only by date: split can turn one card into entries
+  // that belong before AND after a neighbouring group (a Monday and a Friday
+  // either side of someone else's Wednesday), so the whole list is re-sorted
+  // by from rather than spliced in as a run.
   function split(groups, i) {
     const g = groups[i];
     if (!g || g.entries.length < 2) return groups;
     const parts = g.entries.map((e) => ({ ...g, key: g.key + '#' + e.id, entries: [e], from: e.dateISO, to: e.dateISO }));
-    return groups.slice(0, i).concat(parts, groups.slice(i + 1));
+    return groups.slice(0, i).concat(parts, groups.slice(i + 1)).sort(byFrom);
   }
 
   // -------------------------------------------------------------------------
@@ -90,9 +114,15 @@
     g.entries.forEach((e) => (e.crew || []).forEach((m) => {
       byCrew.set(m.crewId, (byCrew.get(m.crewId) || 0) + m.hours);
     }));
-    const labor = Array.from(byCrew.entries()).map(([crewId, hours]) => ({
-      crewId, name: crewName(data, crewId), loggedHours: hours, billedHours: hours,
-    }));
+    // Rows follow the man's position in Settings, the order the crew screen
+    // shows him in, so a truck run out of order at the truck does not print
+    // a different man first on every other invoice. An id Settings no longer
+    // has falls to the end, in the order it first showed up on this job.
+    const crewOrder = (s.crew || []).map((c) => c.id);
+    const rank = (id) => { const i = crewOrder.indexOf(id); return i === -1 ? Infinity : i; };
+    const labor = Array.from(byCrew.entries())
+      .map(([crewId, hours]) => ({ crewId, name: crewName(data, crewId), loggedHours: hours, billedHours: hours }))
+      .sort((x, y) => rank(x.crewId) - rank(y.crewId));
     return {
       id: null, number: null, kind: 'tm', customerId: g.customerId, projectTitle: g.title,
       dateISO: null, serviceFrom: g.from, serviceTo: g.to,
@@ -122,7 +152,13 @@
   function draftProjectInvoice(bid, data, partCents, createdAt, invoices) {
     const s = data.settings;
     const cust = customerOf(data, bid.customerId);
-    const remaining = projectRemainingCents(bid, data, invoices || []);
+    // A caller that forgets this argument must NOT read as "nothing billed
+    // yet" — that is the one wrong answer, and it is the one that bills the
+    // job a second time. Default to every project invoice already on the
+    // file (undefined = forgot it); an explicit [] is his to pass when he
+    // means it.
+    const prior = invoices === undefined ? (data.invoices || []) : invoices;
+    const remaining = projectRemainingCents(bid, data, prior);
     return {
       id: null, number: null, kind: 'project', customerId: bid.customerId, projectTitle: bid.title || '',
       dateISO: null, serviceFrom: bid.dateISO, serviceTo: bid.dateISO,
@@ -155,8 +191,12 @@
   }
   function paidCents(inv) { return (inv.payments || []).reduce((s, p) => s + p.cents, 0); }
   function balanceCents(inv) { return Math.max(0, totals(inv).total - paidCents(inv)); }
+  // Sent gates paid, not the amount owed: a $0 invoice he actually sent has
+  // nothing left to collect and reads paid the moment it goes out, rather
+  // than sitting "sent" forever because zero was already >= zero before he
+  // ever mailed it.
   function statusOf(inv) {
-    if (totals(inv).total > 0 && paidCents(inv) >= totals(inv).total) return 'paid';
+    if (inv.sentAt && paidCents(inv) >= totals(inv).total) return 'paid';
     if (inv.sentAt) return 'sent';
     return 'draft';
   }
@@ -185,8 +225,10 @@
   // ROWS, the way the paper prints them
   // -------------------------------------------------------------------------
   function hoursText(h) { return String(Math.round(h * 100) / 100) + ' hrs'; }
-  function qtyNum(q) { return String(Math.round(q * 1000) / 1000); }
-  function unitText(it) { return it.qty === 1 && it.unit === 'ea' ? '1' : qtyNum(it.qty) + ' ' + it.unit; }
+  // qtyNum/unitText live in bidmath.js now, shared with docmodel.js so a part
+  // reads the same way on a bid and on an invoice.
+  const qtyNum = B.qtyNum;
+  const unitText = B.unitText;
   function rangeText(from, to) {
     if (from === to) return Dates.fmtDate(from);
     // "Aug 31 to Sep 4, 2026": the year once, at the end, when both are in it.
