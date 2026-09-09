@@ -41,6 +41,8 @@ const sandbox = {
   show: () => {},
   persistOr: () => true,
   showBanner: () => {},
+  navPush: () => {},
+  confirmPanel: () => Promise.resolve(false),
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
@@ -55,8 +57,11 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoices.js'), 'utf8
   { filename: 'invoices.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'log.js'), 'utf8'), sandbox,
   { filename: 'log.js' });
+vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'billreview.js'), 'utf8'), sandbox,
+  { filename: 'billreview.js' });
 
-const { pileRowText, invoiceListText, logMissing, logCrewValue, invGroupOn } = sandbox;
+const { pileRowText, invoiceListText, logMissing, logCrewValue, invGroupOn,
+  reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend } = sandbox;
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
@@ -264,4 +269,176 @@ test('logCrewValue says the hours, or says he was not on this one', () => {
   // show, and this is an answer, not a gap.
   assert.strictEqual(logCrewValue(draft, 'c3'), 'not on this one');
   assert.strictEqual(logCrewValue(null, 'c1'), 'not on this one');
+});
+
+// ---------------------------------------------------------------------------
+// THE BILL THESE REVIEW
+// ---------------------------------------------------------------------------
+// The last screen before an invoice number is spent. What is pinned here is
+// the sentence on each card, the one rule that stops the send, and the send
+// itself: one save, numbers in date order, entries locked, and every bit of it
+// put back if the disk says no.
+
+const reviewDrafts = vm.runInContext('reviewDrafts', sandbox);
+
+function reviewWorld() {
+  const w = world();
+  reviewDrafts.set(groups(w).map((g) => I.draftInvoice(g, w.d, 1)));
+  return w;
+}
+
+test('a review card says what it covers, the hours and rate, and what the parts bill', () => {
+  const w = reviewWorld();
+  // 21 hours at $85, and the wire at its LOT price of $216 — what the customer
+  // pays, not the $190 it cost him. The pile row on the home says the cost;
+  // this is the invoice.
+  assert.strictEqual(reviewCardSub(reviewDrafts.get()[0]),
+    'Aug 24 to Aug 28 · 21 hrs at $85 · $216.00 parts');
+});
+
+test('one day, no parts: the card says neither', () => {
+  const w = world();
+  const p = S.newProject(w.d, w.uda.id, 'R2 condensate pump', '2026-09-01');
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: p.id, dateISO: '2026-09-02', createdAt: 2 });
+  e.crew = [{ crewId: w.c1, hours: 4 }];
+  const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'R2 condensate pump');
+  assert.strictEqual(reviewCardSub(I.draftInvoice(g, w.d, 1)), 'Sep 2 · 4 hrs at $85');
+});
+
+test('a rate with cents on it keeps them', () => {
+  const w = world();
+  w.uda.rateCents = 8550;
+  const g = groups(w)[0];
+  assert.match(reviewCardSub(I.draftInvoice(g, w.d, 1)), /21 hrs at \$85\.50/);
+});
+
+test('an entry line names the day, the men and what was on it', () => {
+  const w = world();
+  const [first, second] = w.d.logs;
+  // Aug 24, 2026 was a Monday.
+  assert.strictEqual(reviewEntryText(first, w.d), 'Mon Aug 24 · Shawn 8, George 5');
+  // One line is named; the day it was fitted on is a Friday.
+  assert.strictEqual(reviewEntryText(second, w.d), 'Fri Aug 28 · Shawn 8 · #12 wire');
+  // More than one, and the card counts rather than lists.
+  second.items.push({ catalogId: null, name: 'Strut', unit: 'ft', qty: 10, costCents: 400, priceCents: null });
+  assert.strictEqual(reviewEntryText(second, w.d), 'Fri Aug 28 · Shawn 8 · 2 lines');
+});
+
+test('reviewCanSend refuses a draft that bills nothing, and an empty review', () => {
+  const w = reviewWorld();
+  assert.strictEqual(reviewCanSend(reviewDrafts.get()), true);
+  // He took the hours off one of them and left nothing behind.
+  const empty = reviewDrafts.get()[0];
+  empty.labor = [];
+  empty.items = [];
+  empty.rentals = [];
+  empty.equipment = [];
+  assert.strictEqual(I.totals(empty).total, 0);
+  assert.strictEqual(reviewCanSend(reviewDrafts.get()), false, 'a $0 draft stops the whole batch');
+  assert.strictEqual(reviewCanSend([]), false, 'nothing to number is not something to send');
+  assert.strictEqual(reviewCanSend(null), false);
+});
+
+// ---------------------------------------------------------------------------
+// THE SEND
+// ---------------------------------------------------------------------------
+
+function sendWorld() {
+  const w = world();
+  // A second job for the same customer, a week later, so there are two invoices
+  // to number and the order they get their numbers in is visible.
+  const pump = S.newProject(w.d, w.uda.id, 'R2 condensate pump', '2026-09-01');
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: pump.id, dateISO: '2026-09-02', createdAt: 5 });
+  e.crew = [{ crewId: w.c1, hours: 4 }];
+  const gs = I.group(w.d.logs, w.d, S.mondayOf);
+  reviewDrafts.set(gs.map((g) => I.draftInvoice(g, w.d, 1)));
+  return { w, gs };
+}
+
+test('the send numbers in date order, locks the entries, and clears the pile', () => {
+  const { w, gs } = sendWorld();
+  pileSelection.setOn(w.d.logs[0].id, false);   // something for clear() to undo
+  const saves = [];
+  const banners = [];
+  const shown = [];
+  const order = [];
+  sandbox.persistOr = (revert) => { saves.push(revert); return true; };
+  sandbox.showBanner = (text, kind) => { banners.push([text, kind]); order.push('banner'); };
+  sandbox.show = (screen, arg, opts) => { shown.push([screen, arg, opts]); order.push('show'); };
+  sandbox.render = () => {};
+  w.d.settings.nextInvoiceNumber = 166818;
+
+  billreviewSend();
+
+  assert.strictEqual(saves.length, 1, 'every invoice and every lock in ONE save');
+  const made = w.d.invoices;
+  assert.strictEqual(made.length, 2);
+  // The groups are oldest first, so the numbers run with the work.
+  assert.deepStrictEqual(made.map((x) => x.number), [166818, 166819]);
+  assert.deepStrictEqual(made.map((x) => x.projectTitle), [gs[0].title, gs[1].title]);
+  assert.strictEqual(w.d.settings.nextInvoiceNumber, 166820);
+  made.forEach((inv) => {
+    assert.ok(inv.id, 'a numbered invoice has an id');
+    assert.strictEqual(inv.dateISO, S.todayISO());
+    assert.strictEqual(inv.status, 'draft', 'numbered is not sent');
+  });
+  // Every entry on an invoice is locked to it, which is what makes it
+  // read-only at the truck and keeps it out of the pile.
+  w.d.logs.forEach((e) => {
+    const owner = made.find((inv) => inv.logIds.indexOf(e.id) !== -1);
+    assert.strictEqual(e.invoiceId, owner.id, 'the entry is locked to its invoice');
+  });
+  // The pile is empty and everything he had turned off is forgotten with it.
+  assert.strictEqual(pileSelection.isOn(w.d.logs[0].id), true);
+  // deepEqual, not deepStrictEqual: the argument object was built inside the VM
+  // and carries that realm's Object prototype, which strict equality compares.
+  assert.deepEqual(shown, [['invoice',
+    { id: made[0].id, queue: [made[1].id] }, { replace: true }]]);
+  // The banner is raised AFTER the navigation. show() clears the banner of the
+  // screen it is leaving, so a banner raised first is a banner he never sees.
+  assert.deepStrictEqual(banners, [['2 invoices numbered.', 'ok']]);
+  assert.ok(order.indexOf('show') < order.indexOf('banner'), 'the banner comes after the navigation');
+  sandbox.persistOr = () => true;
+  sandbox.showBanner = () => {};
+  sandbox.show = () => {};
+});
+
+test('a refused save puts the numbers, the invoices and the locks back', () => {
+  const { w } = sendWorld();
+  const before = w.d.settings.nextInvoiceNumber;
+  sandbox.persistOr = (revert) => { revert(); return false; };
+  sandbox.showBanner = () => {};
+  sandbox.show = () => { throw new Error('a refused save must not navigate'); };
+  sandbox.render = () => {};
+
+  billreviewSend();
+
+  assert.deepStrictEqual(w.d.invoices, [], 'nothing was left on the file');
+  assert.strictEqual(w.d.settings.nextInvoiceNumber, before, 'the number was not spent');
+  w.d.logs.forEach((e) => assert.strictEqual(e.invoiceId, null, 'the entry is back in the pile'));
+  // And the drafts are drafts again: a second tap on Send must not push
+  // invoices that already carry a number the disk never took.
+  reviewDrafts.get().forEach((inv) => {
+    assert.strictEqual(inv.id, null);
+    assert.strictEqual(inv.number, null);
+    assert.strictEqual(inv.dateISO, null);
+  });
+  sandbox.persistOr = () => true;
+  sandbox.show = () => {};
+});
+
+test('the send refuses a batch with a $0 invoice in it and writes nothing', () => {
+  const { w } = sendWorld();
+  reviewDrafts.get()[1].labor = [];
+  const banners = [];
+  sandbox.persistOr = () => { throw new Error('nothing may be written'); };
+  sandbox.showBanner = (text) => banners.push(text);
+  sandbox.render = () => {};
+
+  billreviewSend();
+
+  assert.deepStrictEqual(w.d.invoices, []);
+  assert.deepStrictEqual(banners, ['One of these bills nothing. Put hours or a line on it, or uncheck it.']);
+  sandbox.persistOr = () => true;
+  sandbox.showBanner = () => {};
 });
