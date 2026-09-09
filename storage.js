@@ -1400,13 +1400,13 @@
   // the count that decides whether Delete is even offered. bidsReferencing
   // already swallows a bad bid this way; this is the same guard for the log
   // and invoice arrays the InUse checks below now also walk.
-  function safeSome(arr, test) {
+  function safeCount(arr, test) {
     return (arr || []).filter((x) => { try { return !!test(x); } catch (e) { return false; } }).length;
   }
 
   function equipmentInUse(d, id) {
     const bids = bidsReferencing(d, (b) => (b.equipment || []).some((e) => e.equipmentId === id));
-    const rest = safeSome(logsAndInvoices(d), (x) => (x.equipment || []).some((e) => e.equipmentId === id));
+    const rest = safeCount(logsAndInvoices(d), (x) => (x.equipment || []).some((e) => e.equipmentId === id));
     return bids + rest;
   }
 
@@ -1423,14 +1423,14 @@
     // is later taken off Settings. A LOG entry's crew is the live reference
     // (it is what draftInvoice reads to build that snapshot), so only logs
     // block a delete.
-    const logs = safeSome(d.logs, (e) => (e.crew || []).some((m) => m.crewId === id));
+    const logs = safeCount(d.logs, (e) => (e.crew || []).some((m) => m.crewId === id));
     return bids + logs;
   }
 
   function catalogInUse(d, id) {
     const inAreas = (areas) => (areas || []).some((a) => (a.items || []).some((it) => it.catalogId === id));
     const bids = bidsReferencing(d, (b) => inAreas(b.areas) || changeOrdersOf(b).some((co) => inAreas(co.areas)));
-    const rest = safeSome(logsAndInvoices(d), (x) => (x.items || []).some((it) => it.catalogId === id));
+    const rest = safeCount(logsAndInvoices(d), (x) => (x.items || []).some((it) => it.catalogId === id));
     return bids + rest;
   }
 

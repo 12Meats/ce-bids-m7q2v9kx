@@ -25,9 +25,15 @@ test('build: header from the company, meta from the invoice, Bill To from the cu
   const doc = V.build(inv, d);
   assert.strictEqual(doc.kind, 'invoice');
   assert.strictEqual(doc.header.name, 'Cantu Electric LLC');
+  // numberText, dateText and billToLines are the words the paper prints. The
+  // model owns them so the renderer and the invoice screen's preview cannot
+  // each decide "no number reads draft" and drift.
   assert.deepStrictEqual(doc.meta, {
-    number: 166816, dateISO: '2026-07-06', customer: 'United Dairymen of Arizona', attn: 'Kellen',
-    addressLines: ['2008 S Hardy Drive', 'Tempe, AZ 85282'], po: '2526-4710', terms: 'Upon receipt',
+    number: 166816, dateISO: '2026-07-06', numberText: '166816', dateText: 'Jul 6, 2026',
+    customer: 'United Dairymen of Arizona', attn: 'Kellen',
+    addressLines: ['2008 S Hardy Drive', 'Tempe, AZ 85282'],
+    billToLines: ['United Dairymen of Arizona', 'Attn: Kellen', '2008 S Hardy Drive', 'Tempe, AZ 85282'],
+    po: '2526-4710', terms: 'Upon receipt',
     rep: 'Andy Cantu', project: 'Temp boiler rewire', serviceText: 'Service date: Jul 2, 2026',
   });
   assert.deepStrictEqual(doc.sections.map((s) => s.title), ['Materials', 'Labor']);
@@ -43,6 +49,8 @@ test('build: a draft has no number and a range prints as dates; empty sections a
   inv.number = null; inv.dateISO = null; inv.serviceTo = '2026-07-09'; inv.items = [];
   const doc = V.build(inv, d);
   assert.strictEqual(doc.meta.number, null);
+  assert.strictEqual(doc.meta.numberText, 'draft', 'a document with no number says so in one word');
+  assert.strictEqual(doc.meta.dateText, '', 'a document with no date prints nothing, not "Invalid Date"');
   assert.strictEqual(doc.meta.serviceText, 'Service dates: Jul 2 to Jul 9, 2026');
   assert.deepStrictEqual(doc.sections.map((s) => s.title), ['Labor']);
   assert.strictEqual(doc.sections[0].rows[0].desc, 'Labor hours, Jul 2 to Jul 9, 2026');

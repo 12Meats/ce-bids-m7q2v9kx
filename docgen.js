@@ -369,7 +369,9 @@
   // section band ("Labor") stranded from its first line item reads as a
   // section with nothing in it, and Subtotal or Tax without the row under it
   // reads as the end of the bid.
-  function table(ctx, doc, head, body, columnStyles, topRuleRow, keepWith) {
+  // noRule, when given, is the set of body rows that get no hairline under
+  // them: a row that is a caption on the table rather than a line of it.
+  function table(ctx, doc, head, body, columnStyles, topRuleRow, keepWith, noRule) {
     const pdf = ctx.pdf;
     const accent = accentOf(doc);
     const keep = (keepWith || []).filter((i) => i >= 0 && i < body.length - 1);
@@ -409,8 +411,10 @@
     opts.didDrawCell = (data) => {
       if (data.section !== 'body') return;
       const cell = data.cell;
-      setDraw(pdf, HAIRLINE, 0.5);
-      pdf.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+      if (!(noRule && noRule.has(data.row.index))) {
+        setDraw(pdf, HAIRLINE, 0.5);
+        pdf.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+      }
       const last = data.column.index === data.table.columns.length - 1;
       if (topRuleRow != null && data.row.index === topRuleRow && last) {
         setDraw(pdf, accent, 1.5);
@@ -697,15 +701,19 @@
     setFont(pdf, 7.5, 'normal', MUTED);
     pdf.text('Date', x + w / 4, y + 20, { align: 'center' });
     pdf.text('Invoice #', x + 3 * w / 4, y + 20, { align: 'center' });
+    // The words come from the model (InvDoc.build): the box prints what the
+    // file name and the screen's preview print, rather than a third copy of
+    // the "no number reads draft" rule.
     setFont(pdf, 9, 'bold', INK);
-    pdf.text(str(dateText(doc.meta.dateISO)), x + w / 4, y + 30, { align: 'center' });
-    pdf.text(doc.meta.number === null ? 'draft' : String(doc.meta.number), x + 3 * w / 4, y + 30, { align: 'center' });
+    const m = doc.meta || {};
+    pdf.text(str(m.dateText), x + w / 4, y + 30, { align: 'center' });
+    pdf.text(str(m.numberText), x + 3 * w / 4, y + 30, { align: 'center' });
   }
 
   function drawBillTo(ctx, doc) {
     const pdf = ctx.pdf;
-    const m = doc.meta;
-    const lines = [m.customer].concat(m.attn ? ['Attn: ' + m.attn] : []).concat(m.addressLines || []);
+    const m = doc.meta || {};
+    const lines = m.billToLines || [];
     const w = 220, lineH = 11, h = 14 + lines.length * lineH + 4;
     need(ctx, h + 14);
     setDraw(pdf, INK, 0.8);
@@ -720,7 +728,7 @@
 
   function drawStrip(ctx, doc) {
     const pdf = ctx.pdf;
-    const m = doc.meta;
+    const m = doc.meta || {};
     const cells = (m.po ? [['P.O. Number', m.po]] : []).concat([['Terms', m.terms], ['Rep', m.rep], ['Project', m.project]]);
     const fixed = 96, projW = CONTENT_W - fixed * (cells.length - 1);
     const widths = cells.map((c, i) => (i === cells.length - 1 ? projW : fixed));
@@ -742,15 +750,21 @@
 
   function drawInvoiceTable(ctx, doc) {
     const accent = accentOf(doc);
+    const m = doc.meta || {};
     const body = [];
     const keepWith = [];
+    // The rows that must not carry a hairline under them. The service-date
+    // line is a caption on the table, not a line item, so a rule under it
+    // would read as the end of a section that has not ended.
+    const noRule = new Set();
     (doc.sections || []).forEach((sec) => {
       keepWith.push(body.length);
       body.push([{ content: str(sec.title), colSpan: 4, styles: { fillColor: SEC_FILL, textColor: accent, fontStyle: 'bold' } }]);
-      sec.rows.forEach((r) => body.push([str(r.qtyText), str(r.desc), r.unitCents == null ? '' : money(r.unitCents), money(r.cents)]));
+      (sec.rows || []).forEach((r) => body.push([str(r.qtyText), str(r.desc), r.unitCents == null ? '' : money(r.unitCents), money(r.cents)]));
     });
-    if (doc.meta.serviceText) {
-      body.push([{ content: str(doc.meta.serviceText), colSpan: 4, styles: { fontStyle: 'italic', textColor: MUTED } }]);
+    if (m.serviceText) {
+      noRule.add(body.length);
+      body.push([{ content: str(m.serviceText), colSpan: 4, styles: { fontStyle: 'italic', textColor: MUTED } }]);
     }
     keepWith.push(body.length);
     body.push([{ content: 'Subtotal', colSpan: 3, styles: { halign: 'right' } }, money(doc.subtotalCents)]);
@@ -763,7 +777,7 @@
     table(ctx, doc, ['Quantity', 'Description', 'Price ea.', 'Amount'], body, {
       0: { halign: 'center', cellWidth: 70 }, 1: { cellWidth: 'auto' },
       2: { halign: 'right', cellWidth: 72 }, 3: { halign: 'right', cellWidth: 84 },
-    }, body.length - 1, keepWith);
+    }, body.length - 1, keepWith, noRule);
   }
 
   function drawInvoiceTail(ctx, doc) {
@@ -857,7 +871,10 @@
   // promise hangs forever, which on screen is a Send button that never comes
   // back. Build the blob first, then share it in the handler.
   async function share(pdfBlob, fileName) {
-    const name = str(fileName) || 'proposal.pdf';
+    // share() now carries invoices as well as proposals, so the last-resort
+    // name is the neutral one: a saved invoice called "proposal.pdf" is the
+    // kind of small wrongness that ends up in a customer's inbox.
+    const name = str(fileName) || 'document.pdf';
     const file = new File([pdfBlob], name, { type: 'application/pdf' });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {

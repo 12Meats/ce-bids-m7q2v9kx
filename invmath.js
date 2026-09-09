@@ -43,7 +43,7 @@
     });
     const groups = Array.from(byKey.values());
     groups.forEach((g) => g.entries.sort((a, b) => (a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0)));
-    groups.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+    groups.sort(byFrom);
     return groups;
   }
 
@@ -119,7 +119,11 @@
     // a different man first on every other invoice. An id Settings no longer
     // has falls to the end, in the order it first showed up on this job.
     const crewOrder = (s.crew || []).map((c) => c.id);
-    const rank = (id) => { const i = crewOrder.indexOf(id); return i === -1 ? Infinity : i; };
+    // Infinity would be right arithmetically and wrong as a comparator: two
+    // unknown ids give Infinity - Infinity = NaN, and a NaN comparator sorts
+    // by nothing. crewOrder.length puts them after every known man and keeps
+    // their difference a real number.
+    const rank = (id) => { const i = crewOrder.indexOf(id); return i === -1 ? crewOrder.length : i; };
     const labor = Array.from(byCrew.entries())
       .map(([crewId, hours]) => ({ crewId, name: crewName(data, crewId), loggedHours: hours, billedHours: hours }))
       .sort((x, y) => rank(x.crewId) - rank(y.crewId));
@@ -154,10 +158,11 @@
     const cust = customerOf(data, bid.customerId);
     // A caller that forgets this argument must NOT read as "nothing billed
     // yet" — that is the one wrong answer, and it is the one that bills the
-    // job a second time. Default to every project invoice already on the
-    // file (undefined = forgot it); an explicit [] is his to pass when he
-    // means it.
-    const prior = invoices === undefined ? (data.invoices || []) : invoices;
+    // job a second time. Anything that is not an array (undefined, and null,
+    // which is just as easy to hand in by accident) falls back to every
+    // project invoice already on the file; an explicit [] is his to pass
+    // when he means it.
+    const prior = Array.isArray(invoices) ? invoices : (data.invoices || []);
     const remaining = projectRemainingCents(bid, data, prior);
     return {
       id: null, number: null, kind: 'project', customerId: bid.customerId, projectTitle: bid.title || '',

@@ -33,6 +33,15 @@ const DocGen = require('../docgen.js');
 const PAGE_H = 792;
 const BOTTOM = PAGE_H - 56;
 
+// An em-dash does NOT survive into a page's content stream as U+2014. jsPDF's
+// standard-14 fonts are WinAnsi, so it writes the byte 0x97 and pageTexts()
+// reads that byte back. Comparing against '—' therefore asks a question
+// no rendered page can ever answer yes to: the assertion cannot fail, which
+// makes it worse than no assertion at all. This is the character to look for,
+// and the test below proves it is by rendering a document that does contain
+// one and finding it.
+const WIN_EMDASH = String.fromCharCode(0x97);
+
 // ---------------------------------------------------------------------------
 // Reading a rendered page back
 // ---------------------------------------------------------------------------
@@ -255,7 +264,7 @@ test('a labor-only bid names the job once, and the band says what it is pricing'
 
 test('the courtesy line is punctuated the way he writes, with no em-dash', () => {
   const text = allText(DocGen.render(docFor(4, 'full'), {}));
-  assert.strictEqual(text.indexOf('—'), -1, 'an em-dash reached the customer copy');
+  assert.strictEqual(text.indexOf(WIN_EMDASH), -1, 'an em-dash reached the customer copy');
   assert.ok(text.indexOf('Questions? Call Andy at') !== -1,
     'the courtesy line does not invite the call the way he says it');
 });
@@ -367,10 +376,32 @@ test('renderInvoice draws his layout: Invoice box, Bill To, the strip, four colu
     'Thank you for choosing Cantu Electric LLC. We appreciate your business'].forEach((s) => {
     assert.ok(text.indexOf(s) !== -1, 'missing "' + s + '"');
   });
-  assert.strictEqual(text.indexOf('—'), -1, 'no em-dash on paper');
+  assert.strictEqual(text.indexOf(WIN_EMDASH), -1, 'no em-dash on paper');
+  // And the proof that the line above is a question the paper can answer no
+  // to: the same document with an em-dash in the customer name renders one,
+  // and it is found. Without this the three "no em-dash" assertions are
+  // decoration.
+  const dirty = S.emptyData();
+  const c = S.findOrCreateCustomer(dirty, 'United Dairymen — Tempe');
+  const p2 = S.newProject(dirty, c.id, 'Boiler', '2026-07-01');
+  const e2 = S.newLogEntry(dirty, { customerId: c.id, projectId: p2.id, dateISO: '2026-07-02', createdAt: 1 });
+  e2.crew = [{ crewId: dirty.settings.crew[0].id, hours: 2 }];
+  const bad = I.draftInvoice(I.group(dirty.logs, dirty, S.mondayOf)[0], dirty, 1);
+  const badText = allText(DocGen.renderInvoice(V.build(bad, dirty), {}));
+  assert.notStrictEqual(badText.indexOf(WIN_EMDASH), -1,
+    'an em-dash on the page did not read back as the WinAnsi byte: the guard above proves nothing');
   // No PO: the cell is gone, not blank.
   const doc2 = V.build({ ...inv, po: '' }, d);
   assert.strictEqual(allText(DocGen.renderInvoice(doc2, {})).indexOf('P.O. Number'), -1);
+});
+
+test('a bare invoice document renders rather than throwing', () => {
+  const pdf = DocGen.renderInvoice({ kind: 'invoice' }, {});
+  assert.ok(pdf.internal.getNumberOfPages() >= 1);
+  // A section with no rows on it is the half-built document a screen hands
+  // over mid-edit, and it must not take the preview down either.
+  DocGen.renderInvoice({ kind: 'invoice', sections: [{ title: 'Labor' }] }, {});
+  DocGen.renderInvoice(undefined, undefined);
 });
 
 test('renderInvoice: a project invoice prints its one line and the draft box says "draft"', () => {
@@ -383,5 +414,5 @@ test('renderInvoice: a project invoice prints its one line and the draft box say
   const text = allText(DocGen.renderInvoice(doc, {}));
   assert.ok(text.indexOf('Cheese plant lighting, as proposed #1057') !== -1, 'the project line is not on the paper');
   assert.ok(text.indexOf('draft') !== -1, 'a document with no number prints "draft" in the Invoice box');
-  assert.strictEqual(text.indexOf('—'), -1, 'no em-dash on paper');
+  assert.strictEqual(text.indexOf(WIN_EMDASH), -1, 'no em-dash on paper');
 });

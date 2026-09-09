@@ -11,12 +11,18 @@
 
   function customerOf(inv, data) { return (data.customers || []).find((c) => c.id === inv.customerId) || null; }
 
+  // The one place the word for an invoice's number is decided: a document
+  // with no number yet is the word "draft", on the paper, in the file name,
+  // and in the screen's preview. The renderer and the preview print this
+  // string rather than each deciding for themselves, so the three can never
+  // drift apart.
+  function numberText(inv) { return inv.number === null || inv.number === undefined ? 'draft' : String(inv.number); }
+
   function fileName(inv, data) {
     const cust = customerOf(inv, data);
     const name = B.fileNameSegment(cust && cust.name ? cust.name : 'Customer');
     const title = B.fileNameSegment(inv.projectTitle || '').slice(0, 80).replace(/[.\s]+$/, '');
-    const num = inv.number === null ? 'draft' : String(inv.number);
-    return ['CE Invoice ' + num, name, title].filter((s) => s !== '').join(' - ') + '.pdf';
+    return ['CE Invoice ' + numberText(inv), name, title].filter((s) => s !== '').join(' - ') + '.pdf';
   }
 
   function serviceText(inv) {
@@ -31,11 +37,21 @@
     const cust = customerOf(inv, data);
     const header = { ...s.company, logo: 'logo.png' };
     const address = cust && typeof cust.address === 'string' ? cust.address : '';
+    const customer = (cust && cust.name && cust.name.trim()) || 'Customer';
+    const attn = (cust && typeof cust.attn === 'string') ? cust.attn.trim() : '';
+    const addressLines = address.split('\n').map((l) => l.trim()).filter((l) => l !== '');
     const meta = {
       number: inv.number, dateISO: inv.dateISO,
-      customer: (cust && cust.name && cust.name.trim()) || 'Customer',
-      attn: (cust && typeof cust.attn === 'string') ? cust.attn.trim() : '',
-      addressLines: address.split('\n').map((l) => l.trim()).filter((l) => l !== ''),
+      // The three the paper prints as words. The model owns them, not the
+      // renderer: "draft" for a document with no number, the empty string
+      // for a document with no date, and the Bill To block already stacked
+      // in the order it is read (name, then Attn, then the address). The
+      // raw number/dateISO stay beside them for anything that needs the
+      // value rather than the wording.
+      numberText: numberText(inv),
+      dateText: inv.dateISO ? Dates.fmtDate(inv.dateISO) : '',
+      customer, attn, addressLines,
+      billToLines: [customer].concat(attn ? ['Attn: ' + attn] : []).concat(addressLines),
       po: inv.po || '', terms: inv.terms || '', rep: s.company.person || '',
       project: inv.projectTitle || '', serviceText: serviceText(inv),
     };

@@ -175,14 +175,22 @@ test('docmodel.js, bidmath.js and dates.js load before invmath.js', () => {
   assert.ok(dates < invmath, 'dates.js must be loaded before invmath.js');
 });
 
-// invdoc.js reads InvMath at load time via require, so it has to load after.
-test('invmath.js loads before invdoc.js', () => {
+// invdoc.js reads BidMath (the file-name and quantity formatters), InvMath
+// (rows and totals) and Dates (the invoice date) at load time via require, so
+// all three have to exist first.
+test('bidmath.js, invmath.js and dates.js load before invdoc.js', () => {
   const at = (src) => HTML.indexOf('<script src="' + src + '"');
+  const bidmath = at('bidmath.js');
   const invmath = at('invmath.js');
+  const dates = at('dates.js');
   const invdoc = at('invdoc.js');
+  assert.notStrictEqual(bidmath, -1, 'index.html loads bidmath.js');
   assert.notStrictEqual(invmath, -1, 'index.html loads invmath.js');
+  assert.notStrictEqual(dates, -1, 'index.html loads dates.js');
   assert.notStrictEqual(invdoc, -1, 'index.html loads invdoc.js');
+  assert.ok(bidmath < invdoc, 'bidmath.js must be loaded before invdoc.js');
   assert.ok(invmath < invdoc, 'invmath.js must be loaded before invdoc.js');
+  assert.ok(dates < invdoc, 'dates.js must be loaded before invdoc.js');
 });
 
 test('APP_BUILT is an ISO date, bumped with the version', () => {
