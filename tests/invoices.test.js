@@ -81,7 +81,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview,
   reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
-  invoiceNoteOpts, noteAdd } = sandbox;
+  invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, moneyText } = sandbox;
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
@@ -880,4 +880,85 @@ test('a refused delete keeps the invoice, the locks and every PDF', async (t) =>
   locked.forEach((id) => {
     assert.strictEqual(w.d.logs.find((e) => e.id === id).invoiceId, inv.id, 'still locked to it');
   });
+});
+
+// ---------------------------------------------------------------------------
+// BILL THIS JOB
+// ---------------------------------------------------------------------------
+// A won bid is money owed, and the row on the bid screen is two sentences: how
+// much of the job is still to bill, and the question asked before a number is
+// spent. A project invoice bills the PROPOSAL and its change orders, so the
+// amount and the sentence have to agree with the paper the customer signed.
+
+function jobWorld() {
+  const w = world();
+  const b = S.newBid(w.d, { customerName: 'UDA', title: 'Cheese plant lighting', jobType: 'project', dateISO: '2026-08-01' });
+  b.areas.push({ id: 'a1', name: 'Plant', items: [{ catalogId: null, name: 'Fixture', unit: 'ea', qty: 10, costCents: 10000, priceCents: null }], photoIds: [] });
+  b.labor.days = 2;
+  b.status = 'won';
+  b.job = S.newJob();
+  w.d.bids.push(b);
+  return { d: w.d, uda: w.uda, b };
+}
+
+function withItem(co, cents) {
+  co.areas.push({ id: co.id + '-a', name: '', items: [{ catalogId: null, name: 'Extra', unit: 'ea', qty: 1, costCents: cents, priceCents: null }], photoIds: [] });
+  return co;
+}
+
+test('the row says what is left, and the confirm says what that amount is made of', () => {
+  const w = jobWorld();
+  const whole = I.projectRemainingCents(w.b, w.d, []);
+  assert.ok(whole > 0);
+  assert.strictEqual(billThisJobText(w.b, w.d), moneyText(whole) + ' left');
+  assert.strictEqual(billThisJobConfirm(w.b, w.d),
+    'Invoice UDA ' + moneyText(whole) + ' for Cheese plant lighting? That is the proposal.');
+});
+
+test('the confirm counts the change orders that print, and only those', () => {
+  const w = jobWorld();
+  const plain = billThisJobConfirm(w.b, w.d);
+
+  // One he opened the moment the customer said the word, with nothing in it
+  // yet. It prices at $0 and never prints, so it is not part of the sentence.
+  w.b.job.changeOrders.push(S.newChangeOrder(w.d, 'Nothing yet', w.b));
+  assert.strictEqual(billThisJobConfirm(w.b, w.d), plain, 'an empty change order is not part of it');
+
+  w.b.job.changeOrders.push(withItem(S.newChangeOrder(w.d, 'Extra pole light', w.b), 50000));
+  const one = billThisJobConfirm(w.b, w.d);
+  assert.ok(one.endsWith('? That is the proposal plus 1 change order.'), one);
+
+  w.b.job.changeOrders.push(withItem(S.newChangeOrder(w.d, 'Second feeder', w.b), 20000));
+  const two = billThisJobConfirm(w.b, w.d);
+  assert.ok(two.endsWith('? That is the proposal plus 2 change orders.'), two);
+
+  // And the money in the sentence grew with them: the change orders are what
+  // is being billed, not a footnote about them.
+  assert.notStrictEqual(one, plain);
+  assert.notStrictEqual(two, one);
+  assert.ok(I.projectRemainingCents(w.b, w.d, []) > 0);
+});
+
+test('a part now leaves the rest, and the last dollar leaves nothing to tap', () => {
+  const w = jobWorld();
+  const whole = I.projectRemainingCents(w.b, w.d, []);
+
+  const first = I.draftProjectInvoice(w.b, w.d, 10000, 1);
+  first.id = 'proj-1'; first.number = 166820; first.dateISO = '2026-09-01';
+  w.d.invoices.push(first);
+  assert.strictEqual(billThisJobText(w.b, w.d), moneyText(whole - 10000) + ' left');
+  assert.strictEqual(billThisJobConfirm(w.b, w.d),
+    'Invoice UDA ' + moneyText(whole - 10000) + ' for Cheese plant lighting? That is the proposal.');
+
+  // null is "the whole of what is left", so the second one takes the rest.
+  const rest = I.draftProjectInvoice(w.b, w.d, null, 2);
+  rest.id = 'proj-2'; rest.number = 166821; rest.dateISO = '2026-09-02';
+  w.d.invoices.push(rest);
+  assert.strictEqual(billThisJobText(w.b, w.d), 'Invoiced in full');
+});
+
+test('a job with no title still reads as a sentence', () => {
+  const w = jobWorld();
+  w.b.title = '';
+  assert.ok(billThisJobConfirm(w.b, w.d).indexOf(' for this job? ') !== -1);
 });

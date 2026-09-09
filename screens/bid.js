@@ -401,6 +401,97 @@ async function bidUndoWon(bid) {
   render();
 }
 
+// ---------------------------------------------------------------------------
+// BILL THIS JOB
+// ---------------------------------------------------------------------------
+// A won bid is money owed the day the work is done, and until this row existed
+// the only way to invoice one was to log every hour of it at the truck as
+// though it were a service call. It is not a service call: the customer agreed
+// a price, signed a proposal, and the invoice bills THAT — the proposal and its
+// change orders, as one line, exactly as the paper reads.
+//
+// The row says what is still to bill, so the answer to "have I been paid for
+// the cheese plant yet" is on the bid itself. It is a whole amount or a part of
+// it, because a job that runs three months gets billed in pieces, and the part
+// is capped at what is left so two invoices can never bill the same dollar
+// twice. The sentences are picker.js's; this screen asks the question and
+// writes the answer.
+//
+// It NAVIGATES to the invoice with show(). A bid screen may not reach into the
+// invoice screen's file, and it does not need to: everything an invoice is
+// belongs to invmath.js, which is pure and belongs to nobody.
+function buildBidBilling(host, bid) {
+  const d = state.data;
+  const box = card('Billing');
+  const left = InvMath.projectRemainingCents(bid, d, d.invoices || []);
+  // Nothing left is a row with nothing to tap: an invoice for $0 is not an
+  // invoice, and a button that refuses every press is a button he tries twice.
+  box.appendChild(row('Bill this job', billThisJobText(bid, d),
+    left > 0 ? () => bidBillThisJob(bid) : null));
+
+  const mine = (d.invoices || []).filter((inv) => inv.kind === 'project' && inv.bidId === bid.id);
+  mine.forEach((inv) => {
+    box.appendChild(lineRow('Invoiced #' + (inv.number === null ? 'draft' : inv.number),
+      invoiceStatusPill(inv), moneyText(InvMath.totals(inv).total),
+      () => show('invoice', inv.id)));
+  });
+
+  box.appendChild(caption(left > 0
+    ? 'Bills the proposal and its change orders. Bill the whole thing, or part of it now and the rest later.'
+    : 'Every dollar of this job is on an invoice.'));
+  host.appendChild(box);
+}
+
+// Whole, or part. Both answers are answers: the confirm has no "never mind"
+// because backing out of the amount keypad is the way out, and a cancel that
+// meant nothing would put a third button on a two-button question.
+async function bidBillThisJob(bid) {
+  const d = state.data;
+  const left = InvMath.projectRemainingCents(bid, d, d.invoices || []);
+  // Asked again after the panel: an invoice written while the question was up
+  // could have taken the rest of it.
+  if (!(left > 0)) { showBanner('This job is invoiced in full'); render(); return; }
+  const whole = await confirmPanel(billThisJobConfirm(bid, d), { ok: 'Whole amount', cancel: 'Part of it' });
+  if (whole) { bidWriteProjectInvoice(bid, null); return; }
+  promptMoney(null, {
+    label: 'How much of it',
+    caption: moneyText(left) + ' is left on this bid.',
+    done: (cents) => {
+      // Clear is nothing, and nothing is not an invoice.
+      if (cents === null || !(cents > 0)) { showBanner('An invoice has to bill something'); render(); return; }
+      if (cents > left) {
+        showBanner('That is more than the ' + moneyText(left) + ' left on this bid');
+        render();
+        return;
+      }
+      bidWriteProjectInvoice(bid, cents);
+    },
+  });
+}
+
+// Numbered on the spot, unlike the weekly batch: there is one of these and he
+// is looking at it, so there is nothing to review. The number, the invoice and
+// the counter go to disk in ONE save, and a refused save spends nothing.
+function bidWriteProjectInvoice(bid, partCents) {
+  const d = state.data;
+  const prevNext = d.settings.nextInvoiceNumber;
+  const inv = InvMath.draftProjectInvoice(bid, d, partCents, Date.now());
+  inv.id = Store.uid();
+  inv.number = Store.takeInvoiceNumber(d);
+  inv.dateISO = Store.todayISO();
+  inv.status = InvMath.statusOf(inv);
+  // A file restored from before this release has no invoices array at all:
+  // every new key is optional on disk.
+  if (!d.invoices) d.invoices = [];
+  d.invoices.push(inv);
+  if (!persistOr(() => {
+    const i = d.invoices.indexOf(inv);
+    if (i !== -1) d.invoices.splice(i, 1);
+    d.settings.nextInvoiceNumber = prevNext;
+  })) { render(); return; }
+  show('invoice', inv.id);
+}
+
 function renderBidScreen(bid, host) {
   // Where he is in the bid, and a way straight to any of the four. No step is
   // current here: this screen is the hub the four hang off, not one of them.
@@ -439,6 +530,7 @@ function renderBidScreen(bid, host) {
     nav.className = 'bid-nav';
     nav.appendChild(textButton('Job', 'btn btn-block', () => show('job', bid.id)));
     host.appendChild(nav);
+    buildBidBilling(host, bid);
   }
 
   // --- Won / lost ---

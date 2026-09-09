@@ -14,8 +14,8 @@
 // another screen calls.
 //
 // Sections: THE ROW · THE CHECK · THE PILE SELECTION · THE DRAFTS UNDER REVIEW ·
-// AN INVOICE IN WORDS · THE LINE STRIP · THE RENTAL EDITOR · THE EQUIPMENT
-// ADDER · THE PAPER · THE NOTE PHRASES · THE ITEM PICKER
+// AN INVOICE IN WORDS · BILLING A WON JOB · THE LINE STRIP · THE RENTAL EDITOR ·
+// THE EQUIPMENT ADDER · THE PAPER · THE NOTE PHRASES · THE ITEM PICKER
 
 // ---------------------------------------------------------------------------
 // THE ROW
@@ -160,6 +160,39 @@ function invoiceStatusPill(inv) {
   return paid > 0
     ? 'Paid ' + moneyText(paid) + ' of ' + moneyText(InvMath.totals(inv).total)
     : 'Sent';
+}
+
+// ---------------------------------------------------------------------------
+// BILLING A WON JOB
+// ---------------------------------------------------------------------------
+// The two sentences the bid screen's Bill this job row is made of. They live
+// here rather than in that screen because they are the only part of it that is
+// pure — the amount left on the job, and the question he is asked before a
+// number is spent — and because a sentence that says the wrong money is the
+// one thing on that row worth pinning in a test.
+//
+// A project invoice bills the PROPOSAL, change orders folded in, which is
+// DocModel's own total: the paper the customer signed. So "what is left" is
+// that total less every project invoice already written against this bid, and
+// the confirm says out loud what the amount is made of, because "$28,470" on
+// its own is a number he has to go and check.
+function billThisJobRemaining(bid, data) {
+  return InvMath.projectRemainingCents(bid, data, data.invoices || []);
+}
+
+function billThisJobText(bid, data) {
+  const left = billThisJobRemaining(bid, data);
+  return left > 0 ? moneyText(left) + ' left' : 'Invoiced in full';
+}
+
+// An EMPTY change order is not counted, for the reason it does not print: he
+// adds one the moment the customer says the word, and one with nothing in it
+// yet is worth $0 and is not part of what this invoice bills.
+function billThisJobConfirm(bid, data) {
+  const n = ((bid.job && bid.job.changeOrders) || []).filter((co) => !BidMath.changeOrderIsEmpty(co)).length;
+  return 'Invoice ' + bidCustomerName(bid, data) + ' ' + moneyText(billThisJobRemaining(bid, data))
+    + ' for ' + (bid.title || 'this job') + '? That is the proposal'
+    + (n ? ' plus ' + n + ' change order' + (n === 1 ? '' : 's') : '') + '.';
 }
 
 // ---------------------------------------------------------------------------
