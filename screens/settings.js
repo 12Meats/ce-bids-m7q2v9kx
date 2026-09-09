@@ -91,10 +91,11 @@ let settingsMenu = null;
 
 // Per list, because they are four different questions. Only offered when
 // there is actually something hidden to show.
-let settingsShowHidden = { crew: false, equipment: false, clauses: false, catalog: false };
+let settingsShowHidden = { crew: false, equipment: false, clauses: false, catalog: false, customers: false };
 
 // The three libraries are their own screens now (see LIBRARIES), so this is
 // their view state rather than Settings'.
+let settingsCustomer = null;        // which customer's card is open; null = the list
 let settingsCategory = null;        // which parts category the catalog screen is in; null = the tiles
 let settingsCatalogSearch = '';     // what he has typed into the parts search
 let settingsCatalogListEl = null;   // the part of the catalog screen the search redraws
@@ -384,6 +385,10 @@ function settingsPromptText(current, label, placeholder, node, opts, apply) {
     placeholder,
     caption: o.caption,
     multiline: !!o.multiline,
+    // The one field on this screen the FILE puts a cap on: a customer's
+    // address is 200 characters on disk, and a paste out of an email that got
+    // written anyway would make a customer validateImport refuses.
+    maxLength: o.maxLength,
     done: (text) => {
       if (o.required && !text) {
         showBanner(label + ' cannot be empty');
@@ -1759,6 +1764,308 @@ function settingsCreatePart(unit) {
 }
 
 // ---------------------------------------------------------------------------
+// INVOICES — its own screen
+// ---------------------------------------------------------------------------
+// Two answers, and he sets both on the first morning: the number his next
+// invoice takes, and what the Terms cell says. Everything else about an
+// invoice is decided on the invoice, because a setting that reached backwards
+// would rewrite paper the customer is already holding.
+
+// Six digits, not five. His real invoices are numbered 166818 and up, which is
+// the whole reason this row exists, and the bid counter's five-digit cap would
+// have refused the only number he was ever going to type into it.
+const SET_INVOICE_NUMBER_MAX = 999999;
+
+// The one refusal this screen makes rather than warns about. A bid number that
+// collides is two pieces of paper with one number on them, which is bad; an
+// invoice number that collides is a second invoice claiming a number the
+// customer has already paid against, and the app has no voiding to get out of
+// it. Pure, and tested: it is the only rule on this screen.
+function settingsInvoiceNumberRefusal(d, n) {
+  if (!Store.invoiceNumberInUse(d, n)) return null;
+  return 'Invoice #' + n + ' is already on an invoice. Numbers are never reused.';
+}
+
+function enterSettingsInvoices() { settingsMenu = null; }
+
+function renderSettingsInvoices() {
+  const host = el('settingsInvoicesContent');
+  host.textContent = '';
+  host.appendChild(buildSetInvoices());
+}
+
+function buildSetInvoices() {
+  const s = setS();
+  const box = card('Invoices');
+  const next = Number.isInteger(s.nextInvoiceNumber) ? s.nextInvoiceNumber : 1;
+
+  const line = settingRow(box, 'Next invoice number', '#' + next, () => {
+    settingsPromptWhole(next, 'The next invoice number', line, 1, SET_INVOICE_NUMBER_MAX,
+      'An invoice number is between 1 and ' + SET_INVOICE_NUMBER_MAX,
+      (v) => {
+        const refusal = settingsInvoiceNumberRefusal(state.data, v);
+        if (refusal) { showBanner(refusal); shake(line); return; }
+        const prev = s.nextInvoiceNumber;
+        s.nextInvoiceNumber = v;
+        settingsSaveAndRender(() => { s.nextInvoiceNumber = prev; });
+      });
+  }, 'Set this to your real next number the first day. It only goes up.');
+
+  // Standing, and only ever on screen when it is true — the way the bid
+  // counter's warning is. Typing one is refused outright, so the only way to
+  // be looking at this is a file restored onto a phone whose counter had
+  // already run past it.
+  if (Store.invoiceNumberInUse(state.data, next)) {
+    box.appendChild(inlineWarn('Invoice #' + next + ' already exists. The next invoice would carry '
+      + 'a number one of yours already has.'));
+  }
+
+  const terms = settingRow(box, 'Default terms', s.invoiceTerms || 'Upon receipt', () => {
+    settingsPromptText(s.invoiceTerms || '', 'Default terms', 'Upon receipt', terms, { required: true }, (text) => {
+      const prev = s.invoiceTerms;
+      s.invoiceTerms = text;
+      settingsSaveAndRender(() => { s.invoiceTerms = prev; });
+    });
+  }, 'Prints in the Terms cell. Upon receipt is what your invoices say.');
+
+  box.appendChild(whatsThis([
+    'Next invoice number: the number the next invoice gets, whether it comes off Bill these or off '
+      + 'a won bid. It counts up on its own, and a number that has already been used is refused: '
+      + 'numbers are never reused, and there is no voiding an invoice in this app.',
+    'Default terms: what a NEW invoice starts with. An invoice already written keeps the terms it '
+      + 'went out with, and a customer with terms of their own beats this one.',
+  ]));
+  return box;
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOMERS — its own screen
+// ---------------------------------------------------------------------------
+// A customer used to be a name on a bid and nothing else. An invoice needs
+// more: who it is addressed to, where it is posted, the rate THIS customer is
+// billed at, and the purchase order number they want on the paper. All of it
+// is snapshotted onto an invoice the day it is drafted, so nothing typed here
+// can move an invoice that already exists.
+//
+// The list opens one customer at a time rather than opening a strip on the
+// row: nine fields is a card, not four buttons.
+
+function enterSettingsCustomers() {
+  settingsMenu = null;
+  settingsCustomer = null;
+  settingsShowHidden.customers = false;
+}
+
+// One step inside this screen before it gives up and goes back to Settings:
+// the open customer closes first, the way a catalog drawer does, so the back
+// gesture and the Back button both land on the list.
+function settingsCustomersBackStep(peek) {
+  if (settingsCustomer) {
+    if (!peek) { settingsCustomer = null; settingsMenu = null; render(); }
+    return true;
+  }
+  return false;
+}
+
+function settingsCustomerOpen() {
+  return settingsCustomer
+    ? ((state.data.customers || []).find((c) => c.id === settingsCustomer) || null)
+    : null;
+}
+
+function renderSettingsCustomers() {
+  const host = el('settingsCustomersContent');
+  host.textContent = '';
+  const c = settingsCustomerOpen();
+  if (!c) { host.appendChild(buildSetCustomers()); return; }
+  buildSetCustomerCard(host, c);
+}
+
+// What the row says on the right: the rate this customer is billed at, which
+// is the one thing on the card that changes what an invoice comes to.
+function settingsCustomerValue(c) {
+  return c.rateCents == null ? 'Your rate' : moneyText(c.rateCents) + '/hr';
+}
+
+function buildSetCustomers() {
+  const d = state.data;
+  const box = card('Customers');
+  const hidden = (d.customers || []).filter((c) => c.hidden);
+  const list = (d.customers || []).filter((c) => !c.hidden || settingsShowHidden.customers)
+    .slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  if (list.length === 0) {
+    box.appendChild(emptyNote('Nobody yet. A customer is made on a bid or at the truck.'));
+  } else {
+    list.forEach((c) => {
+      const line = row(c.name || 'Customer', settingsCustomerValue(c), () => {
+        navPush();
+        settingsCustomer = c.id;
+        settingsMenu = null;
+        render();
+      });
+      if (c.hidden) line.classList.add('set-hidden');
+      box.appendChild(line);
+    });
+  }
+
+  settingHiddenToggle(box, 'customers', hidden.length);
+  box.appendChild(caption('What each one is billed at, what prints in Bill To, and which of their '
+    + 'jobs are still open. Nothing here changes an invoice you have already written.'));
+  return box;
+}
+
+// The plain strings, in the order they are read on the paper. Every one of
+// them is optional except the name: a customer with no contact and no address
+// still bills, and Bill To simply leaves the line out.
+const SETTINGS_CUSTOMER_FIELDS = [
+  ['name', 'Name', 'UDA', true],
+  ['contact', 'Contact', 'Kellen', false],
+  ['phone', 'Phone', '480 555 0134', false],
+  ['email', 'Email', 'name@company.com', false],
+  ['attn', 'Attn', 'Who the invoice is addressed to', false],
+];
+
+function settingsCustomerField(box, c, key, label, placeholder, required) {
+  const line = settingRow(box, label, c[key] ? String(c[key]) : 'None', () => {
+    settingsPromptText(c[key] == null ? '' : String(c[key]), label, placeholder, line,
+      { required }, (text) => {
+        const prev = c[key];
+        c[key] = text == null ? '' : String(text).trim();
+        settingsSaveAndRender(() => { c[key] = prev; });
+      });
+  });
+  return line;
+}
+
+function buildSetCustomerCard(host, c) {
+  const d = state.data;
+  const box = card(c.name || 'Customer');
+  SETTINGS_CUSTOMER_FIELDS.forEach(([key, label, placeholder, required]) => {
+    settingsCustomerField(box, c, key, label, placeholder, required);
+  });
+
+  // Two lines of address on his own invoices, and the paper stacks them in the
+  // order they are typed. Capped at what the file will take, so a paste out of
+  // an email cannot make a customer the validator refuses.
+  const addr = settingRow(box, 'Address', settingsAddressValue(c), () => {
+    settingsPromptText(c.address == null ? '' : String(c.address), 'Address',
+      '2008 S Hardy Drive\nTempe, AZ 85282', addr,
+      { multiline: true, maxLength: Store.ADDRESS_MAX }, (text) => {
+        const prev = c.address;
+        c.address = text == null ? '' : String(text);
+        settingsSaveAndRender(() => { c.address = prev; });
+      });
+  }, 'Prints under the name in Bill To, a line at a time.');
+
+  const rate = settingRow(box, 'Hourly rate', settingsCustomerValue(c), () => {
+    promptMoney(c.rateCents == null ? null : c.rateCents, {
+      label: (c.name || 'This customer') + ', billed an hour',
+      done: (cents) => {
+        const prev = c.rateCents;
+        // Clear puts them back on the shop rate, which is what most of them
+        // are on. null rather than 0: $0.00 an hour is a customer billed
+        // nothing for labour, and on the glass it looks the same as blank.
+        c.rateCents = cents === null ? null : cents;
+        settingsSaveAndRender(() => { c.rateCents = prev; });
+      },
+    });
+  }, 'Blank bills at your Settings rate.', { keypad: true });
+
+  const po = settingRow(box, 'PO number', c.po ? String(c.po) : 'None', () => {
+    settingsPromptText(c.po == null ? '' : String(c.po), 'PO number', '2526-4213', po, {}, (text) => {
+      const prev = c.po;
+      c.po = text == null ? '' : String(text).trim();
+      settingsSaveAndRender(() => { c.po = prev; });
+    });
+  }, 'Leave blank when the customer does not use them.');
+
+  const terms = settingRow(box, 'Terms', c.terms ? String(c.terms) : (setS().invoiceTerms || 'Upon receipt'), () => {
+    settingsPromptText(c.terms == null ? '' : String(c.terms), 'Terms',
+      setS().invoiceTerms || 'Upon receipt', terms, {}, (text) => {
+        const prev = c.terms;
+        c.terms = text == null ? '' : String(text).trim();
+        settingsSaveAndRender(() => { c.terms = prev; });
+      });
+  }, 'Blank uses the default under Settings, Invoices.');
+  host.appendChild(box);
+
+  buildSetCustomerProjects(host, c);
+  buildSetCustomerRemove(host, c);
+}
+
+// One line on the row for a thing that is two lines on paper.
+function settingsAddressValue(c) {
+  const lines = String(c.address == null ? '' : c.address).split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return 'None';
+  return lines.length === 1 ? lines[0] : lines[0] + ' +' + (lines.length - 1);
+}
+
+// The jobs the truck log still offers under this customer. Done is how a job
+// leaves that list: the chips at the tailgate are only useful while they are
+// short, and last spring's freezer job is not what he is standing on today.
+function buildSetCustomerProjects(host, c) {
+  const box = card('Open projects');
+  const open = Store.openProjects(state.data, c.id);
+  if (!open.length) {
+    box.appendChild(emptyNote('No open jobs for this one.'));
+  } else {
+    open.forEach((p) => {
+      settingsListRow(box, p.title, [
+        textButton('Done', 'link-btn link-btn-quiet', () => settingsProjectDone(p)),
+      ]);
+    });
+  }
+  box.appendChild(caption('Done projects stop being offered on the log screen. The hours already '
+    + 'logged against them do not move.'));
+  host.appendChild(box);
+}
+
+function settingsProjectDone(p) {
+  const prev = p.done;
+  p.done = true;
+  settingsSaveAndRender(() => { p.done = prev; });
+}
+
+// What is pointing at this customer, in the counts the caption says out loud.
+// Null when nothing is: that is the case where Delete is offered, and the
+// sentence there is the confirm's, not this one's.
+function settingsCustomerUseCaption(counts) {
+  const parts = [];
+  const add = (n, one, many) => { if (n > 0) parts.push(n + ' ' + (n === 1 ? one : many)); };
+  add(counts.bids, 'bid', 'bids');
+  add(counts.projects, 'project', 'projects');
+  add(counts.logs, 'visit', 'visits');
+  add(counts.invoices, 'invoice', 'invoices');
+  if (!parts.length) return null;
+  return 'On ' + parts.join(', ') + ', so it can be hidden but not deleted.';
+}
+
+// The same two answers every list on this screen has, decided the same way:
+// hide is always there and is reversible, and delete only turns up when
+// nothing at all points at the row — a customer on a bid, a project, a visit
+// or an invoice cannot go without taking that record's name with it.
+function buildSetCustomerRemove(host, c) {
+  const d = state.data;
+  const counts = Store.customerUseCounts(d, c.id);
+  const uses = counts.bids + counts.projects + counts.logs + counts.invoices;
+  const box = card();
+
+  // The tuples the crew, equipment, clause and catalog rows are built from, so
+  // the namesake guard on Unhide and the exact restore on Delete are the same
+  // code here as everywhere else.
+  const hide = settingsHideAction(c, d.customers);
+  box.appendChild(textButton(hide[0], 'btn btn-block', hide[2]));
+  if (uses === 0) {
+    const del = settingsDeleteAction(d.customers, c, c.name || 'this customer');
+    box.appendChild(textButton(del[0], 'link-btn link-btn-quiet', del[2]));
+  }
+  box.appendChild(caption(settingsCustomerUseCaption(counts)
+    || 'Not on a bid, a job or an invoice, so this one can go for good.'));
+  host.appendChild(box);
+}
+
+// ---------------------------------------------------------------------------
 // COUNTER
 // ---------------------------------------------------------------------------
 // The number the NEXT bid will take. Two bids with the same number on two
@@ -1850,10 +2157,18 @@ function buildSetDoors() {
   // answer the only question he asks before tapping it.
   box.appendChild(row('Crew', settingsCrewSummary(s.crew), () => show('settings-crew')));
 
+  // Customers next to Crew: they are the two lists of PEOPLE, and the one he
+  // opens here is the one whose rate or PO number just changed.
+  box.appendChild(row('Customers',
+    settingsCountText(state.data.customers.filter((c) => !c.hidden).length, 'customer', 'customers'),
+    () => show('settings-customers')));
+
   // Rates next: it is the only one of the five he opens to change a
   // number rather than to look something up, and the rate on the right is the
   // answer to "is this still what I am charging?" without opening anything.
   box.appendChild(row('Rates', moneyText(s.rateCents) + '/hr', () => show('settings-rates')));
+  box.appendChild(row('Invoices', '#' + (Number.isInteger(s.nextInvoiceNumber) ? s.nextInvoiceNumber : 1),
+    () => show('settings-invoices')));
   box.appendChild(row('Parts catalog',
     settingsCountText(state.data.catalog.filter((p) => !p.hidden).length, 'part', 'parts'),
     () => show('settings-catalog')));
@@ -1864,8 +2179,9 @@ function buildSetDoors() {
     settingsCountText(s.clauses.filter((c) => !c.hidden).length, 'clause', 'clauses'),
     () => show('settings-terms')));
 
-  box.appendChild(caption('Who works for you, your numbers, the parts you count on a walk, the '
-    + 'tools you own, and the terms that go on the back of a proposal.'));
+  box.appendChild(caption('Who works for you, who you work for, your numbers, what an invoice '
+    + 'starts at, the parts you count on a walk, the tools you own, and the terms that go on the '
+    + 'back of a proposal.'));
   return box;
 }
 
@@ -2713,4 +3029,14 @@ registerScreen('settings-equipment', {
 registerScreen('settings-terms', {
   id: 'screen-settings-terms', title: 'Terms library', back: 'settings', tab: 'settings',
   enter: enterSettingsTerms, render: renderSettingsTerms,
+});
+
+registerScreen('settings-invoices', {
+  id: 'screen-settings-invoices', title: 'Invoices', back: 'settings', tab: 'settings',
+  enter: enterSettingsInvoices, render: renderSettingsInvoices,
+});
+
+registerScreen('settings-customers', {
+  id: 'screen-settings-customers', title: 'Customers', back: 'settings', tab: 'settings',
+  enter: enterSettingsCustomers, backStep: settingsCustomersBackStep, render: renderSettingsCustomers,
 });
