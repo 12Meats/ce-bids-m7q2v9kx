@@ -659,8 +659,13 @@ function renderWalkAdd(bid, edit, area, host) {
       walkAddRental(bid, name, 'add', null);
     },
     onDone: () => {
+      // The picker state is NOT reset here: the line he just added is still
+      // flashing, and the area list under this screen draws that flash off
+      // walkPicker.highlight. Done has always ended with the new row lit up in
+      // the list it landed in. + Item resets on the way IN, and
+      // walkClearTransient resets on the way out of the screen, so nothing
+      // stale can survive to the next visit.
       walkView = 'area';
-      walkPicker = pickerState();
       render();
     },
     onChanged: render,
@@ -1524,6 +1529,16 @@ function walkBackStep(peek) {
 function walkLeave() {
   walkRenderToken += 1;
   walkReleasePhotoUrls();
+  // The flash timer is a second long and a tab switch is instant, so a line
+  // added on the way out still has a timer running after this screen is gone.
+  // That timer closes over the picker state object it was started with, so
+  // handing this file a NEW one would not reach it: it would clear the
+  // highlight on an object nobody is looking at and then call onChanged, which
+  // is render, which redraws whatever screen took the glass. Clearing the
+  // highlight ON THE OBJECT THE TIMER HOLDS is what makes the late timer a
+  // no-op — it checks that its own item is still the highlight before it
+  // touches anything.
+  walkPicker.highlight = null;
 }
 
 // title and back are functions because this is two screens wearing one file:

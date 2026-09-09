@@ -44,7 +44,7 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
-const { pickerState, pickerCommitItem, pickerBackStep } = sandbox;
+const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -185,10 +185,47 @@ test('pickerBackStep: whitespace in the search box is not a step', () => {
   assert.deepEqual([ps.cat, ps.search], [null, '']);
 });
 
+// The two wiring mistakes a screen that does not exist yet will make. They are
+// checked on the first render rather than at the commit eight taps in, so the
+// screen that gets them wrong says so the first time it is opened. document is
+// undefined in this sandbox and both throws happen before anything is drawn,
+// which is exactly the point: nothing is built until the wiring is right.
+test('renderItemPicker refuses a caller with no list to push onto', () => {
+  const w = world();
+  assert.throws(() => renderItemPicker({}, w.ps, { ...w.opts, items: undefined }),
+    /renderItemPicker needs opts\.items/);
+  assert.throws(() => renderItemPicker({}, w.ps, undefined),
+    /renderItemPicker needs opts\.items/);
+});
+
+test('renderItemPicker refuses rentals with nobody to answer them', () => {
+  const w = world();
+  assert.throws(() => renderItemPicker({}, w.ps, { ...w.opts, onRental: undefined }),
+    /renderItemPicker needs opts\.onRental when allowRentals is true/);
+});
+
 test('the picker knows nothing about the walk', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8');
+  // The comments come off first. This section of ui.js talks about the walk on
+  // purpose — it says why the flow moved out of it — and a scan that read the
+  // prose would either fail on the explanation or force the explanation out of
+  // the file, which is the wrong way round. The [^:] guard keeps the "//" in
+  // an https: URL from being read as the start of a comment.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
   ['walkView', 'walkSheet', 'walkAreaId', 'walkAddCat', 'state.screen', 'state.data'].forEach((name) => {
-    assert.strictEqual(src.indexOf(name), -1, 'ui.js reaches into the walk: ' + name);
+    // Word boundaries, not indexOf: a longer name that merely contains one of
+    // these is not a reach into the walk, and a bare substring match would
+    // start failing on the first innocent identifier that happens to spell one.
+    const re = new RegExp('\\b' + name.replace(/\./g, '\\.') + '\\b');
+    assert.strictEqual(re.test(src), false, 'ui.js reaches into the walk: ' + name);
   });
-  assert.strictEqual(banners.length, 0, 'nothing above put a banner up');
+});
+
+// Its own test, because it is its own claim: the assertions above are about
+// what the picker did, and this one is about what it did NOT do. Riding along
+// at the end of another test, it passed or failed for reasons that had nothing
+// to do with the name over it.
+test('nothing in the picker put a banner up', () => {
+  assert.deepEqual(banners, []);
 });

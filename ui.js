@@ -1471,18 +1471,34 @@ function unpricedTarget(line, bid) {
 //     opts.items        the array a picked part is pushed onto
 //     opts.tally        (items) => string          the running strip text, or null for none
 //     opts.allowRentals boolean                    the rentals tile and rental hits in search
-//     opts.onRental     (name) => void             instead of committing, for a rentals part
-//                                                  (a null name is the rentals TILE, which the
-//                                                  caller answers its own way)
+//     opts.onRental     (name) => void             TWO calls, and a caller must answer both.
+//                                                  A NAME is a rental picked out of a drawer or
+//                                                  found by a search: it has everything the line
+//                                                  needs and goes straight onto the caller's own
+//                                                  rentals list. NULL is the rentals TILE, which
+//                                                  is a question with no answer in the picker
+//                                                  ("rented, or your own?"); a caller that has no
+//                                                  such question of its own must still do
+//                                                  something with it rather than drop it, or the
+//                                                  tile is a tap that does nothing.
 //     opts.onDone       () => void                 the pinned Done
-//     opts.onChanged    () => void                 after a commit: the caller re-renders
-//     opts.navPush      () => void                 so the first search keystroke is one Back
+//     opts.onChanged    () => void                 the picker's state moved: redraw the screen.
+//                                                  Called from EVERY state change, not only a
+//                                                  commit — a tile tapped, a search that could not
+//                                                  redraw its own list, a part invented, a refused
+//                                                  save, the flash going out.
+//     opts.navPush      () => void                 pushed for the step INTO a drawer and for the
+//                                                  FIRST search keystroke, so each of those is
+//                                                  exactly one Back
 //     opts.persistOr    the shell's persistOr
 //     opts.data         the shell's own data object (catalog, settings)
 //   pickerCommitItem(ps, opts, part, qty, costCents) -> boolean
 //   pickerBackStep(ps) -> boolean: pending, then newPart, then the search, then the category.
 //
-// Every mutation goes through opts.persistOr with an exact restore.
+// Every mutation goes through opts.persistOr with an exact restore. The flash
+// timer outlives the screen it was started on, so the caller clears
+// ps.highlight in its own leave(), and a late flash timer cannot redraw a
+// screen that is no longer up.
 
 const PICKER_HIGHLIGHT_MS = 1000;
 
@@ -1498,6 +1514,18 @@ function pickerState() {
 }
 
 function renderItemPicker(host, ps, opts) {
+  // Written for callers that do not exist yet. Both of these are wiring
+  // mistakes that would otherwise show up as a tap that does nothing on a
+  // screen nobody has written yet: a missing items array throws at the commit,
+  // eight taps into the flow, and a missing onRental throws only when he
+  // happens to pick a lift. Said here, on the first render, they are found the
+  // first time the screen is opened.
+  if (!opts || !Array.isArray(opts.items)) {
+    throw new Error('renderItemPicker needs opts.items (the array a picked part is pushed onto)');
+  }
+  if (opts.allowRentals && typeof opts.onRental !== 'function') {
+    throw new Error('renderItemPicker needs opts.onRental when allowRentals is true');
+  }
   host.appendChild(screenHead(opts.title, null, { center: true }));
 
   if (ps.pending) { host.appendChild(pickerPriceAnswer(ps, opts)); return; }
