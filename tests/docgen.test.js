@@ -20,6 +20,8 @@ const path = require('path');
 const S = require('../storage.js');
 const B = require('../bidmath.js');
 const DM = require('../docmodel.js');
+const I = require('../invmath.js');
+const V = require('../invdoc.js');
 
 const jspdf = require(path.join(__dirname, '..', 'vendor', 'jspdf.umd.min.js'));
 require(path.join(__dirname, '..', 'vendor', 'jspdf.plugin.autotable.min.js')).applyPlugin(jspdf.jsPDF);
@@ -330,4 +332,56 @@ test('a bare document renders rather than throwing', () => {
 
 test('loadLogo gives up quietly with no browser to fetch from', async () => {
   assert.strictEqual(await DocGen.loadLogo(), null);
+});
+
+// ---------------------------------------------------------------------------
+// INVOICE
+// ---------------------------------------------------------------------------
+// Task 4: docgen draws the invoice InvDoc.build() hands it. Same harness as
+// the bid tests above (allText/pageTexts read the rendered pages back), and
+// the same world() invdoc.test.js builds, so the invoice on paper and the
+// invoice document model are tested against the one fixture.
+
+function invoiceWorld() {
+  const d = S.emptyData();
+  const uda = S.findOrCreateCustomer(d, 'UDA');
+  uda.name = 'United Dairymen of Arizona'; uda.attn = 'Kellen'; uda.address = '2008 S Hardy Drive\nTempe, AZ 85282'; uda.rateCents = 8500; uda.po = '2526-4710';
+  const p = S.newProject(d, uda.id, 'Temp boiler rewire', '2026-07-01');
+  const e = S.newLogEntry(d, { customerId: uda.id, projectId: p.id, dateISO: '2026-07-02', createdAt: 1 });
+  e.crew = [{ crewId: d.settings.crew[0].id, hours: 5 }];
+  e.items = [{ catalogId: null, name: 'Cambric tape, roll', unit: 'ea', qty: 1, costCents: 4800, priceCents: null, listCents: 4870 }];
+  const inv = I.draftInvoice(I.group(d.logs, d, S.mondayOf)[0], d, 1);
+  inv.number = 166816; inv.dateISO = '2026-07-06';
+  d.invoices.push(inv);
+  return { d, inv, uda };
+}
+
+test('renderInvoice draws his layout: Invoice box, Bill To, the strip, four columns, the tail and the footer', () => {
+  const { d, inv } = invoiceWorld();
+  const doc = V.build(inv, d);
+  const pdf = DocGen.renderInvoice(doc, {});
+  const text = allText(pdf);
+  ['Invoice', 'Date', 'Invoice #', '166816', 'Bill To', 'United Dairymen of Arizona', 'Attn: Kellen', 'P.O. Number', '2526-4710',
+    'Terms', 'Upon receipt', 'Rep', 'Andy Cantu', 'Project', 'Temp boiler rewire',
+    'Quantity', 'Description', 'Price ea.', 'Amount', 'Service date: Jul 2, 2026', 'Subtotal', 'Tax', 'Total',
+    'Thank you for choosing Cantu Electric LLC. We appreciate your business'].forEach((s) => {
+    assert.ok(text.indexOf(s) !== -1, 'missing "' + s + '"');
+  });
+  assert.strictEqual(text.indexOf('—'), -1, 'no em-dash on paper');
+  // No PO: the cell is gone, not blank.
+  const doc2 = V.build({ ...inv, po: '' }, d);
+  assert.strictEqual(allText(DocGen.renderInvoice(doc2, {})).indexOf('P.O. Number'), -1);
+});
+
+test('renderInvoice: a project invoice prints its one line and the draft box says "draft"', () => {
+  const { d, uda } = invoiceWorld();
+  const b = S.newBid(d, { customerName: 'United Dairymen of Arizona', title: 'Cheese plant lighting', jobType: 'project', dateISO: '2026-06-01' });
+  b.areas.push({ id: 'a', name: 'Plant', items: [{ catalogId: null, name: 'Fixture', unit: 'ea', qty: 1, costCents: 100000, priceCents: null }], photoIds: [] });
+  b.number = 1057; b.status = 'won'; b.job = S.newJob(); d.bids.push(b);
+  const pi = I.draftProjectInvoice(b, d, null, 1, []);
+  const doc = V.build(pi, d);
+  const text = allText(DocGen.renderInvoice(doc, {}));
+  assert.ok(text.indexOf('Cheese plant lighting, as proposed #1057') !== -1, 'the project line is not on the paper');
+  assert.ok(text.indexOf('draft') !== -1, 'a document with no number prints "draft" in the Invoice box');
+  assert.strictEqual(text.indexOf('—'), -1, 'no em-dash on paper');
 });

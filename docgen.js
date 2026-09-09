@@ -650,8 +650,9 @@
   function drawFooters(pdf, doc) {
     const n = pdf.internal.getNumberOfPages();
     const meta = (doc && doc.meta) || {};
+    const numberLabel = (doc && doc.kind === 'invoice') ? 'Invoice #' : 'Bid #';
     const parts = [
-      str(meta.number).trim() === '' ? '' : 'Bid #' + str(meta.number).trim(),
+      str(meta.number).trim() === '' ? '' : numberLabel + str(meta.number).trim(),
       str(meta.customer).trim(),
       str(((doc || {}).header || {}).name).trim(),
     ].filter((x) => x !== '');
@@ -665,6 +666,136 @@
         pdf.text(fit(pdf, running, CONTENT_W, 8.5, 'normal'), M, M - 12);
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // INVOICE
+  // ---------------------------------------------------------------------------
+  // His paper, read off six real UDA invoices (9/07): the proposal's header,
+  // an Invoice box (Date / Invoice #), ONE Bill To with Attn and the address,
+  // a strip of P.O. Number / Terms / Rep / Project (the PO cell drops out
+  // when there is none), a four-column table (Quantity · Description ·
+  // Price ea. · Amount) with a band per section, the service date as a plain
+  // line under the table (his was red; nothing on this paper is red), then
+  // Subtotal / Tax $0.00 / Total and the sentence he has always printed.
+  //
+  // The header's own contact block (person, phone · email, address, ROC,
+  // tagline — five lines on his real letterhead) sits top-right, exactly
+  // where an Invoice box drawn at the header's own top would land, so the
+  // box is drawn BELOW the header rule instead, flush right, rather than
+  // overlapping his name and phone number.
+
+  function drawInvoiceBox(ctx, doc) {
+    const pdf = ctx.pdf;
+    const w = 150, h = 34, x = PAGE_W - M - w, y = ctx.boxY;
+    setDraw(pdf, INK, 0.8);
+    pdf.rect(x, y, w, h);
+    pdf.line(x, y + 12, x + w, y + 12);
+    pdf.line(x + w / 2, y + 12, x + w / 2, y + h);
+    setFont(pdf, 9, 'bold', INK);
+    pdf.text('Invoice', x + w / 2, y + 9, { align: 'center' });
+    setFont(pdf, 7.5, 'normal', MUTED);
+    pdf.text('Date', x + w / 4, y + 20, { align: 'center' });
+    pdf.text('Invoice #', x + 3 * w / 4, y + 20, { align: 'center' });
+    setFont(pdf, 9, 'bold', INK);
+    pdf.text(str(dateText(doc.meta.dateISO)), x + w / 4, y + 30, { align: 'center' });
+    pdf.text(doc.meta.number === null ? 'draft' : String(doc.meta.number), x + 3 * w / 4, y + 30, { align: 'center' });
+  }
+
+  function drawBillTo(ctx, doc) {
+    const pdf = ctx.pdf;
+    const m = doc.meta;
+    const lines = [m.customer].concat(m.attn ? ['Attn: ' + m.attn] : []).concat(m.addressLines || []);
+    const w = 220, lineH = 11, h = 14 + lines.length * lineH + 4;
+    need(ctx, h + 14);
+    setDraw(pdf, INK, 0.8);
+    pdf.rect(M, ctx.y, w, h);
+    setFont(pdf, 7.5, 'bold', INK);
+    pdf.text('Bill To', M + 5, ctx.y + 9);
+    pdf.line(M, ctx.y + 12, M + w, ctx.y + 12);
+    setFont(pdf, 9, 'normal', INK);
+    lines.forEach((t, i) => pdf.text(fit(pdf, str(t), w - 10, 9, 'normal'), M + 5, ctx.y + 23 + i * lineH));
+    ctx.y += h + 12;
+  }
+
+  function drawStrip(ctx, doc) {
+    const pdf = ctx.pdf;
+    const m = doc.meta;
+    const cells = (m.po ? [['P.O. Number', m.po]] : []).concat([['Terms', m.terms], ['Rep', m.rep], ['Project', m.project]]);
+    const fixed = 96, projW = CONTENT_W - fixed * (cells.length - 1);
+    const widths = cells.map((c, i) => (i === cells.length - 1 ? projW : fixed));
+    const h = 26;
+    need(ctx, h + 8);
+    let x = M;
+    setDraw(pdf, INK, 0.8);
+    pdf.rect(M, ctx.y, CONTENT_W, h);
+    cells.forEach((c, i) => {
+      if (i > 0) pdf.line(x, ctx.y, x, ctx.y + h);
+      setFont(pdf, 7.5, 'bold', MUTED);
+      pdf.text(str(c[0]), x + 4, ctx.y + 9);
+      setFont(pdf, 9, 'bold', INK);
+      pdf.text(fit(pdf, str(c[1]), widths[i] - 8, 9, 'bold'), x + 4, ctx.y + 20);
+      x += widths[i];
+    });
+    ctx.y += h;   // the table starts flush under the strip, like his sheet
+  }
+
+  function drawInvoiceTable(ctx, doc) {
+    const accent = accentOf(doc);
+    const body = [];
+    const keepWith = [];
+    (doc.sections || []).forEach((sec) => {
+      keepWith.push(body.length);
+      body.push([{ content: str(sec.title), colSpan: 4, styles: { fillColor: SEC_FILL, textColor: accent, fontStyle: 'bold' } }]);
+      sec.rows.forEach((r) => body.push([str(r.qtyText), str(r.desc), r.unitCents == null ? '' : money(r.unitCents), money(r.cents)]));
+    });
+    if (doc.meta.serviceText) {
+      body.push([{ content: str(doc.meta.serviceText), colSpan: 4, styles: { fontStyle: 'italic', textColor: MUTED } }]);
+    }
+    keepWith.push(body.length);
+    body.push([{ content: 'Subtotal', colSpan: 3, styles: { halign: 'right' } }, money(doc.subtotalCents)]);
+    keepWith.push(body.length);
+    body.push([{ content: 'Tax', colSpan: 3, styles: { halign: 'right' } }, money(doc.taxCents)]);
+    body.push([
+      { content: 'Total', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fontSize: 11, fillColor: TOTAL_FILL } },
+      { content: money(doc.totalCents), styles: { fontStyle: 'bold', fontSize: 11, fillColor: TOTAL_FILL } },
+    ]);
+    table(ctx, doc, ['Quantity', 'Description', 'Price ea.', 'Amount'], body, {
+      0: { halign: 'center', cellWidth: 70 }, 1: { cellWidth: 'auto' },
+      2: { halign: 'right', cellWidth: 72 }, 3: { halign: 'right', cellWidth: 84 },
+    }, body.length - 1, keepWith);
+  }
+
+  function drawInvoiceTail(ctx, doc) {
+    const pdf = ctx.pdf;
+    if (doc.notes && doc.notes.length) { ctx.y += 4; drawBullets(ctx, doc.notes, 9); }
+    need(ctx, 30);
+    setFont(pdf, 10, 'bold', INK);
+    wrap(pdf, doc.footer, CONTENT_W, 10, 'bold').forEach((line) => { pdf.text(line, M, ctx.y); ctx.y += 13; });
+  }
+
+  // render(doc, opts) for an invoice. Same shell as render() above (header,
+  // logo fallback, footers) with the invoice's own body in between.
+  function renderInvoice(doc, opts) {
+    const d = doc || {};
+    const pdf = newPdf();
+    const ctx = newCtx(pdf);
+    drawHeader(ctx, d, (opts || {}).logo);
+    // Below the rule, not at the header's own top: see the note above.
+    ctx.boxY = ctx.y;
+    ctx.y += 40;
+    drawInvoiceBox(ctx, d);
+    drawBillTo(ctx, d);
+    drawStrip(ctx, d);
+    drawInvoiceTable(ctx, d);
+    drawInvoiceTail(ctx, d);
+    drawFooters(pdf, d);
+    return pdf;
+  }
+
+  async function blobInvoice(doc) {
+    const logo = await loadLogo();
+    return renderInvoice(doc, { logo }).output('blob');
   }
 
   // ---------------------------------------------------------------------------
@@ -877,5 +1008,5 @@
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   }
 
-  return { render, blob, share, loadLogo, hourCostPage, hourCostRows, courtesyText, termsHeading };
+  return { render, blob, share, loadLogo, hourCostPage, hourCostRows, courtesyText, termsHeading, renderInvoice, blobInvoice };
 });
