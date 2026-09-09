@@ -80,11 +80,15 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoice.js'), 'utf8'
 const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, invGroupOn,
   reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview,
   reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
-  invoiceRecordPayment, invoiceStatusPill } = sandbox;
+  invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
+  invoiceNoteOpts, noteAdd } = sandbox;
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
 const pileSelection = vm.runInContext('pileSelection', sandbox);
+// The send queue is a module-level let inside invoice.js, which is not a
+// property of the context's global object either. Read the same way.
+const invoiceQueue = () => vm.runInContext('invoiceQueue', sandbox);
 
 const TODAY = '2026-09-08';
 
@@ -579,21 +583,20 @@ test('a visit moved to another day rebuilds the drafts', () => {
 // invoice can still be deleted, what the head says while a batch is going out,
 // and what recording a check does to the file.
 
-function invoiceWorld() {
+// Two invoices numbered off the review, the way Friday leaves them. The stubs
+// the numbering needs go through stub(t) like every other test in this file:
+// set by hand they outlived a failing assertion, and every test after it then
+// failed for the wrong reason.
+function invoiceWorld(t) {
   const { w } = sendWorld();
-  const saves = [];
-  sandbox.persistOr = (revert) => { saves.push(revert); return true; };
-  sandbox.showBanner = () => {};
-  sandbox.show = () => {};
-  sandbox.render = () => {};
+  stub(t, { persistOr: () => true, showBanner: () => {}, show: () => {}, render: () => {} });
   w.d.settings.nextInvoiceNumber = 166818;
   billreviewSend();
-  sandbox.persistOr = () => true;
   return w;
 }
 
-test('invoiceCanDelete: a numbered draft can go, a sent one and a review draft cannot', () => {
-  const w = invoiceWorld();
+test('invoiceCanDelete: a numbered draft can go, a sent one and a review draft cannot', (t) => {
+  const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   assert.strictEqual(invoiceCanDelete(inv), true, 'numbered, never shared, nobody has seen it');
   inv.sentAt = '2026-09-08';
@@ -611,8 +614,8 @@ test('the head says how many are still behind this one, and nothing when none ar
   assert.strictEqual(invoiceQueueText(0), null);
 });
 
-test('the pill says draft, sent, part paid and paid, in his words', () => {
-  const w = invoiceWorld();
+test('the pill says draft, sent, part paid and paid, in his words', (t) => {
+  const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   assert.strictEqual(invoiceStatusPill(inv), 'Draft', 'numbered is not sent');
   inv.sentAt = '2026-09-08';
@@ -640,7 +643,7 @@ function payWith(t, inv, dateTyped, cents, saved) {
 }
 
 test('a payment lands on the date he typed, and the status follows the money', (t) => {
-  const w = invoiceWorld();
+  const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   inv.sentAt = '2026-09-05';
   inv.status = I.statusOf(inv);
@@ -655,7 +658,7 @@ test('a payment lands on the date he typed, and the status follows the money', (
 });
 
 test('a payment that covers the total marks it paid', (t) => {
-  const w = invoiceWorld();
+  const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   inv.sentAt = '2026-09-05';
   enterInvoice(inv.id);
@@ -669,7 +672,7 @@ test('a payment that covers the total marks it paid', (t) => {
 });
 
 test('a refused save takes the payment back off and puts the status back', (t) => {
-  const w = invoiceWorld();
+  const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   inv.sentAt = '2026-09-05';
   inv.status = 'sent';
@@ -680,11 +683,201 @@ test('a refused save takes the payment back off and puts the status back', (t) =
 });
 
 test('Clear on the date keypad is never mind, and records nothing', (t) => {
-  const w = invoiceWorld();
+  const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   inv.sentAt = '2026-09-05';
   enterInvoice(inv.id);
   const banners = payWith(t, inv, null, 50000, true);
   assert.strictEqual(inv.payments.length, 0, 'Clear is the way out, not a payment dated today');
   assert.deepStrictEqual(banners, []);
+});
+
+// ---------------------------------------------------------------------------
+// THE SEND QUEUE
+// ---------------------------------------------------------------------------
+// Friday numbers four invoices and they go out one at a time, because the
+// share sheet wants a tap each. The queue is what says Friday is not finished,
+// and it lives on the screen rather than in the navigation argument for one
+// reason: a look at the home list must not lose the three still to send.
+
+test('coming back to one of the batch from the list keeps the ones behind it', () => {
+  world();
+  enterInvoice({ id: 'a', queue: ['b', 'c'] });
+  assert.deepEqual(invoiceQueue(), ['b', 'c']);
+  // He went out to the list and tapped the second one from there. It is still
+  // the batch: the one behind it is still waiting to go out.
+  enterInvoice('b');
+  assert.deepEqual(invoiceQueue(), ['c']);
+  assert.strictEqual(invoiceQueueText(invoiceQueue().length), '1 more to send');
+  // The last of them leaves nothing behind, and the head says nothing.
+  enterInvoice('c');
+  assert.deepEqual(invoiceQueue(), []);
+  assert.strictEqual(invoiceQueueText(invoiceQueue().length), null);
+});
+
+test('an invoice from outside the batch is a different errand, and the queue goes', () => {
+  world();
+  enterInvoice({ id: 'a', queue: ['b', 'c'] });
+  enterInvoice('an-old-one');
+  assert.deepEqual(invoiceQueue(), []);
+});
+
+// ---------------------------------------------------------------------------
+// A NOTE, AND THE LIBRARY IT MAY JOIN
+// ---------------------------------------------------------------------------
+// The note goes on the invoice; "keep this on every future invoice" is an
+// answer about his SETTINGS. On a draft under review the invoice is not on the
+// file and its own save writes nothing, so a library that shared that save
+// lost the chip the moment he backed out of the review.
+
+test('a phrase kept for every future invoice lands on disk from a review draft', async (t) => {
+  const w = world();
+  reviewDrafts.set([I.draftInvoice(groups(w)[0], w.d, 1)]);
+  enterInvoice({ draft: 0 });
+  const draft = invoiceTarget();
+  assert.strictEqual(draft.id, null, 'a draft under review is not on the file');
+
+  const saves = [];
+  let answered = null;
+  stub(t, {
+    persistOr: (revert) => { saves.push(revert); return true; },
+    promptText: (cur, o) => { answered = o.done('Ladder left on site'); },
+    confirmPanel: () => Promise.resolve(true),
+    showBanner: () => {},
+    render: () => {},
+  });
+
+  noteAdd(draft.notes, invoiceNoteOpts(draft));
+  await answered;
+
+  assert.deepEqual(draft.notes, ['Ladder left on site'], 'the note is on the draft');
+  assert.deepEqual(w.d.settings.notePhrases.slice(-1), ['Ladder left on site'], 'and in the library');
+  assert.strictEqual(saves.length, 1,
+    'one save: the library. The draft itself is not on the file and wrote nothing');
+  // And that one save is the library's: its restore takes the chip back off
+  // and leaves the note where he wrote it.
+  saves[0]();
+  assert.strictEqual(w.d.settings.notePhrases.indexOf('Ladder left on site'), -1);
+  assert.deepEqual(draft.notes, ['Ladder left on site']);
+});
+
+// ---------------------------------------------------------------------------
+// SENDING ONE
+// ---------------------------------------------------------------------------
+// The PDF, the share sheet, and the two questions only he can answer. What is
+// pinned here is what reaches the FILE: nothing at all when he backs out of the
+// sheet, both flags in one save when he does not, and nothing left standing
+// when the save is refused.
+
+function shareWith(t, over) {
+  const saves = [];
+  const asked = [];
+  stub(t, Object.assign({
+    persistOr: (revert) => { saves.push(revert); return true; },
+    confirmPanel: (text) => { asked.push(text); return Promise.resolve(true); },
+    showBanner: () => {},
+    render: () => {},
+    DocGen: { blobInvoice: () => Promise.resolve({ bytes: 1 }), share: () => Promise.resolve('shared') },
+  }, over || {}));
+  return { saves, asked };
+}
+
+test('backing out of the share sheet writes nothing and asks nothing', async (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  const { saves, asked } = shareWith(t, {
+    DocGen: { blobInvoice: () => Promise.resolve({ bytes: 1 }), share: () => Promise.resolve('cancelled') },
+  });
+  await invoiceShare(inv);
+  assert.deepStrictEqual(asked, [], 'a sheet he closed is not a document that went out');
+  assert.deepStrictEqual(saves, []);
+  assert.strictEqual(inv.sentAt, null);
+  assert.strictEqual(inv.savedToFilesAt, null);
+});
+
+test('both answers yes: one save, both dates, and the status follows', async (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  const { saves, asked } = shareWith(t);
+  await invoiceShare(inv);
+  assert.deepStrictEqual(asked, ['Sent to the customer?', 'Did you save a copy on the phone?']);
+  assert.strictEqual(saves.length, 1, 'sent and filed go to disk together or not at all');
+  assert.strictEqual(inv.sentAt, S.todayISO());
+  assert.strictEqual(inv.savedToFilesAt, S.todayISO());
+  assert.strictEqual(inv.status, 'sent', 'derived on the write, never set by hand');
+});
+
+test('a refused save leaves it unsent, unfiled and a draft', async (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  shareWith(t, { persistOr: (revert) => { revert(); return false; } });
+  await invoiceShare(inv);
+  assert.strictEqual(inv.sentAt, null);
+  assert.strictEqual(inv.savedToFilesAt, null);
+  assert.strictEqual(inv.status, 'draft');
+});
+
+// ---------------------------------------------------------------------------
+// DELETING ONE
+// ---------------------------------------------------------------------------
+// A numbered invoice nobody has seen can go, and its hours come back to the
+// pile. The PDFs go with it, but only once the file itself has been written:
+// a refused save with the blobs already gone is the one outcome there is no
+// way back from.
+
+test('a delete unlocks the hours, takes the invoice off, then clears the PDFs', async (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  const order = [];
+  const deleted = [];
+  stub(t, {
+    confirmPanel: () => Promise.resolve(true),
+    persistOr: () => { order.push('save'); return true; },
+    showBanner: () => {},
+    show: () => {},
+    render: () => {},
+    Photos: {
+      list: () => Promise.resolve(['pdf-inv-' + inv.id + '-5', 'pdf-1-9']),
+      get: () => Promise.resolve(null),
+      put: () => Promise.resolve(true),
+      delMany: (ids) => { order.push('delMany'); deleted.push(...ids); return Promise.resolve(true); },
+    },
+  });
+
+  await invoiceDelete(inv);
+  await new Promise((done) => setTimeout(done, 0));
+
+  assert.strictEqual(w.d.invoices.indexOf(inv), -1, 'off the file');
+  inv.logIds.forEach((id) => {
+    assert.strictEqual(w.d.logs.find((e) => e.id === id).invoiceId, null, 'back in the pile');
+  });
+  assert.deepStrictEqual(order, ['save', 'delMany'], 'the bytes go only after the save');
+  assert.deepStrictEqual(deleted, ['pdf-inv-' + inv.id + '-5'], 'and only the ones that are its own');
+});
+
+test('a refused delete keeps the invoice, the locks and every PDF', async (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  const locked = inv.logIds.slice();
+  stub(t, {
+    confirmPanel: () => Promise.resolve(true),
+    persistOr: (revert) => { revert(); return false; },
+    showBanner: () => {},
+    show: () => { throw new Error('a refused save must not navigate'); },
+    render: () => {},
+    Photos: {
+      list: () => Promise.resolve([]),
+      get: () => Promise.resolve(null),
+      put: () => Promise.resolve(true),
+      delMany: () => { throw new Error('nothing may be deleted'); },
+    },
+  });
+
+  await invoiceDelete(inv);
+  await new Promise((done) => setTimeout(done, 0));
+
+  assert.ok(w.d.invoices.indexOf(inv) !== -1, 'still on the file');
+  locked.forEach((id) => {
+    assert.strictEqual(w.d.logs.find((e) => e.id === id).invoiceId, inv.id, 'still locked to it');
+  });
 });

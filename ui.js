@@ -977,6 +977,71 @@ function equipmentPickerCard(title, equipment, equipmentPct, onPick) {
 }
 
 // ---------------------------------------------------------------------------
+// WHERE HE WAS STANDING
+// ---------------------------------------------------------------------------
+// Sharing a document re-renders the screen two or three times — once for the
+// busy button, once for each question afterwards — and the render that follows
+// the last of them used to land him at the top, four cards above the button he
+// had just pressed, with nothing on screen saying the document had gone.
+//
+// The position is read BEFORE the share sheet opens (the page does not move
+// while it is up) and put back after the questions, on the frame after the
+// render, because a page that has just been rebuilt has no scroll height yet.
+// This was proposalScrollNow/proposalScrollBack; the invoice screen sends the
+// same way, and a screen may never call another screen's file.
+function scrollNow() {
+  try {
+    const doc = document.scrollingElement || document.documentElement;
+    return doc ? doc.scrollTop : 0;
+  } catch (e) { return 0; }   // no document in this environment
+}
+
+function scrollBack(top) {
+  const put = () => {
+    try {
+      const doc = document.scrollingElement || document.documentElement;
+      if (doc) doc.scrollTop = top;
+    } catch (e) { /* no layout in this environment */ }
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(put);
+  else put();
+}
+
+// ---------------------------------------------------------------------------
+// NEWS THAT HAS TO WAIT
+// ---------------------------------------------------------------------------
+// A banner may never be raised behind an open panel: he is looking at a
+// question, the banner is drawn under it, and by the time he has answered the
+// question the banner has timed out and gone. That happens for real on the
+// share flow — the write to the archive is started before the share sheet and
+// finishes at some unpredictable point, often while one of the two "Sent to
+// the customer?" confirms is standing — and both documents share the shape:
+//
+//   const news = deferredBanner();
+//   stored.then((ok) => { if (!ok) news.show("Couldn't keep a copy…", 'danger'); });
+//   ... the confirms ...
+//   news.flush();
+//
+// show() puts it up at once when the glass is clear, and holds exactly one
+// piece of news when it is not. flush() is a no-op when there is nothing held,
+// so every way out of the flow can call it.
+function deferredBanner() {
+  let held = null;
+  return {
+    show(text, kind) {
+      if (!anyPanelOpen()) { showBanner(text, kind); return; }
+      held = [text, kind];
+    },
+    flush() {
+      if (!held) return;
+      const [text, kind] = held;
+      held = null;
+      showBanner(text, kind);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // CHECKING A PRICE
 // ---------------------------------------------------------------------------
 // He asked where material prices come from. The honest answer is his supply

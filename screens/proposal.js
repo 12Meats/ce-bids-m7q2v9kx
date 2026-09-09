@@ -915,29 +915,9 @@ function proposalLoadPdfs() {
   });
 }
 
-// Where he was on the page, and putting him back there.
-//
-// The share questions each re-render the whole screen, and the render that
-// follows the last of them used to land him at the top — four cards above the
-// button he had just pressed, with nothing on screen saying the document had
-// gone. The position is read BEFORE the sheet opens (the page does not move
-// while it is up) and restored after the questions, on the frame after the
-// render, because a page that has just been rebuilt has no scroll height yet.
-function proposalScrollNow() {
-  const doc = document.scrollingElement || document.documentElement;
-  return doc ? doc.scrollTop : 0;
-}
-
-function proposalScrollBack(top) {
-  const put = () => {
-    try {
-      const doc = document.scrollingElement || document.documentElement;
-      if (doc) doc.scrollTop = top;
-    } catch (e) { /* no layout in this environment */ }
-  };
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(put);
-  else put();
-}
+// Where he was on the page, and putting him back there, is ui.js's scrollNow /
+// scrollBack: the invoice screen sends the same way and a screen may never
+// call another screen's file.
 
 // The two questions the app cannot answer for itself. Asked one at a time,
 // after the sheet has closed, and written in ONE save so a refused write can
@@ -1002,7 +982,7 @@ async function proposalShare(bid) {
   // Read before anything re-renders: this is where he was standing when he
   // pressed the button, and it is where he goes back to when the questions
   // are done.
-  const wasAt = proposalScrollNow();
+  const wasAt = scrollNow();
   proposalBusy = true;
   render();
 
@@ -1044,19 +1024,29 @@ async function proposalShare(bid) {
   // This runs on EVERY way out of here — shared, cancelled, or a share that
   // threw — because the row in Previous PDFs is the proof the document was
   // made, and a document he can't see is a document he makes again.
+  //
+  // Through deferredBanner because this write finishes at a moment nothing
+  // here controls, and the moments straight after a share are the two
+  // confirms: a banner raised behind one of them is drawn under the panel and
+  // has timed out by the time he has answered.
+  const news = deferredBanner();
   stored.then((ok) => {
-    if (!ok) showBanner("Couldn't keep a copy on this phone (storage full?)", 'danger');
+    if (!ok) news.show("Couldn't keep a copy on this phone (storage full?)", 'danger');
     proposalLoadPdfs();
   });
 
   if (shareFailed) {
+    // Flushed first: the sheet that would not open is the news he needs, so
+    // it is the sentence left standing.
+    news.flush();
     showBanner("Couldn't open the share sheet. The PDF is saved under Previous PDFs.", 'danger');
     render();
     return;
   }
-  if (result === 'cancelled') { render(); proposalScrollBack(wasAt); return; }
+  if (result === 'cancelled') { render(); scrollBack(wasAt); news.flush(); return; }
   await proposalAfterShare(bid, { askSent: true });
-  proposalScrollBack(wasAt);
+  scrollBack(wasAt);
+  news.flush();
 }
 
 // The archive step, on its own. Re-shares the exact bytes the customer got
@@ -1067,7 +1057,7 @@ async function proposalSaveToFiles(bid) {
   // Checked here too, not only on Share: this hands over bytes that were built
   // before he added the line, and a copy in Files is a copy he will send.
   if (proposalBlockedByUnpriced(bid)) return;
-  const wasAt = proposalScrollNow();
+  const wasAt = scrollNow();
   const last = proposalLast && proposalLast.bidId === bid.id ? proposalLast : null;
   const newest = proposalPdfs && proposalPdfs.length ? proposalPdfs[0] : null;
   // Both candidates are already bytes in memory — nothing is read from
@@ -1096,9 +1086,9 @@ async function proposalSaveToFiles(bid) {
   // He backed out of the sheet, so nothing left the phone and there is nothing
   // to ask about. Asking anyway is how a bid gets marked saved to Files on the
   // strength of a sheet he closed.
-  if (result === 'cancelled') { render(); proposalScrollBack(wasAt); return; }
+  if (result === 'cancelled') { render(); scrollBack(wasAt); return; }
   await proposalAfterShare(bid, { askSent: false });
-  proposalScrollBack(wasAt);
+  scrollBack(wasAt);
 }
 
 // Mail cannot be pre-addressed from a web app: there is no way to hand iOS a

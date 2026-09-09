@@ -40,7 +40,6 @@ let invoiceSheet = null;          // 'equip' while the tool list is up
 let invoicePreviewOpen = false;   // the paper, unfolded
 let invoicePdfs = null;           // [{ id, at, blob }] newest first; null = still loading
 let invoicePdfToken = 0;          // async list fills from an older render are dropped
-let invoiceLast = null;           // { invoiceId, id, blob, name } the last one made here
 
 const INVOICE_PDF_KEEP = 10;
 
@@ -70,9 +69,17 @@ function enterInvoice(arg) {
       invoiceDraft = typeof arg.draft === 'number' ? arg.draft : null;
       invoiceQueue = Array.isArray(arg.queue) ? arg.queue.slice() : [];
     } else {
-      invoiceId = typeof arg === 'string' ? arg : null;
+      const id = typeof arg === 'string' ? arg : null;
+      invoiceId = id;
       invoiceDraft = null;
-      invoiceQueue = [];
+      // Coming back to one of the batch from the home list is STILL the batch.
+      // He numbered four on Friday, sent the first, went out to the list to
+      // check something and tapped the second one from there: the two behind
+      // it are still waiting to go out, and a queue thrown away here is three
+      // invoices that quietly never get sent. Anything that is not in the
+      // queue is a different errand, and the queue goes with it.
+      const at = invoiceQueue.indexOf(id);
+      invoiceQueue = at === -1 ? [] : invoiceQueue.slice(at + 1);
     }
     invoicePreviewOpen = false;
   }
@@ -131,11 +138,15 @@ function invoiceServiceText(inv) {
 // The status is derived on every write rather than set by hand: it is a
 // function of what the invoice comes to, what has been paid against it and
 // whether it has gone out, and all three of those change on this screen.
+// Draft-vs-disk is read off the INVOICE it is handed rather than off this
+// screen's view state: everything that writes here is already holding the
+// record it is writing to, and a rule that consults module state instead is a
+// rule that can be asked about the wrong invoice.
 function invoiceWrite(inv, restore) {
   const prevStatus = inv.status;
   inv.status = InvMath.statusOf(inv);
   const put = () => { restore(); inv.status = prevStatus; };
-  if (invoiceIsReviewDraft()) return true;
+  if (!inv.id) return true;
   return persistOr(put);
 }
 
@@ -232,14 +243,13 @@ function buildInvoiceLines(host, inv) {
       lineActions(box, line, inv.items, it, {
         markupPct: markup,
         data: invoiceData(),
-        // The shell's persistOr, not invoiceWrite, even on a draft under
-        // review: what this strip writes besides the line is the CATALOG's
-        // memory of what the part costs and what it bills at, and that is a
-        // fact about the part rather than a field of this invoice. On a draft
-        // the arrays live outside state.data, so the save writes the catalog
-        // and nothing else; a refused save still runs the restore, which pulls
-        // the line back out.
-        persistOr,
+        // Every material line goes through invoiceWrite, the way the rentals
+        // and the equipment do: a quantity, a cost, a bill price and a delete
+        // all change what this invoice comes to, and what it comes to is what
+        // decides whether it reads as paid. The restore this strip hands over
+        // carries the catalog's memory of the price with it, and invoiceWrite
+        // composes the status restore around that.
+        persistOr: (restore) => invoiceWrite(inv, restore),
         onChanged: render,
         onClose: () => { invoiceItemMenu = null; render(); },
       });
@@ -247,7 +257,7 @@ function buildInvoiceLines(host, inv) {
   });
 
   (inv.rentals || []).forEach((x) => {
-    const line = lineRow(x.name || 'Rental', invoiceRentalSub(x), moneyText(BidMath.rentalPrice(x, markup)),
+    const line = lineRow(x.name || 'Rental', rentalSubText(x), moneyText(BidMath.rentalPrice(x, markup)),
       () => { invoiceRentalMenu = invoiceRentalMenu === x ? null : x; render(); });
     box.appendChild(line);
     if (invoiceRentalMenu === x) {
@@ -262,12 +272,11 @@ function buildInvoiceLines(host, inv) {
   });
 
   (inv.equipment || []).forEach((x) => {
-    const line = lineRow(x.name || 'Equipment',
-      numText(x.days) + (x.days === 1 ? ' day' : ' days') + ' · ' + moneyText(x.dayCents) + ' a day',
+    const line = lineRow(x.name || 'Equipment', equipSubText(x),
       moneyText(BidMath.equipmentLine(x)),
       () => { invoiceEquipMenu = invoiceEquipMenu === x ? null : x; render(); });
     box.appendChild(line);
-    if (invoiceEquipMenu === x) buildInvoiceEquipActions(box, line, inv, x);
+    if (invoiceEquipMenu === x) equipActions(box, line, inv.equipment, x, invoiceEquipOpts(inv));
   });
 
   // The tool list takes the place of the three buttons while it is up: it IS
@@ -302,12 +311,6 @@ function buildInvoiceLines(host, inv) {
   host.appendChild(box);
 }
 
-function invoiceRentalSub(x) {
-  return numText(x.days) + (x.days === 1 ? ' day' : ' days')
-    + ' · ' + moneyText(x.cents)
-    + ' · markup ' + (x.markup ? 'on' : 'off');
-}
-
 // The add-a-part flow: the picker, onto this invoice's own items.
 function renderInvoiceAdd(host, inv) {
   renderItemPicker(host, invoicePicker, {
@@ -319,9 +322,10 @@ function renderInvoiceAdd(host, inv) {
     onDone: () => { invoiceView = 'invoice'; render(); },
     onChanged: render,
     navPush,
-    // The shell's persistOr, for the reason spelled out on the line strip
-    // above: what the picker writes besides the line is the catalog.
-    persistOr,
+    // invoiceWrite, for the reason spelled out on the line strip above: a part
+    // added here changes what this invoice comes to. The catalog's own memory
+    // rides along inside the restore.
+    persistOr: (restore) => invoiceWrite(inv, restore),
     data: invoiceData(),
   });
 }
@@ -338,74 +342,27 @@ function invoiceAddRental(inv, prefill) {
   });
 }
 
+// His own gear, added and edited through picker.js's shared adder: the log
+// screen offers the identical three questions, and the only difference between
+// the two was the noun in one banner.
+//
+// persistSettings is the shell's own save rather than invoiceWrite: what a
+// tool cost new is a fact about the tool, true whether or not this draft is
+// ever numbered, and on a draft under review invoiceWrite writes nothing.
+function invoiceEquipOpts(inv) {
+  return {
+    data: invoiceData(),
+    persistOr: (restore) => invoiceWrite(inv, restore),
+    persistSettings: persistOr,
+    onChanged: render,
+    noun: 'invoice',
+    onAdded: (line) => { invoiceSheet = null; invoiceEquipMenu = line; },
+    onClose: () => { invoiceEquipMenu = null; render(); },
+  };
+}
+
 function invoiceAddEquipment(inv, equip) {
-  const settings = invoiceData().settings;
-  const existing = (inv.equipment || []).find((x) => x.equipmentId === equip.id);
-  if (existing) {
-    invoiceSheet = null;
-    showBanner((equip.name || 'That tool') + ' is already on this invoice.');
-    render();
-    return;
-  }
-  const rate = equipmentDayCents(equip, settings.equipmentPct);
-  if (rate != null) { invoicePushEquipment(inv, equip, rate); return; }
-  promptMoney(null, {
-    label: 'What does a ' + (equip.name || 'tool') + ' cost new?',
-    done: (cents) => {
-      if (cents === null || !(cents > 0)) return;
-      const prev = equip.costCents;
-      equip.costCents = cents;
-      // Settings on its own: what a tool cost is true whether or not the line
-      // that asked makes it onto this invoice.
-      if (!persistOr(() => { equip.costCents = prev; })) { render(); return; }
-      const made = equipmentDayCents(equip, settings.equipmentPct);
-      invoicePushEquipment(inv, equip, made == null ? 0 : made);
-    },
-  });
-}
-
-function invoicePushEquipment(inv, equip, dayCents) {
-  const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents };
-  inv.equipment.push(line);
-  if (!invoiceWrite(inv, () => {
-    const i = inv.equipment.indexOf(line);
-    if (i !== -1) inv.equipment.splice(i, 1);
-  })) { render(); return; }
-  invoiceSheet = null;
-  invoiceEquipMenu = line;
-  showBanner((equip.name || 'The tool') + ' added at ' + moneyText(dayCents) + ' a day. Tap it to change the days.', 'ok');
-  render();
-}
-
-function buildInvoiceEquipActions(box, lineEl, inv, x) {
-  const close = () => { invoiceEquipMenu = null; render(); };
-  const strip = attachedStrip(lineEl, [
-    { label: 'Days', onTap: () => {
-      promptNumber(x.days, {
-        label: (x.name || 'Tool') + ', how many days?',
-        allowDecimal: true,
-        done: (v) => {
-          if (v === null) return;
-          if (!(v > 0)) { showBanner('Days have to be more than zero'); render(); return; }
-          const prev = x.days;
-          x.days = v;
-          invoiceWrite(inv, () => { x.days = prev; });
-          close();
-        },
-      });
-    } },
-    { label: 'Delete', quiet: true, onTap: async () => {
-      const ok = await confirmPanel('Delete ' + (x.name || 'this line') + '?', { ok: 'Delete', danger: true });
-      if (!ok) { render(); return; }
-      const i = inv.equipment.indexOf(x);
-      if (i !== -1) {
-        inv.equipment.splice(i, 1);
-        invoiceWrite(inv, () => { inv.equipment.splice(i, 0, x); });
-      }
-      close();
-    } },
-  ], { cancel: close });
-  if (!strip.parentNode) box.appendChild(strip);
+  addEquipment(inv.equipment, equip, { ...invoiceEquipOpts(inv), onClose: () => { invoiceSheet = null; } });
 }
 
 // ---------------------------------------------------------------------------
@@ -427,7 +384,11 @@ function invoiceProjectRemaining(inv) {
 function buildInvoiceProject(host, inv) {
   const bid = invoiceBid(inv);
   const box = card('The job');
-  const label = (inv.projectTitle || 'Project') + (bid ? ', as proposed #' + bid.number : '');
+  // The words are the DOCUMENT's, read off the one line a project invoice
+  // prints. They were written out a second time here and the two copies were
+  // one edit apart from disagreeing about what the paper says.
+  const rows = (InvDoc.build(inv, invoiceData()).sections[0] || {}).rows || [];
+  const label = rows.length ? rows[0].desc : (inv.projectTitle || 'Project');
   box.appendChild(lineRow(label, bid ? 'The proposal and its change orders' : 'The bid is not on this phone any more',
     moneyText(InvMath.totals(inv).total), null));
   const remaining = invoiceProjectRemaining(inv);
@@ -494,17 +455,27 @@ function buildInvoiceSays(host, inv) {
     ? emptyNote('Nothing extra. Tap a chip or write your own.')
     : caption('These print under the table, above the thank-you line.'));
   if (!Array.isArray(inv.notes)) inv.notes = [];
-  notePhrasesPicker(notes, inv.notes, {
+  notePhrasesPicker(notes, inv.notes, invoiceNoteOpts(inv));
+  host.appendChild(notes);
+}
+
+// The note goes on THIS invoice through invoiceWrite, which writes nothing
+// while the invoice is a draft under review. The LIBRARY is not this invoice:
+// "keep this on every future invoice" is an answer about his settings, and it
+// has to reach the disk whichever document he happened to be looking at when
+// he gave it. So the library gets the shell's own save.
+function invoiceNoteOpts(inv) {
+  return {
     data: invoiceData(),
     persistOr: (restore) => invoiceWrite(inv, restore),
+    persistLibrary: persistOr,
     onChanged: render,
     label: 'Note',
     placeholder: 'Anything the customer should read',
     addLabel: '+ Note',
     keepWhere: 'every future invoice',
     keepCancel: 'Just this invoice',
-  });
-  host.appendChild(notes);
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -651,7 +622,7 @@ function buildInvoicePreview(inv) {
   // The strip: the P.O. cell is left out when there is no number, the way the
   // paper leaves the cell out.
   const strip = [
-    doc.meta.po ? 'P.O. ' + doc.meta.po : '',
+    doc.meta.po ? 'P.O. Number: ' + doc.meta.po : '',
     doc.meta.terms ? 'Terms: ' + doc.meta.terms : '',
     doc.meta.rep ? 'Rep: ' + doc.meta.rep : '',
     doc.meta.project,
@@ -715,13 +686,15 @@ function invoiceLoadPdfs() {
   const inv = invoiceTarget();
   if (!inv || !inv.id) { invoicePdfs = []; return; }
   const token = ++invoicePdfToken;
-  const prefix = invoicePdfPrefix(inv.id);
   Photos.list('pdf').then((ids) => {
     if (token !== invoicePdfToken) return;
+    // invoicePdfParse rather than a prefix test written out again here: it is
+    // the one thing that knows an invoice id has dashes of its own in it, and
+    // it is the same function the archive and the backup pile read these with.
     const entries = ids
-      .filter((id) => id.indexOf(prefix) === 0)
-      .map((id) => ({ id, at: Number(id.slice(prefix.length)), blob: null }))
-      .filter((x) => isFinite(x.at))
+      .map(invoicePdfParse)
+      .filter((x) => x && x.invoiceId === inv.id)
+      .map((x) => ({ id: x.id, at: x.at, blob: null }))
       .sort((a, b) => b.at - a.at)
       .slice(0, INVOICE_PDF_KEEP);
     return Promise.all(entries.map((e) => Photos.get(e.id).then((b) => { e.blob = b; })))
@@ -784,6 +757,10 @@ function buildInvoicePrevious(host, inv) {
 
 async function invoiceShare(inv) {
   if (invoiceBusy) return;
+  // Read before anything re-renders: this is where he was standing when he
+  // pressed the button, and it is where he goes back to when the questions are
+  // done. The proposal screen sends the same way, off the same two helpers.
+  const wasAt = scrollNow();
   invoiceBusy = true;
   render();
 
@@ -804,7 +781,6 @@ async function invoiceShare(inv) {
 
   const id = invoicePdfPrefix(inv.id) + Date.now();
   const stored = Photos.put(id, pdfBlob, 'pdf');
-  invoiceLast = { invoiceId: inv.id, id, blob: pdfBlob, name: doc.fileName };
 
   let result = null;
   let failed = false;
@@ -819,17 +795,26 @@ async function invoiceShare(inv) {
   // On EVERY way out of here — shared, cancelled, or a share that threw —
   // because the row in Previous PDFs is the proof the document was made, and
   // a document he cannot see is a document he makes again.
+  //
+  // Through deferredBanner because this write finishes at a moment nothing
+  // here controls, and the moments straight after a share are the two
+  // confirms: a banner raised behind one of them is drawn under the panel and
+  // has timed out by the time he has answered it.
+  const news = deferredBanner();
   stored.then((ok) => {
-    if (!ok) showBanner("Couldn't keep a copy on this phone (storage full?)", 'danger');
+    if (!ok) news.show("Couldn't keep a copy on this phone (storage full?)", 'danger');
     invoiceLoadPdfs();
   });
 
   if (failed) {
+    // Flushed first: the sheet that would not open is the news he needs, so it
+    // is the sentence left standing.
+    news.flush();
     showBanner("Couldn't open the share sheet. The PDF is saved under Previous PDFs.", 'danger');
     render();
     return;
   }
-  if (result === 'cancelled') { render(); return; }
+  if (result === 'cancelled') { render(); scrollBack(wasAt); news.flush(); return; }
 
   // The proposal's two questions, and the answers written in ONE save so a
   // refused write can never leave an invoice marked sent but not filed.
@@ -842,8 +827,10 @@ async function invoiceShare(inv) {
   if (!invoiceWrite(inv, () => {
     inv.sentAt = prev.sentAt;
     inv.savedToFilesAt = prev.savedToFilesAt;
-  })) { render(); return; }
+  })) { render(); scrollBack(wasAt); news.flush(); return; }
   render();
+  scrollBack(wasAt);
+  news.flush();
   if (markSent) showBanner('Marked sent', 'ok');
   invoiceNext();
 }
@@ -851,13 +838,24 @@ async function invoiceShare(inv) {
 // The queue: the batch the review just numbered, going out one at a time
 // because the share sheet needs a tap each. Nothing left is not an error and
 // not a banner — it is simply the end of Friday.
+// An id in the queue that is no longer on the file is skipped rather than
+// opened: he can delete one of the batch from its own screen, and landing on
+// "That invoice is not here anymore" with three still to send is a dead end.
+// Hands back whether it moved, so a caller with somewhere else to go knows.
 function invoiceNext() {
-  if (!invoiceQueue.length) return;
-  const next = invoiceQueue[0];
-  const rest = invoiceQueue.slice(1);
-  // Replace: this invoice is finished with, and Back must not walk into an
-  // invoice he has already sent.
-  show('invoice', { id: next, queue: rest }, { replace: true });
+  const d = invoiceData();
+  const rest = invoiceQueue.slice();
+  while (rest.length) {
+    const next = rest.shift();
+    if ((d.invoices || []).some((x) => x.id === next)) {
+      // Replace: this invoice is finished with, and Back must not walk into an
+      // invoice he has already sent.
+      show('invoice', { id: next, queue: rest }, { replace: true });
+      return true;
+    }
+  }
+  invoiceQueue = [];
+  return false;
 }
 
 // What the pinned button says. A draft under review goes back to the review,
@@ -892,7 +890,11 @@ function invoiceCanDelete(inv) {
 }
 
 async function invoiceDelete(inv) {
-  const ok = await confirmPanel('Delete invoice #' + inv.number + '? Its hours go back in the pile.',
+  // The pile is only mentioned when there is something to put back in it: a
+  // project invoice bills a bid, carries no visits, and a sentence promising
+  // him hours back is a sentence about nothing.
+  const ok = await confirmPanel('Delete invoice #' + inv.number + '?'
+    + ((inv.logIds || []).length ? ' Its hours go back in the pile.' : ''),
     { ok: 'Delete', danger: true });
   if (!ok) { render(); return; }
   const d = invoiceData();
@@ -913,14 +915,18 @@ async function invoiceDelete(inv) {
   // The document is off disk first and the blobs only after: a refused save
   // with the PDFs already gone is the one outcome there is no way back from.
   invoiceDeletePdfs(inv);
-  show('invoices', undefined, { replace: true });
+  // Friday is not over because one of the batch was a mistake: the rest are
+  // still numbered and still waiting to go out.
+  if (!invoiceNext()) show('invoices', undefined, { replace: true });
   showBanner('Deleted. ' + INVOICE_NUMBER_SPENT, 'ok');
 }
 
 function invoiceDeletePdfs(inv) {
-  const prefix = invoicePdfPrefix(inv.id);
   Photos.list('pdf')
-    .then((ids) => Photos.delMany(ids.filter((x) => x.indexOf(prefix) === 0)))
+    .then((ids) => Photos.delMany(ids.filter((x) => {
+      const hit = invoicePdfParse(x);
+      return !!hit && hit.invoiceId === inv.id;
+    })))
     .then((ok) => {
       if (!ok) showBanner("Couldn't clear this invoice's PDFs from the phone. They take space but change nothing.");
     });
@@ -968,14 +974,10 @@ function renderInvoice() {
     host.appendChild(caption(INVOICE_NUMBER_SPENT));
   }
 
-  const bar = pinnedBar(host, invoicePinnedLabel(inv), () => {
+  pinnedBar(host, invoicePinnedLabel(inv), () => {
     if (invoiceIsReviewDraft()) { show('billreview'); return; }
     invoiceShare(inv);
-  });
-  if (invoiceBusy) {
-    const btn = bar.querySelector('button');
-    if (btn) btn.disabled = true;
-  }
+  }, { disabled: invoiceBusy });
 }
 
 // The steps inside this screen: the picker's own, then the tool list, then out.

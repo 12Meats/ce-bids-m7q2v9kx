@@ -14,8 +14,8 @@
 // another screen calls.
 //
 // Sections: THE ROW · THE CHECK · THE PILE SELECTION · THE DRAFTS UNDER REVIEW ·
-// AN INVOICE IN WORDS · THE LINE STRIP · THE RENTAL EDITOR · THE PAPER ·
-// THE NOTE PHRASES · THE ITEM PICKER
+// AN INVOICE IN WORDS · THE LINE STRIP · THE RENTAL EDITOR · THE EQUIPMENT
+// ADDER · THE PAPER · THE NOTE PHRASES · THE ITEM PICKER
 
 // ---------------------------------------------------------------------------
 // THE ROW
@@ -370,6 +370,17 @@ function lineAskLot(it, opts) {
 // The cents field is the TOTAL for the whole hire and not a day rate (Adrian's
 // call, 9/05: it is what his paper bids say, "Lift rental · 1 week · $501"), so
 // the button and the keypad both say so.
+// What a rental line says under its name, wherever it is listed: the days, the
+// whole hire, and whether the customer pays the markup on it. One sentence for
+// the bid, the visit at the truck and the invoice alike — three screens were
+// each writing their own copy of it, and three copies of a sentence is three
+// chances for one of them to start saying something else.
+function rentalSubText(x) {
+  return numText(x.days) + (x.days === 1 ? ' day' : ' days')
+    + ' · ' + moneyText(x.cents)
+    + ' · markup ' + (x.markup ? 'on' : 'off');
+}
+
 function rentalTotalLabel(name) {
   return 'What will the ' + (name || 'rental') + ' cost in total?';
 }
@@ -467,6 +478,124 @@ function rentalActions(box, lineEl, rentals, x, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// THE EQUIPMENT ADDER
+// ---------------------------------------------------------------------------
+// His OWN gear on a list: a tool off the Settings shelf, a day of it, and the
+// day rate Settings works out from what it cost him. The visit at the truck
+// and the invoice both offer it and both offered their own copy of these
+// forty lines, down to the wording of the two banners — which is exactly the
+// pair that drifts, because the only difference between them is one noun.
+//
+//   equipSubText(x)                            the line's own second line
+//   addEquipment(list, equip, opts)             the tool list's answer
+//   pushEquipment(list, equip, dayCents, opts)  the line itself
+//   equipActions(box, lineEl, list, x, opts)    the strip a line opens
+//     opts.data            the shell's data (settings.equipmentPct, the shelf)
+//     opts.persistOr       the caller's save for the LINE, with an exact restore
+//     opts.persistSettings the caller's save for a fact about the TOOL (what it
+//                          cost new). Defaults to persistOr; a caller whose own
+//                          save is a no-op while its record is a draft passes
+//                          the shell's here, the way the note library does,
+//                          because what a tool cost is true whether or not this
+//                          draft is ever kept.
+//     opts.onChanged       () => void  redraw
+//     opts.onAdded         (line) => void  optional: the line landed
+//     opts.onClose         () => void  what this opened is answered: the tool
+//                          list for addEquipment, the strip for equipActions
+//     opts.noun            'visit' / 'invoice', for the one banner that names it
+function equipSubText(x) {
+  return numText(x.days) + (x.days === 1 ? ' day' : ' days')
+    + ' · ' + moneyText(x.dayCents) + ' a day';
+}
+
+// A tool he owns is not a part: it goes on once, at the day rate, and a second
+// line for the same tool is a day billed twice. The list says so and stays as
+// it is.
+//
+// A tool Settings has no cost for is asked about rather than added at $0: a $0
+// equipment line is a day of his own gear given away, and on the glass it looks
+// exactly like a priced one.
+function addEquipment(list, equip, opts) {
+  const settings = opts.data.settings;
+  const existing = (list || []).find((x) => x.equipmentId === equip.id);
+  if (existing) {
+    if (opts.onClose) opts.onClose();
+    showBanner((equip.name || 'That tool') + ' is already on this ' + (opts.noun || 'one') + '.');
+    opts.onChanged();
+    return;
+  }
+  const rate = equipmentDayCents(equip, settings.equipmentPct);
+  if (rate != null) { pushEquipment(list, equip, rate, opts); return; }
+  promptMoney(null, {
+    label: 'What does a ' + (equip.name || 'tool') + ' cost new?',
+    done: (cents) => {
+      if (cents === null || !(cents > 0)) return;
+      const prev = equip.costCents;
+      equip.costCents = cents;
+      // Settings on its own: what a tool cost is true whether or not the line
+      // that asked makes it onto this list, and a refused save must not leave
+      // Settings holding a number the disk never took.
+      const saveTool = opts.persistSettings || opts.persistOr;
+      if (!saveTool(() => { equip.costCents = prev; })) { opts.onChanged(); return; }
+      const made = equipmentDayCents(equip, settings.equipmentPct);
+      pushEquipment(list, equip, made == null ? 0 : made, opts);
+    },
+  });
+}
+
+// One day to start with, because one day is the common answer and the strip it
+// opens is where the other answers live. Hands back the line, or null when the
+// save was refused.
+function pushEquipment(list, equip, dayCents, opts) {
+  const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents };
+  list.push(line);
+  if (!opts.persistOr(() => {
+    const i = list.indexOf(line);
+    if (i !== -1) list.splice(i, 1);
+  })) { opts.onChanged(); return null; }
+  if (opts.onAdded) opts.onAdded(line);
+  showBanner((equip.name || 'The tool') + ' added at ' + moneyText(dayCents) + ' a day. Tap it to change the days.', 'ok');
+  opts.onChanged();
+  return line;
+}
+
+// Days and the way off the list. The day RATE is not here: it is worked out
+// from what the tool cost, in Settings, and a rate typed on a line would be a
+// second answer to a question that already has one.
+function equipActions(box, lineEl, list, x, opts) {
+  const strip = attachedStrip(lineEl, [
+    { label: 'Days', onTap: () => {
+      promptNumber(x.days, {
+        label: (x.name || 'Tool') + ', how many days?',
+        allowDecimal: true,
+        done: (v) => {
+          if (v === null) return;
+          if (!(v > 0)) { showBanner('Days have to be more than zero'); opts.onChanged(); return; }
+          const prev = x.days;
+          x.days = v;
+          opts.persistOr(() => { x.days = prev; });
+          opts.onClose();
+        },
+      });
+    } },
+    { label: 'Delete', quiet: true, onTap: async () => {
+      const ok = await confirmPanel('Delete ' + (x.name || 'this line') + '?', { ok: 'Delete', danger: true });
+      if (!ok) { opts.onChanged(); return; }
+      const i = list.indexOf(x);
+      if (i !== -1) {
+        list.splice(i, 1);
+        opts.persistOr(() => { list.splice(i, 0, x); });
+      }
+      opts.onClose();
+    } },
+  ], { cancel: () => opts.onClose() });
+  // The row may already be in the card, in which case attachedStrip has placed
+  // the strip under it; a caller assembling a line off-screen appends it here.
+  if (!strip.parentNode) box.appendChild(strip);
+  return strip;
+}
+
+// ---------------------------------------------------------------------------
 // THE PAPER
 // ---------------------------------------------------------------------------
 // One row of a document as it is previewed on the glass: what it is on the
@@ -537,6 +666,13 @@ function paperBullets(lines) {
 //     notes           the array on the record (bid.notes / inv.notes)
 //     opts.data       the shell's data (settings.notePhrases)
 //     opts.persistOr  the caller's save, with an exact restore handed to it
+//     opts.persistLibrary the save for the LIBRARY, which is not the document.
+//                     Defaults to persistOr. A caller whose own save is a
+//                     no-op — an invoice still under review, which is not on
+//                     the file yet — passes the shell's here: "keep this on
+//                     every future invoice" is an answer about his settings,
+//                     and it has to land on disk whichever document he
+//                     happened to be looking at when he gave it.
 //     opts.onChanged  () => void   redraw
 //     opts.label      the + button's prompt ('Note or exclusion')
 //     opts.placeholder
@@ -592,7 +728,7 @@ function noteAdd(notes, opts) {
       if (!keep) { opts.onChanged(); return; }
       const prevPhrases = s.notePhrases.slice();
       s.notePhrases.push(text);
-      opts.persistOr(() => { s.notePhrases = prevPhrases; });
+      (opts.persistLibrary || opts.persistOr)(() => { s.notePhrases = prevPhrases; });
       opts.onChanged();
     },
   });

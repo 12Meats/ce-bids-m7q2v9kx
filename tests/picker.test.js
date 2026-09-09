@@ -48,7 +48,8 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
-  partQtyLabel, partCostLabel, partBillLabel, partLotLabel } = sandbox;
+  partQtyLabel, partCostLabel, partBillLabel, partLotLabel,
+  rentalSubText, equipSubText, addEquipment, pushEquipment } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -267,4 +268,90 @@ test('the picker knows nothing about the walk', () => {
 // to do with the name over it.
 test('nothing in the picker put a banner up', () => {
   assert.deepEqual(banners, []);
+});
+
+// ---------------------------------------------------------------------------
+// THE EQUIPMENT ADDER
+// ---------------------------------------------------------------------------
+// A day of his own gear, on a visit or on an invoice. The two screens held a
+// copy each of these forty lines, right down to the wording of the banner, and
+// the only real difference between them was one noun. What is pinned here is
+// the shape of the line and the one refusal: a tool cannot go on twice,
+// because a second line for the same tool is a day billed twice.
+
+function toolWorld() {
+  const d = S.emptyData();
+  const tool = S.newTool(d, 'Scissor lift', 300000);
+  const list = [];
+  const saved = [];
+  const closed = [];
+  const added = [];
+  banners.length = 0;
+  const opts = {
+    data: d,
+    persistOr: (restore) => { saved.push(restore); return true; },
+    onChanged: () => {},
+    onAdded: (line) => added.push(line),
+    onClose: () => closed.push(true),
+    noun: 'visit',
+  };
+  return { d, tool, list, opts, saved, closed, added };
+}
+
+test('pushEquipment puts one day of the tool on the list, at the rate it carries', () => {
+  const w = toolWorld();
+  const line = pushEquipment(w.list, w.tool, 15000, w.opts);
+  assert.deepEqual(line, { equipmentId: w.tool.id, name: 'Scissor lift', days: 1, dayCents: 15000 });
+  assert.strictEqual(w.list.length, 1);
+  assert.strictEqual(w.list[0], line);
+  assert.deepStrictEqual(w.added, [line], 'the caller is handed the line, to open its strip on');
+  assert.deepStrictEqual(banners, ['Scissor lift added at $150.00 a day. Tap it to change the days.']);
+  // One save, and its restore takes the line back off.
+  assert.strictEqual(w.saved.length, 1);
+  w.saved[0]();
+  assert.deepStrictEqual(w.list, []);
+});
+
+test('a refused save leaves nothing on the list and nothing for the caller to open', () => {
+  const w = toolWorld();
+  w.opts.persistOr = () => false;
+  const line = pushEquipment(w.list, w.tool, 15000, w.opts);
+  assert.strictEqual(line, null);
+  assert.deepStrictEqual(w.added, []);
+});
+
+test('a tool already on the list is refused, by name, and nothing is written', () => {
+  const w = toolWorld();
+  pushEquipment(w.list, w.tool, 15000, w.opts);
+  banners.length = 0;
+  w.saved.length = 0;
+  addEquipment(w.list, w.tool, w.opts);
+  assert.strictEqual(w.list.length, 1, 'a second line is a day billed twice');
+  assert.deepStrictEqual(w.saved, [], 'nothing to save');
+  assert.deepStrictEqual(banners, ['Scissor lift is already on this visit.']);
+  // The tool list it was picked from is answered and closes with it.
+  assert.deepStrictEqual(w.closed, [true]);
+  // The noun is the only thing that differs between the two screens.
+  w.opts.noun = 'invoice';
+  banners.length = 0;
+  addEquipment(w.list, w.tool, w.opts);
+  assert.deepStrictEqual(banners, ['Scissor lift is already on this invoice.']);
+});
+
+test('addEquipment puts a priced tool straight on, at the day rate Settings works out', () => {
+  const w = toolWorld();
+  addEquipment(w.list, w.tool, w.opts);
+  assert.strictEqual(w.list.length, 1);
+  // 4% of $3,000, to the nearest $5.
+  assert.strictEqual(w.list[0].dayCents, B.equipmentDayRate(300000, w.d.settings.equipmentPct));
+  assert.deepStrictEqual(w.closed, [], 'nothing was refused, so nothing was closed early');
+});
+
+test('the two sub-lines a shared line wears', () => {
+  assert.equal(rentalSubText({ name: 'Boom lift', days: 1, cents: 28500, markup: true }),
+    '1 day · $285.00 · markup on');
+  assert.equal(rentalSubText({ name: 'Boom lift', days: 3, cents: 50100, markup: false }),
+    '3 days · $501.00 · markup off');
+  assert.equal(equipSubText({ name: 'Scissor lift', days: 1, dayCents: 15000 }), '1 day · $150.00 a day');
+  assert.equal(equipSubText({ name: 'Scissor lift', days: 2.5, dayCents: 15000 }), '2.5 days · $150.00 a day');
 });

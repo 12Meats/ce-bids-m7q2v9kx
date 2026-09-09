@@ -353,7 +353,7 @@ function buildLogLines(host, e) {
   });
 
   (e.rentals || []).forEach((x) => {
-    const line = lineRow(x.name || 'Rental', logRentalSub(x), moneyText(x.cents),
+    const line = lineRow(x.name || 'Rental', rentalSubText(x), moneyText(x.cents),
       () => { logRentalMenu = logRentalMenu === x ? null : x; render(); });
     box.appendChild(line);
     if (logRentalMenu === x) {
@@ -368,11 +368,11 @@ function buildLogLines(host, e) {
   });
 
   (e.equipment || []).forEach((x) => {
-    const line = lineRow(x.name || 'Equipment', numText(x.days) + (x.days === 1 ? ' day' : ' days') + ' · ' + moneyText(x.dayCents) + ' a day',
+    const line = lineRow(x.name || 'Equipment', equipSubText(x),
       BidMath.fmt(BidMath.equipmentLine(x)),
       () => { logEquipMenu = logEquipMenu === x ? null : x; render(); });
     box.appendChild(line);
-    if (logEquipMenu === x) buildLogEquipActions(box, line, e, x);
+    if (logEquipMenu === x) equipActions(box, line, e.equipment, x, logEquipOpts(e));
   });
 
   // The tool list takes the place of the three buttons while it is up: it IS
@@ -406,12 +406,6 @@ function buildLogLines(host, e) {
   }));
   box.appendChild(nav);
   host.appendChild(box);
-}
-
-function logRentalSub(x) {
-  return numText(x.days) + (x.days === 1 ? ' day' : ' days')
-    + ' · ' + moneyText(x.cents)
-    + ' · markup ' + (x.markup ? 'on' : 'off');
 }
 
 // The add-a-part flow: the picker, onto this entry's own items.
@@ -468,79 +462,27 @@ function logAddRental(e, prefill) {
   });
 }
 
-// His own gear carries its day rate with it, so the line lands priced. A tool
-// Settings has no cost for is asked about rather than added at $0: a $0
-// equipment line is a day of his own gear given away, and on the glass it
-// looks exactly like a priced one.
+// His own gear, added and edited through picker.js's shared adder: the invoice
+// screen offers the identical three questions, and the only difference between
+// the two was the noun in one banner.
+//
+// persistSettings is the shell's own save rather than logCommit: what a tool
+// cost new is a fact about the tool, true whether or not this visit is ever
+// saved, and on a new visit logCommit writes nothing.
+function logEquipOpts(e) {
+  return {
+    data: logData(),
+    persistOr: logCommit,
+    persistSettings: persistOr,
+    onChanged: render,
+    noun: 'visit',
+    onAdded: (line) => { logSheet = null; logEquipMenu = line; },
+    onClose: () => { logEquipMenu = null; render(); },
+  };
+}
+
 function logAddEquipment(e, equip) {
-  const settings = logData().settings;
-  const existing = (e.equipment || []).find((x) => x.equipmentId === equip.id);
-  if (existing) {
-    logSheet = null;
-    showBanner((equip.name || 'That tool') + ' is already on this visit.');
-    render();
-    return;
-  }
-  const rate = equipmentDayCents(equip, settings.equipmentPct);
-  if (rate != null) { logPushEquipment(e, equip, rate); return; }
-  promptMoney(null, {
-    label: 'What does a ' + (equip.name || 'tool') + ' cost new?',
-    done: (cents) => {
-      if (cents === null || !(cents > 0)) return;
-      const prev = equip.costCents;
-      equip.costCents = cents;
-      // Settings is written on its own: what a tool cost is true whether or not
-      // the line that asked makes it onto this visit, and a refused save must
-      // not leave Settings holding a number the disk never took.
-      if (!persistOr(() => { equip.costCents = prev; })) { render(); return; }
-      const made = equipmentDayCents(equip, settings.equipmentPct);
-      logPushEquipment(e, equip, made == null ? 0 : made);
-    },
-  });
-}
-
-function logPushEquipment(e, equip, dayCents) {
-  const line = { equipmentId: equip.id, name: equip.name, days: 1, dayCents };
-  e.equipment.push(line);
-  if (!logCommit(() => {
-    const i = e.equipment.indexOf(line);
-    if (i !== -1) e.equipment.splice(i, 1);
-  })) { render(); return; }
-  logSheet = null;
-  logEquipMenu = line;
-  showBanner((equip.name || 'The tool') + ' added at ' + moneyText(dayCents) + ' a day. Tap it to change the days.', 'ok');
-  render();
-}
-
-function buildLogEquipActions(box, lineEl, e, x) {
-  const close = () => { logEquipMenu = null; render(); };
-  const strip = attachedStrip(lineEl, [
-    { label: 'Days', onTap: () => {
-      promptNumber(x.days, {
-        label: (x.name || 'Tool') + ', how many days?',
-        allowDecimal: true,
-        done: (v) => {
-          if (v === null) return;
-          if (!(v > 0)) { showBanner('Days have to be more than zero'); render(); return; }
-          const prev = x.days;
-          x.days = v;
-          logCommit(() => { x.days = prev; });
-          close();
-        },
-      });
-    } },
-    { label: 'Delete', quiet: true, onTap: async () => {
-      const ok = await confirmPanel('Delete ' + (x.name || 'this line') + '?', { ok: 'Delete', danger: true });
-      if (!ok) { render(); return; }
-      const i = e.equipment.indexOf(x);
-      if (i !== -1) {
-        e.equipment.splice(i, 1);
-        logCommit(() => { e.equipment.splice(i, 0, x); });
-      }
-      close();
-    } },
-  ], { cancel: close });
-  if (!strip.parentNode) box.appendChild(strip);
+  addEquipment(e.equipment, equip, { ...logEquipOpts(e), onClose: () => { logSheet = null; } });
 }
 
 // ---------------------------------------------------------------------------
@@ -616,9 +558,8 @@ function renderLogBilled(host, e, inv) {
   (e.items || []).forEach((it) => {
     box.appendChild(lineRow(it.name, itemCountText(it.qty, it.unit, it.costCents), null, null));
   });
-  (e.rentals || []).forEach((x) => box.appendChild(lineRow(x.name || 'Rental', logRentalSub(x), null, null)));
-  (e.equipment || []).forEach((x) => box.appendChild(lineRow(x.name || 'Equipment',
-    numText(x.days) + (x.days === 1 ? ' day' : ' days') + ' · ' + moneyText(x.dayCents) + ' a day', null, null)));
+  (e.rentals || []).forEach((x) => box.appendChild(lineRow(x.name || 'Rental', rentalSubText(x), null, null)));
+  (e.equipment || []).forEach((x) => box.appendChild(lineRow(x.name || 'Equipment', equipSubText(x), null, null)));
   if (e.notes) box.appendChild(caption(e.notes));
   box.appendChild(lineRow('Billed on ' + (inv.number === null ? 'a draft invoice' : '#' + inv.number),
     'Open the invoice these hours are on', null, () => show('invoice', inv.id)));
