@@ -142,7 +142,8 @@ test('isEmailAddress refuses whitespace anywhere in the address', () => {
 // that has really gone. Every one of them fails silently when it is wrong: a
 // PDF that never leaves, or a confirm naming the wrong week's file.
 
-const { backupDateFromName, restoredBackupDate, pendingPdfs, backupSelection } = sandbox;
+const { backupDateFromName, restoredBackupDate, pendingPdfs, backupSelection,
+  invoicePdfIds } = sandbox;
 
 // Midnight local of a plain day, the way the app reads its own dates.
 function at(iso, hour, min) {
@@ -885,4 +886,90 @@ test('deferredBanner holds while a panel is open, fires once on flush, and never
   // Clear glass at show() time skips the holding altogether.
   deferredBanner().show('Marked sent', 'ok');
   assert.deepEqual(shown[1], ['Marked sent', 'ok']);
+});
+
+// ---------------------------------------------------------------------------
+// TWO KINDS OF PAPER, ONE PILE
+// ---------------------------------------------------------------------------
+// A proposal and an invoice both live in the pdf store, under two prefixes,
+// and both have to reach his computer. Settings parses each stored id as one
+// or the other and hands the lot to backupSelection as ONE list: two piles
+// would be two buttons to remember, and the older of the two would be the one
+// he forgot. So the ordering and the cap have to work across both kinds.
+
+// What settings.js does to a raw list of stored ids, in one line, so the test
+// is pinning the real rule rather than a copy of it.
+function parseAll(ids) {
+  return ids.map((id) => bidPdfParse(id) || invoicePdfParse(id)).filter(Boolean);
+}
+
+test('a mixed pile sorts by when it was made, not by which kind it is', () => {
+  const bidId = '8f1c2b34-5d6e-47a8-9012-3456789abcde';
+  const invId = 'a1b2c3d4-1111-2222-3333-444455556666';
+  const ids = [
+    invoicePdfPrefix(invId) + 400,
+    bidPdfPrefix(bidId) + 100,
+    invoicePdfPrefix(invId) + 200,
+    bidPdfPrefix(bidId) + 300,
+  ];
+  const entries = parseAll(ids);
+  assert.strictEqual(entries.length, 4, 'every id parsed as exactly one kind');
+
+  // Oldest first, and the two kinds interleave.
+  assert.deepEqual(pendingPdfs(entries, null).map((e) => e.at), [100, 200, 300, 400]);
+  assert.deepEqual(pendingPdfs(entries, null).map((e) => (e.bidId ? 'bid' : 'inv')),
+    ['bid', 'inv', 'bid', 'inv']);
+
+  // The watermark is a moment, not a kind: everything on or before it has gone,
+  // whichever document it belonged to.
+  assert.deepEqual(pendingPdfs(entries, 200).map((e) => e.at), [300, 400]);
+});
+
+test('the cap takes the oldest of both kinds and leaves the rest pending', () => {
+  const bidId = '8f1c2b34-5d6e-47a8-9012-3456789abcde';
+  const invId = 'a1b2c3d4-1111-2222-3333-444455556666';
+  const entries = parseAll([
+    bidPdfPrefix(bidId) + 100,
+    invoicePdfPrefix(invId) + 200,
+    bidPdfPrefix(bidId) + 300,
+    invoicePdfPrefix(invId) + 400,
+  ]);
+
+  const sel = backupSelection(entries, null, 2);
+  assert.deepEqual(sel.send.map((e) => e.at), [100, 200]);
+  assert.strictEqual(sel.truncated, 2);
+  // The watermark lands on the newest one that actually fits, so the invoice
+  // at 400 is still pending next time rather than stranded behind the cap.
+  assert.strictEqual(sel.nextSentThroughMs, 200);
+
+  const next = backupSelection(entries, sel.nextSentThroughMs, 2);
+  assert.deepEqual(next.send.map((e) => e.at), [300, 400]);
+  assert.strictEqual(next.truncated, 0);
+  assert.strictEqual(next.nextSentThroughMs, 400);
+
+  // And each selected entry still says which document it came from, which is
+  // what names the file in the share sheet.
+  assert.deepEqual(sel.send.map((e) => e.bidId || e.invoiceId), [bidId, invId]);
+});
+
+test('invoicePdfIds keeps the PDFs of invoices still on the file and nothing else', () => {
+  const bidId = '8f1c2b34-5d6e-47a8-9012-3456789abcde';
+  const live = 'a1b2c3d4-1111-2222-3333-444455556666';
+  const gone = 'deadbeef-9999-8888-7777-666655554444';
+  const data = { invoices: [{ id: live }] };
+  const ids = [
+    bidPdfPrefix(bidId) + 100,
+    invoicePdfPrefix(live) + 200,
+    invoicePdfPrefix(gone) + 300,
+    'photo-nonsense',
+    invoicePdfPrefix(live) + 400,
+  ];
+  assert.deepEqual(invoicePdfIds(data, ids),
+    [invoicePdfPrefix(live) + 200, invoicePdfPrefix(live) + 400]);
+
+  // A file from before this release has no invoices array at all, and nothing
+  // on the phone belongs to an invoice: none of these have a home.
+  assert.deepEqual(invoicePdfIds({}, ids), []);
+  assert.deepEqual(invoicePdfIds(data, null), []);
+  assert.deepEqual(invoicePdfIds(null, ids), []);
 });

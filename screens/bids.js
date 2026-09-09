@@ -209,10 +209,18 @@ async function bidsDelete(id) {
 // its areas (and its change orders' areas) point at, and every PDF it ever
 // produced. Not awaited by the caller — the bid is already deleted and the
 // list has already been redrawn — so this only ever has news, never a decision.
+// bidPdfParse rather than a prefix test written out here: it was the last
+// hand-rolled reading of a stored id in the app, and it is the one place a
+// second kind of PDF could be swept up by accident. An invoice's PDF sits in
+// the same store under a longer prefix that begins with the bid's, so a raw
+// indexOf test on a bid id that happened to start "inv-" would have taken
+// invoices with it. The parser refuses the other kind by name.
 function bidsDeleteBlobs(bid) {
-  const prefix = bidPdfPrefix(bid.id);
   Photos.list('pdf')
-    .then((ids) => Photos.delMany(bidPhotoIds(bid).concat(ids.filter((x) => x.indexOf(prefix) === 0))))
+    .then((ids) => Photos.delMany(bidPhotoIds(bid).concat(ids.filter((x) => {
+      const hit = bidPdfParse(x);
+      return !!hit && hit.bidId === bid.id;
+    }))))
     .then((ok) => {
       // The sweep takes the photos and the PDFs together, so a failure here
       // may have left either kind behind. Naming only photos sends him looking

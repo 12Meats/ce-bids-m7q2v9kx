@@ -1205,6 +1205,25 @@ function invoicePdfParse(id) {
   return invoiceId ? { id, invoiceId, at } : null;
 }
 
+// Every PDF on the phone that belongs to an invoice still on the file, out of
+// a list of stored ids. bidPhotoIds' opposite number for the other document:
+// one asks a bid what it owns, this asks the FILE which of these ids anything
+// still owns.
+//
+// The ids come in rather than being read here because reading them is a
+// promise and this is not: Settings has already awaited Photos.list('pdf') to
+// draw the pile, and a sweep that wanted to know what is stranded would have
+// the same list in hand. An id whose invoice has been deleted is not returned,
+// which is the whole use: what is left is what still has a home.
+function invoicePdfIds(data, ids) {
+  const live = new Set(((data && data.invoices) || []).map((inv) => inv.id));
+  return (ids || []).reduce((out, id) => {
+    const hit = invoicePdfParse(id);
+    if (hit && live.has(hit.invoiceId)) out.push(id);
+    return out;
+  }, []);
+}
+
 // ---------------------------------------------------------------------------
 // Backups
 // ---------------------------------------------------------------------------

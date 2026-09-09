@@ -36,6 +36,7 @@ const sandbox = {
   Catalog: require('../catalog.js'),
   InvMath: require('../invmath.js'),
   DocModel: require('../docmodel.js'),
+  InvDoc: require('../invdoc.js'),
   registerScreen: () => {},
   render: () => {},
   show: () => {},
@@ -64,7 +65,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'settings.js'), 'utf8
   { filename: 'settings.js' });
 
 const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
-  settingsCustomerValue, settingsAddressValue } = sandbox;
+  settingsCustomerValue, settingsAddressValue, settingsBackupPdfName } = sandbox;
 
 // ---------------------------------------------------------------------------
 // THE NEXT INVOICE NUMBER
@@ -161,4 +162,34 @@ test('an address is two lines on paper and one line on the row', () => {
   assert.strictEqual(settingsAddressValue({ address: '2008 S Hardy Drive' }), '2008 S Hardy Drive');
   assert.strictEqual(settingsAddressValue({ address: '2008 S Hardy Drive\nTempe, AZ 85282' }),
     '2008 S Hardy Drive +1');
+});
+
+// ---------------------------------------------------------------------------
+// WHAT A PDF IS CALLED WHEN IT LEAVES THE PHONE
+// ---------------------------------------------------------------------------
+// The pile carries proposals and invoices together, and the share sheet shows
+// the NAME. An id is what the phone stores it under; the name is what he will
+// be looking for in a folder six months from now, so the pile asks each
+// document to name itself and hangs the archive stamp on the end so three
+// revisions of one paper arrive as three files.
+
+test('an invoice in the backup pile is named the way the invoice names itself', () => {
+  const w = world();
+  const inv = invoiceOn(w.d, w.uda.id, 166818);
+  assert.strictEqual(settingsBackupPdfName({ id: 'x', invoiceId: inv.id, at: 1757000000000 }),
+    'CE Invoice 166818 - UDA - UF Project-1757000000000.pdf');
+
+  // An invoice that is no longer on the file still gets a file name: the bytes
+  // are in hand and a share sheet with a blank name on it is worse.
+  assert.strictEqual(settingsBackupPdfName({ id: 'x', invoiceId: 'gone', at: 42 }), 'invoice-42.pdf');
+});
+
+test('a proposal in the same pile is still named by the bid', () => {
+  const w = world();
+  const b = S.newBid(w.d, { customerName: 'UDA', title: 'Cheese plant lighting', jobType: 'project', dateISO: '2026-08-01' });
+  w.d.bids.push(b);
+  const name = settingsBackupPdfName({ id: 'x', bidId: b.id, at: 7 });
+  assert.ok(name.indexOf('UDA') !== -1, name);
+  assert.ok(name.endsWith('-7.pdf'), name);
+  assert.strictEqual(settingsBackupPdfName({ id: 'x', bidId: 'gone', at: 7 }), 'proposal-7.pdf');
 });

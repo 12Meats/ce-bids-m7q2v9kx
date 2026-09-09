@@ -2318,7 +2318,7 @@ const SET_BACKUP_PDF_MAX = 25;      // how many new PDFs one share sheet is aske
 const SET_BACKUP_TITLE = 'CE Bids backup';
 
 let settingsBackupBusy = false;
-let settingsBackupPdfs = [];         // { id, bidId, at, blob } still pending, oldest first
+let settingsBackupPdfs = [];         // { id, bidId|invoiceId, at, blob } still pending, oldest first
 let settingsBackupPdfExtra = 0;      // how many more there were than the cap allows
 let settingsBackupQueue = null;      // { id, at, file } still to be offered one at a time
 let settingsBackupQueueThrough = null; // where pdfsSentThroughMs lands once that queue is empty
@@ -2394,9 +2394,17 @@ function settingsLoadBackupPdfs() {
   };
   return Photos.list('pdf').then((ids) => {
     if (token !== settingsBackupPdfToken) return;
-    const entries = (ids || []).map(bidPdfParse).filter(Boolean);
+    // BOTH kinds of document, in ONE ordered list. A proposal and an invoice
+    // are both paper that left this phone and both need to reach his computer;
+    // two piles with two watermarks would be two things to remember to press,
+    // and the older of the two would be the one he forgot. Exactly one of the
+    // two parsers answers for any id (each refuses the other's prefix), so an
+    // id that is neither is simply dropped.
+    const entries = (ids || []).map((id) => bidPdfParse(id) || invoicePdfParse(id)).filter(Boolean);
     const sel = backupSelection(entries, through, SET_BACKUP_PDF_MAX);
-    const take = sel.send.map((x) => ({ id: x.id, bidId: x.bidId, at: x.at, blob: null }));
+    // The whole entry is carried, whichever kind it is: the name below needs
+    // the bidId or the invoiceId it came with to find the document it belongs to.
+    const take = sel.send.map((x) => Object.assign({}, x, { blob: null }));
     return Promise.all(take.map((e) => Photos.get(e.id).then((b) => { e.blob = b; }, () => { e.blob = null; })))
       .then(() => {
         if (token !== settingsBackupPdfToken) return;
@@ -2431,14 +2439,30 @@ function settingsBackupJsonFile() {
   return new File([JSON.stringify(state.data)], settingsBackupJsonName(), { type: 'application/json' });
 }
 
-// The proposal's own file name with the millisecond it was made on the end, so
+// The document's own file name with the millisecond it was made on the end, so
 // three revisions of one bid arrive as three files rather than one that
 // overwrote the other two.
+//
+// An invoice is named by InvDoc the way a proposal is named by DocModel: the
+// name he would recognize in a folder on his computer, "CE Invoice 166818 -
+// UDA - UF Project", rather than the id it is stored under. Both are wrapped,
+// because a document that cannot name itself must not take the whole backup
+// down with it — the fallback still says which piece of paper it is.
 function settingsBackupPdfName(entry) {
-  const bid = state.data.bids.find((b) => b.id === entry.bidId);
+  const d = state.data;
+  if (entry.invoiceId) {
+    const inv = (d.invoices || []).find((x) => x.id === entry.invoiceId);
+    let base = 'invoice';
+    if (inv) {
+      try { base = String(InvDoc.fileName(inv, d)).replace(/\.pdf$/i, ''); }
+      catch (err) { base = 'invoice-' + (inv.number === null ? 'draft' : inv.number); }
+    }
+    return base + '-' + entry.at + '.pdf';
+  }
+  const bid = d.bids.find((b) => b.id === entry.bidId);
   let base = 'proposal';
   if (bid) {
-    try { base = String(DocModel.fileName(bid, state.data)).replace(/\.pdf$/i, ''); }
+    try { base = String(DocModel.fileName(bid, d)).replace(/\.pdf$/i, ''); }
     catch (err) { base = 'bid-' + bid.number; }
   }
   return base + '-' + entry.at + '.pdf';
