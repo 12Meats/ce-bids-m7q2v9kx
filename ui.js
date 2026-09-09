@@ -239,6 +239,54 @@ function lineRow(name, sub, value, onTap, opts) {
   return node;
 }
 
+// checkRow(label, sub, on, onToggle, onOpen) -> a lineRow with a square check
+// in front of it. Two targets on one line, and they mean different things: the
+// square says whether this group is in the batch about to be billed, the text
+// opens what it is about. Two buttons rather than one row with a corner that
+// behaves differently, so a thumb that misses by 4px does the harmless one.
+//
+// The mark is always in the DOM and turns transparent when it is off, so
+// checking a row cannot make the row move.
+function checkRow(label, sub, on, onToggle, onOpen) {
+  const wrap = document.createElement('div');
+  wrap.className = 'check-row';
+
+  const box = document.createElement('button');
+  box.type = 'button';
+  box.className = 'check-box' + (on ? ' on' : '');
+  box.textContent = '✓';
+  box.setAttribute('aria-pressed', on ? 'true' : 'false');
+  box.setAttribute('aria-label', (on ? 'Uncheck ' : 'Check ') + label);
+  if (onToggle) box.addEventListener('click', onToggle);
+  wrap.appendChild(box);
+
+  const text = lineRow(label, sub, null, onOpen);
+  text.classList.add('check-text');
+  wrap.appendChild(text);
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// THE PILE SELECTION
+// ---------------------------------------------------------------------------
+// Which log entries are checked to be billed. It is one answer read by two
+// screens — the Invoices home, where he checks and unchecks, and the Bill
+// these review, which bills exactly what was checked — and a screen may never
+// call another screen's file. So it lives here, with the other things both of
+// them use, rather than as a module variable on whichever of the two happened
+// to be written first.
+//
+// null is the default and means EVERYTHING unbilled is checked, which is not
+// the same as a Set holding every id today: he logs an entry, comes back, and
+// the new one is checked too, because he has never said otherwise.
+const pileSelection = (function () {
+  let checked = null;
+  return {
+    get() { return checked; },
+    set(next) { checked = (next instanceof Set) ? next : null; },
+  };
+})();
+
 // tapCard({ title, sub, note, tag, value, onTap }) -> a whole card that is one
 // button. The areas on the walk are the reason: they were rows inside a shared
 // card, which made the most important list in the app read as a paragraph. A

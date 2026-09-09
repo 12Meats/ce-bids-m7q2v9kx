@@ -34,6 +34,10 @@ const ASSETS = [
   'screens/job.js',
   'screens/settings.js',
   'screens/reports.js',
+  'screens/invoices.js',
+  'screens/log.js',
+  'screens/billreview.js',
+  'screens/invoice.js',
 ];
 
 self.addEventListener('install', (event) => {

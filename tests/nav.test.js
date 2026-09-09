@@ -128,6 +128,9 @@ registerScreen('bids', { id: 'screen-bids', title: 'Bids', back: null, tab: 'bid
 registerScreen('bid', { id: 'screen-bid', title: 'Bid', back: 'bids', tab: 'bids', render: () => {} });
 registerScreen('walk', { id: 'screen-walk', title: 'Walkthrough', back: 'bid', tab: 'bids', render: () => {} });
 registerScreen('settings', { id: 'screen-settings', title: 'Settings', back: null, tab: 'settings', render: () => {} });
+// The third tab. It is a tab home like Bids: no Back of its own, and the way
+// out of it is the tab bar or the gesture.
+registerScreen('invoices', { id: 'screen-invoices', title: 'Invoices', back: null, tab: 'invoices', render: () => {} });
 
 state.unlocked = true;
 
@@ -278,6 +281,28 @@ test('a tab tapped from inside a bid pushes, and Back returns to the walk', () =
 
   onPopState({ state: { ceb: 3 } });
   assert.strictEqual(state.screen, 'walk', 'Back off the tab lands where he was standing');
+});
+
+// The third tab, added with the Invoices release. The shell's two rules do not
+// change for a third tab, so this says both of them once with the new one in
+// them: tab to tab replaces, and a tab tapped from inside a bid pushes and
+// hands Back the screen he left.
+test('the Invoices tab shows from Bids, and Back off it returns to where he tapped it', () => {
+  show('bids', undefined, { replace: true });
+  const pushes = history.pushes;
+  // The tab bar's own call from another tab home: two places to stand.
+  show('invoices', undefined, { replace: true });
+  assert.strictEqual(state.screen, 'invoices');
+  assert.strictEqual(history.pushes, pushes, 'tab to tab pushes nothing');
+
+  // And from inside a bid, where it is a step away rather than a place to
+  // stand: Back off it comes back to the bid, not out of the app.
+  show('bids', undefined, { replace: true });
+  show('bid');
+  show('invoices', undefined, { tabFrom: state.screen });
+  assert.strictEqual(state.screen, 'invoices');
+  assert.strictEqual(goBack(), true);
+  assert.strictEqual(state.screen, 'bid');
 });
 
 test('tab to tab replaces, and Back off it does not jump to a stale screen', () => {

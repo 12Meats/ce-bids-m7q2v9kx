@@ -702,6 +702,58 @@
       color: var(--color-text-muted);
     }
 
+    /* ---------- Check rows ---------- */
+    /* The pile on the Invoices home. Two targets in one line: the square on
+       the left toggles whether this group gets billed, and everything right of
+       it opens the entry. They are separate buttons rather than one row with a
+       corner that behaves differently, because a thumb that misses by 4px
+       should do the harmless one, not the surprising one. */
+    .check-row { display: flex; align-items: center; gap: var(--space-2); padding: 4px 0; }
+    .check-box {
+      flex: none;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border-radius: 7px;
+      border: 2px solid var(--color-border);
+      background: var(--color-surface);
+      /* The mark is always in the DOM, so the row does not change width when
+         it is turned off, and it is invisible rather than absent. */
+      color: transparent;
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .check-box.on {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: #fff;
+    }
+    /* The text half of the row is a lineRow, so it presses and wears its
+       chevron like every other tappable line in the app; all this does is let
+       it take the space the square does not. */
+    .check-row .check-text { flex: 1 1 auto; min-width: 0; }
+
+    /* ---------- Invoices ---------- */
+    /* Who owes you: the one number the tab exists to answer, on the navy the
+       rest of the app spends on the primary button. */
+    .inv-owes { background: var(--color-accent); color: #fff; }
+    .inv-owes .caption, .inv-owes .card-title { color: #dbe3ee; }
+    .inv-big { font-size: 26px; font-weight: 800; line-height: 1.2; margin: 4px 0; }
+    /* Old, not wrong. Same amber as .inline-warn, because it is the same kind
+       of news: a condition the row is still in, said quietly. Nothing on a
+       screen in this app is red. */
+    .inv-stale {
+      background: var(--color-warn-bg);
+      border-radius: 10px;
+      padding-left: var(--space-1);
+      padding-right: var(--space-1);
+    }
+    .inv-stale .walk-row-sub { color: var(--color-warn-text); }
+
     /* ---------- The pinned action ---------- */
     /* One per screen, above the tab bar: the single thing this screen is for,
        never a scroll away. The spacer is a sibling in the flow rather than a
@@ -1955,10 +2007,32 @@
       <!-- Filled entirely by screens/reports.js. -->
       <div id="reportsContent" class="screen-content"></div>
     </section>
+
+    <!-- ---------- Invoices ---------- -->
+    <section id="screen-invoices" class="screen" hidden>
+      <!-- Filled entirely by screens/invoices.js. -->
+      <div id="invoicesContent" class="screen-content"></div>
+    </section>
+
+    <!-- ---------- Log hours ---------- -->
+    <section id="screen-log" class="screen" hidden>
+      <div id="logContent" class="screen-content"></div>
+    </section>
+
+    <!-- ---------- Bill these ---------- -->
+    <section id="screen-billreview" class="screen" hidden>
+      <div id="billreviewContent" class="screen-content"></div>
+    </section>
+
+    <!-- ---------- One invoice ---------- -->
+    <section id="screen-invoice" class="screen" hidden>
+      <div id="invoiceContent" class="screen-content"></div>
+    </section>
   </main>
 
   <nav id="tabbar" class="tabbar" hidden>
     <button type="button" class="tab" data-tab="bids">Bids</button>
+    <button type="button" class="tab" data-tab="invoices">Invoices</button>
     <button type="button" class="tab" data-tab="settings">Settings</button>
   </nav>
 
@@ -2064,5 +2138,9 @@
   <script src="screens/job.js"></script>
   <script src="screens/settings.js"></script>
   <script src="screens/reports.js"></script>
+  <script src="screens/invoices.js"></script>
+  <script src="screens/log.js"></script>
+  <script src="screens/billreview.js"></script>
+  <script src="screens/invoice.js"></script>
 </body>
 </html>
