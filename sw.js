@@ -1,6 +1,6 @@
-// CE Bids service worker — cache-first offline support.
+// CE Billing service worker — cache-first offline support.
 // Bump CACHE on every deploy that changes any file in ASSETS.
-const CACHE = 'bids-v2.4';
+const CACHE = 'billing-v3';
 // Every file the app loads. A missing entry here means that file silently
 // falls back to the network, which in a plant with no signal means a blank
 // screen. tests/sw.test.js cross-checks this list against index.html.
@@ -65,7 +65,7 @@ self.addEventListener('activate', (event) => {
       // Debug hook: with no dev tools available on the owner's iPhone, this line
       // (visible via Safari remote inspect) is how we confirm which cache version
       // is actually active when someone reports "my app looks old".
-      .then(() => console.log('CE Bids SW active, cache ' + CACHE))
+      .then(() => console.log('CE Billing SW active, cache ' + CACHE))
   );
 });
 

@@ -2315,7 +2315,7 @@ function buildSetMore() {
 
 const SET_BACKUP_STALE_DAYS = 14;   // the home screen's band uses the same number
 const SET_BACKUP_PDF_MAX = 25;      // how many new PDFs one share sheet is asked to carry
-const SET_BACKUP_TITLE = 'CE Bids backup';
+const SET_BACKUP_TITLE = 'CE Billing backup';
 
 let settingsBackupBusy = false;
 let settingsBackupPdfs = [];         // { id, bidId|invoiceId, at, blob } still pending, oldest first
@@ -2739,7 +2739,7 @@ function settingsRestoreFrom(file) {
   read.then((text) => {
     const data = Store.validateImport(text);
     if (!data) {
-      showBanner("That file isn't a CE Bids backup", 'danger');
+      showBanner("That file isn't a CE Billing backup", 'danger');
       render();
       return;
     }
@@ -3016,14 +3016,17 @@ const SETTINGS_CARDS = [
   ['set-backup', () => buildSetBackup()],
 ];
 
-// "CE Bids · v2.2 · built Sep 5, 2026". The version is the cache the phone is
+// "CE Billing · v3 · built Sep 9, 2026". The version is the cache the phone is
 // actually being served by (APP_VERSION, held to sw.js's CACHE by
 // tests/sw.test.js); the date is APP_BUILT beside it. index.html is served
 // cache-first, so a deploy that forgets to bump CACHE leaves him on old code
 // with no symptom at all — this line is the symptom, and the DATE is the half
 // he can check against the day he was told to update.
 function settingsVersionText() {
-  return 'CE Bids · ' + String(APP_VERSION).replace(/^bids-/, '') + ' · built ' + fmtDate(APP_BUILT);
+  // Both prefixes, because the app was called CE Bids for its first eleven
+  // releases and a phone still on one of those caches reads its own version
+  // out of its own app.js: the line has to strip whichever prefix it finds.
+  return 'CE Billing · ' + String(APP_VERSION).replace(/^(bids|billing)-/, '') + ' · built ' + fmtDate(APP_BUILT);
 }
 
 function renderSettings() {

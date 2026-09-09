@@ -1,8 +1,29 @@
-# CE Bids: Getting Started
+# CE Billing: Getting Started
 
 The app link:
 
 **https://12meats.github.io/ce-bids-m7q2v9kx/**
+
+**The app is called CE Billing now.** It used to be CE Bids. It does everything it
+always did, and it now writes your invoices too. The address above has not
+changed, and nothing on the phone was lost.
+
+**Your icon will still say CE Bids, and that is fine.** The name under the icon
+was set the day you added it and nothing inside the app can change it. Open it
+and the top of the screen says CE Billing. Everything works.
+
+**If you want the icon to say the new name**, it has to come off and go back on,
+and **deleting the icon deletes everything on this phone** (see the warning
+below). So do it in this order, or do not do it at all:
+
+1. **Settings › Backup › Send a backup to Adrian.** Wait until he says he has it.
+2. Hold the icon, delete it, and add it again off the link above the way you did
+   the first time.
+3. Choose your PIN again, then **Settings › Backup › Restore from backup** with
+   the file you just sent.
+
+Photos do not come back that way. If you have not exported them, leave the icon
+alone. It is only a name.
 
 ## Put it on your home screen (do this FIRST)
 
@@ -21,7 +42,7 @@ It asks you to **choose a PIN**. Enter it twice. **Write it down, and tell Adria
 
 Then tap **Settings**. It is a list of doors: a row with a **›** opens its own screen, and **‹ Settings** brings you back. Go through these, in order:
 
-1. **Bid numbers.** The counter starts at **#1**. Set **Next bid number** to your real next invoice number before the first bid.
+1. **Bid numbers.** The counter starts at **#1**. Set **Next bid number** to the number you want your next PROPOSAL to carry, before the first bid. This is not the invoice counter: invoices have their own, under **Settings › Invoices**, and the two count separately.
 2. **Crew ›.** Shawn at $32 and George at $30 are in already. Check both, then **+ Worker** for anyone else and his wage.
 3. **Rates ›.** **Labor rate** and **Rate floor** both come set to **$85**, what UDA pays. The floor is the lowest rate worth working for. **Hours per day** should be 8. Leave the other percentages alone.
 
@@ -75,6 +96,110 @@ Won a bid? Tap **Job**. That is where you:
 
 Wrong button? Until you log hours there is a one tap **Undo Won** or **Reopen** on the bid.
 
+## Invoices
+
+Three moments. Log the visit at the truck, bill the week on Friday, mark the
+check when it comes in.
+
+### Set it up once
+
+**Settings › Invoices.** **Next invoice number** starts at **#1**. Put in your
+real next invoice number the first day, before you write one. The screen says it
+plain: *Set this to your real next number the first day. It only goes up.* It
+counts up on its own after that, and a number you have already used is refused.
+There is no voiding an invoice in here, so the number is the one thing worth
+getting right on day one.
+
+**Default terms** is what prints in the Terms box. It comes set to **Upon
+receipt**, which is what your invoices say.
+
+**Settings › Customers.** Tap a customer and fill in what goes on their paper:
+
+- **Attn** is who it is addressed to, the name under the company.
+- **Address** is the two lines that print under it.
+- **Hourly rate** is what THIS customer is billed an hour. Leave it blank and
+  they bill at your shop rate: the row says *Blank bills at your Settings rate.*
+  UDA is $85. Schreiber is 65 while they are still there.
+- **PO number** is theirs, and it prints on every invoice you write them until
+  you change it. Leave it blank when the customer does not use them.
+
+Under the same customer are their **open projects**, and each one has a quiet
+**Done** on it. Tap Done when a job is finished: *Done projects stop being
+offered on the log screen*, so the list you pick from at the truck stays short.
+
+### At the truck
+
+Tap the **Invoices** tab, then **+ Log hours** at the bottom. It takes about
+twenty seconds:
+
+1. **Customer.** Tap the chip, or **+ New** for one you have never billed.
+2. **Project.** The jobs that customer has open. **+ New** starts one. Pick the
+   same project every time you are on that job: that is what puts a week of
+   visits on one invoice instead of five.
+3. **Date.** Today is already in. Type **0903** on the keypad for another day.
+4. **Who and hours.** Tap a man, put his hours in. **Clear** takes him off.
+5. **Parts, rentals, equipment.** **+ Part** is the same picker as the walk,
+   tiles and a search box. **+ Rental** for a lift. **+ Equipment** for your own.
+   Nothing to add? Leave it empty.
+6. **Notes** is what you saw. It does not go on the customer's paper.
+7. **Save.**
+
+That is the visit. It sits in the pile on the Invoices tab until Friday.
+
+### Friday
+
+Open the **Invoices** tab. The top card is **who owes you**. Under it is **the
+pile**: one row for each job, each week. A row says the days it covers, how old
+it is, how many visits, the hours and the parts. A row goes **yellow** once it
+has been sitting two weeks.
+
+Every row is checked. **Uncheck** anything you want to hold back, then tap
+**Bill these**.
+
+That opens the review. One card per invoice, with the visits listed under it.
+Nothing has a number yet and nothing has gone anywhere.
+
+- **Combine** joins two weeks of the same job into one invoice. That is the
+  catch-up case, when you fell behind.
+- **Split** breaks one card into a separate invoice per visit.
+- Tap a card to open it and look at it properly: change the **billed hours**
+  (the hours you logged sit right beside them), fix a price, add a note, put a
+  **PO number** on it. **Preview** shows the paper.
+
+When they look right, tap **Number and send**. That is the moment the numbers
+are spent, in date order, and the visits lock: they read **Billed on #166818**
+and cannot be edited any more.
+
+Then it walks you through them one at a time. On each invoice tap **Send
+invoice**, pick **Mail**, and answer the two questions the way you do on a
+proposal: **"Sent to the customer?"** and **"Did you save a copy on the phone?"**.
+Saving to Files? Put it in **iCloud Drive › Cantu Electric › Invoices › 2026**.
+
+### When the check comes
+
+Open the invoice off the **Invoices** tab and tap **Record payment**. Put in the
+amount and the day it came in. Part of it is fine: the list then reads **Paid
+$5,000.00 of $12,340.00**, and the **who owes you** card at the top comes down
+by that much. Pay it off and it reads **Paid**.
+
+### A job you bid and won
+
+You do not log hours on a job you priced by the piece. Open the bid, and under
+the job buttons there is a **Bill this job** row saying what is left on it. Tap
+it and answer:
+
+- **Whole amount** invoices the proposal and its change orders, all of it, one
+  line.
+- **Part of it** asks how much, for a job you are billing in pieces. The rest
+  stays on the row for next time.
+
+Either way the invoice is numbered on the spot and opens ready to send. The bid
+then shows each invoice under the row, so **have I been paid for the cheese
+plant** is answered on the bid itself.
+
+A bid with an invoice on it cannot be deleted and cannot go back to Sent. The
+paper is out.
+
 ## Every couple of weeks
 
 Go to **Settings › Backup › Send a backup to Adrian**. His email is copied for you, so paste it in. The home screen nags after two weeks. If the phone is lost, that file is how we get it all back.
@@ -87,7 +212,7 @@ Once three jobs are finished, **Settings › Reports** starts telling you your w
 
 ## If something looks wrong
 
-- At the bottom of **Settings** is a line reading **"CE Bids · v2.1 · built …"**. Read it to Adrian. If it says an older number, close the app all the way and open it again.
+- At the bottom of **Settings** is a line reading **"CE Billing · v3 · built …"**. Read it to Adrian. If it says an older number, close the app all the way and open it again.
 - If a red bar says storage was unreadable, go to **Settings › Backup › Restore from backup**.
 - A yellow **"Nobody on this task"** means a task has days but nobody on it. It still charges truck and gas, so add the guys or take the days off.
 

@@ -116,7 +116,7 @@ test('every screen registers against a section that exists in index.html', () =>
 });
 
 test('the manifest matches the app chrome', () => {
-  assert.strictEqual(MANIFEST.name, 'CE Bids');
+  assert.strictEqual(MANIFEST.name, 'CE Billing');
   assert.strictEqual(MANIFEST.display, 'standalone');
   assert.strictEqual(MANIFEST.start_url, './');
   // The theme color has to match the <meta name="theme-color"> in index.html or
@@ -194,7 +194,7 @@ test('bidmath.js, invmath.js and dates.js load before invdoc.js', () => {
 });
 
 test('APP_BUILT is an ISO date, bumped with the version', () => {
-  // The Settings line reads "CE Bids · v2.2 · built Sep 5, 2026", and the date
+  // The Settings line reads "CE Billing · v3 · built Sep 9, 2026", and the date
   // half comes from here. Dates.fmtDate refuses anything that is not
   // YYYY-MM-DD, so a typo would not print a wrong date, it would print no date
   // at all and the line would trail off mid-sentence.
@@ -232,5 +232,10 @@ test('the cache name is namespaced to this app', () => {
   //
   // A point release is a cache of its own: v2.1 ships changed JS, so it has to
   // miss v2's cache rather than be served out of it.
-  assert.match(CACHE, /^bids-v\d+(\.\d+)?$/);
+  //
+  // Two prefixes, because v3 renamed the app to CE Billing and the cache name
+  // followed it. The old one stays legal here rather than being swapped out:
+  // 'bids-*' is what every phone in the field is holding right now, and a test
+  // that refuses to name it could not tell an upgrade from a mistake.
+  assert.match(CACHE, /^(bids|billing)-v\d+(\.\d+)?$/);
 });

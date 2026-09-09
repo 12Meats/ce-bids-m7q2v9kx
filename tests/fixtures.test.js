@@ -16,7 +16,14 @@
 //   * New bid fields are OPTIONAL with a fallback, which is what lets an old
 //     fixture keep loading with no version bump at all.
 //
-// backup-bids-v2.4.json is this release's own: the v2.3 file after a price
+// backup-bids-v3.json is this release's own, and it is the first one that is
+// not only bids: the v2.4 file after the Invoices tab arrived. Two customers
+// carry a rate, an Attn, an address and a PO; one is hidden; there are two
+// projects, five visits logged at the truck, and three invoices off them. Every
+// bid total is still the v2.4 number, because nothing invoices did may move a
+// bid, and the two invoices that went out are pinned in INVOICE_TOTALS below.
+//
+// backup-bids-v2.4.json is the release before it: the v2.3 file after a price
 // import put a QED part number, QED's name and a new bill-at price on two
 // parts. Every bid total is the v2.3 number, which is the whole point.
 //
@@ -146,6 +153,25 @@ const FIXTURE_TOTALS = {
   // prices moved (the wire to 96, the breaker to 1850) and NOT ONE BID DID:
   // an import is memory for the next bid, never a rewrite of an old one.
   'backup-bids-v2.4.json': { 1: 2607636, 2: 591060, 3: 181040 },
+  // v3's own, and the three numbers are the v2.4 numbers to the cent. That is
+  // the assertion worth having on this release: projects, visits and invoices
+  // are three new arrays on the same document, and not one of them may reach
+  // into what a bid is worth. Bid #3 was won and billed between the two files,
+  // and being won did not move it either.
+  'backup-bids-v3.json': { 1: 2607636, 2: 591060, 3: 181040 },
+};
+
+// THE INVOICE NUMBERS, HARD-CODED, the same way and for the same reason.
+//
+// Only the two that WENT OUT. An invoice a customer is holding is the one
+// piece of paper in this app that can never be re-figured: if a change to
+// invmath moves one of these, an invoice already paid against says a different
+// number than the copy in his customer's hand.
+//
+// Both are worked by hand in the v3 test below, off the rows, rather than
+// copied out of the build that wrote them.
+const INVOICE_TOTALS = {
+  'backup-bids-v3.json': { 166818: 200100, 166819: 181040 },
 };
 
 for (const file of Object.keys(FIXTURE_TOTALS)) {
@@ -363,6 +389,138 @@ test('backup-bids-v2.4.json really is a v2.4 file', () => {
   // Every other part is untouched: absent or null, never a stray string.
   assert.ok(d.catalog.every((p) => p.sku == null || typeof p.sku === 'string'));
 });
+
+// The photograph of THIS release. v3 put three whole arrays on the document
+// (projects, logs, invoices) and six optional keys on a customer, and every one
+// of them is optional, which is exactly why one file has to be on record
+// carrying all of them: an optional key that quietly stops being read breaks
+// nothing a test can see until a phone that has one loads wrong.
+//
+// The money here is worked BY HAND off the rows, not copied out of the build
+// that wrote the file. An invoice already in a customer's hands is the one
+// thing in this app that can never be re-figured.
+test('backup-bids-v3.json really is a v3 file', () => {
+  const I = require('../invmath.js');
+  const d = S.validateImport(fs.readFileSync(path.join(dir, 'backup-bids-v3.json'), 'utf8'));
+  assert.ok(d, 'the v3 fixture does not load');
+
+  // The two Settings keys v3 added, and a counter set to his real book.
+  assert.strictEqual(d.settings.invoiceTerms, 'Upon receipt');
+  assert.strictEqual(d.settings.nextInvoiceNumber, 166821);
+  assert.strictEqual(S.effectiveNextInvoiceNumber(d), 166821,
+    'the seed is ahead of every number on the file, so it stands as it is');
+  assert.strictEqual(d.settings.nextNumber, 4, 'the bid counter did not move');
+
+  // The customer card: a rate, who it is addressed to, two lines of address,
+  // a PO, and one customer whose terms beat the Settings default.
+  const uda = d.customers.find((c) => c.name === 'UDA');
+  const sch = d.customers.find((c) => c.name === 'Schreiber Foods');
+  assert.strictEqual(uda.rateCents, 8500);
+  assert.strictEqual(uda.attn, 'Kellen');
+  assert.strictEqual(uda.address.split('\n').length, 2, 'two lines of address in the photograph');
+  assert.strictEqual(uda.po, '2526-4213');
+  assert.strictEqual(sch.rateCents, 6500, 'a second customer on a rate of their own');
+  assert.strictEqual(sch.terms, 'Net 30', 'and terms of their own, which beat the default');
+
+  // A HIDDEN customer. He is on bid #2, so hiding is the only answer the app
+  // offers: a customer anything names is hidden, never deleted.
+  const hidden = d.customers.filter((c) => c.hidden === true);
+  assert.strictEqual(hidden.length, 1, 'exactly one hidden customer in the photograph');
+  assert.ok(S.customerInUse(d, hidden[0].id) > 0, 'and something still names it');
+
+  // Two projects, both still open, so the log screen offers them.
+  assert.strictEqual(d.projects.length, 2);
+  assert.ok(d.projects.every((p) => p.done === false), 'a project done: false is in the photograph');
+  assert.deepStrictEqual(S.openProjects(d, uda.id).map((p) => p.title), ['UF Project']);
+
+  // Five visits: four on one job over two weeks, and one for another customer.
+  assert.strictEqual(d.logs.length, 5);
+  const uf = d.projects.find((p) => p.title === 'UF Project');
+  assert.strictEqual(d.logs.filter((e) => e.projectId === uf.id).length, 4);
+  const weeks = new Set(d.logs.filter((e) => e.projectId === uf.id).map((e) => S.mondayOf(e.dateISO)));
+  assert.strictEqual(weeks.size, 2, 'two weeks of the same job');
+  assert.strictEqual(d.logs.filter((e) => !e.invoiceId).length, 1, 'one visit still in the pile');
+
+  // THE LINKS, BOTH WAYS. A log entry names the invoice that billed it and
+  // that invoice names the entry back. One-sided in either direction is a
+  // visit that can be billed twice, or hours locked to nothing.
+  d.logs.forEach((e) => {
+    if (!e.invoiceId) return;
+    const inv = d.invoices.find((x) => x.id === e.invoiceId);
+    assert.ok(inv, 'a locked visit points at an invoice that is here');
+    assert.ok(inv.logIds.indexOf(e.id) !== -1, 'and that invoice names it back');
+  });
+  d.invoices.forEach((inv) => {
+    inv.logIds.forEach((id) => {
+      const e = d.logs.find((x) => x.id === id);
+      assert.ok(e, 'an invoice names a visit that is here');
+      assert.strictEqual(e.invoiceId, inv.id, 'and that visit is locked to it');
+    });
+  });
+
+  // Three invoices: one sent and part paid, one project invoice off a bid, and
+  // one numbered on Friday that has not gone out.
+  assert.strictEqual(d.invoices.length, 3);
+  const byNumber = (n) => d.invoices.find((x) => x.number === n);
+  const first = byNumber(166818);
+  const proj = byNumber(166819);
+  const held = byNumber(166820);
+
+  // #166818, BY HAND. Shawn 8 + 8 = 16 hours and George 5, at UDA's own $85:
+  // 21 x 8500 = 178,500. Plus one roll of #12 priced as a lot, $216.00, which
+  // is the amount as typed and takes no markup. 178500 + 21600 = 200,100.
+  assert.deepStrictEqual(first.labor.map((l) => [l.name, l.loggedHours, l.billedHours]),
+    [['Shawn', 16, 16], ['George', 5, 5]]);
+  assert.strictEqual(first.rateCents, 8500, 'the customer own rate, snapshotted');
+  assert.strictEqual(first.po, '2526-4213', 'and their PO number with it');
+  assert.strictEqual(21 * 8500, 178500);
+  assert.strictEqual(first.items.length, 1);
+  assert.strictEqual(first.items[0].lotCents, 21600, 'the roll of wire is priced as a lot');
+  assert.strictEqual(I.totals(first).total, 178500 + 21600);
+  assert.strictEqual(I.statusOf(first), 'sent');
+  assert.strictEqual(I.paidCents(first), 100000);
+  assert.strictEqual(I.balanceCents(first), 100100, 'part paid, and the rest is still owed');
+
+  // #166819, BY HAND: a project invoice bills the PROPOSAL, so its amount is
+  // bid #3 own document total and nothing else. One line, no labor, no parts.
+  const bid3 = d.bids.find((b) => b.number === 3);
+  assert.strictEqual(proj.kind, 'project');
+  assert.strictEqual(proj.bidId, bid3.id, 'the project invoice names the bid it bills');
+  assert.strictEqual(proj.logIds.length, 0, 'and no visits: it bills paper, not hours');
+  assert.strictEqual(proj.partCents, D.build(bid3, d, 'full').totalCents);
+  assert.strictEqual(I.totals(proj).total, 181040);
+  assert.strictEqual(I.statusOf(proj), 'sent');
+
+  // #166820: numbered, and not sent. That is a draft with a number on it, and
+  // it is the shape the Friday batch leaves behind when he stops half way.
+  assert.strictEqual(held.sentAt, null);
+  assert.strictEqual(I.statusOf(held), 'draft');
+  // Shawn 8 + 8 and George 4, at $85: 20 x 8500 = 170,000.
+  assert.strictEqual(I.totals(held).total, 20 * 8500);
+
+  // Every fixture v1 to v2.4 is still loading and pricing beside this one, which
+  // the loops above assert; what is pinned here is that v3 own arrays did not
+  // have to change a thing about the bids to exist.
+  assert.strictEqual(d.catalog.length, 210);
+  assert.strictEqual(d.settings.clauses.length, 27);
+  assert.strictEqual(d.version, 1, 'the document version did not move');
+});
+
+// The two invoices that went out, to the cent, off the pinned map.
+for (const file of Object.keys(INVOICE_TOTALS)) {
+  test(file + ': every invoice that went out still comes to the cent it did', () => {
+    const I = require('../invmath.js');
+    const d = S.validateImport(fs.readFileSync(path.join(dir, file), 'utf8'));
+    assert.ok(d, file + ' no longer loads');
+    const want = INVOICE_TOTALS[file];
+    const sent = (d.invoices || []).filter((inv) => inv.sentAt);
+    assert.strictEqual(sent.length, Object.keys(want).length, file + ' has grown or lost a sent invoice');
+    sent.forEach((inv) => {
+      assert.strictEqual(I.totals(inv).total, want[inv.number],
+        file + ': invoice #' + inv.number + ' has re-figured');
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // THE TWO LIBRARY MOVES, RUN AGAINST A REAL PHONE

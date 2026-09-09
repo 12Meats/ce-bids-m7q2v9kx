@@ -1,6 +1,6 @@
 {
-  "name": "CE Bids",
-  "short_name": "CE Bids",
+  "name": "CE Billing",
+  "short_name": "CE Billing",
   "display": "standalone",
   "start_url": "./",
   "background_color": "#f8fafc",
