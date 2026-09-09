@@ -57,7 +57,7 @@ function pileRowText(g, today) {
   const parts = InvMath.pileParts(g);
   const span = g.from === g.to ? dayText(g.from) : dayText(g.from) + ' to ' + dayText(g.to);
   return span
-    + ' · ' + InvMath.ageDays(g.from, today) + ' days'
+    + ' · ' + daysText(InvMath.ageDays(g.from, today))
     + (g.entries.length > 1 ? ' · ' + g.entries.length + ' entries' : '')
     + ' · ' + numText(hours) + ' hrs'
     + (parts > 0 ? ' · ' + moneyText(parts) + ' parts' : '');
@@ -77,7 +77,7 @@ function invoiceListText(inv, today) {
   // picker.js's, because the invoice's own summary card prints the same words
   // and the two must never disagree about what an invoice is.
   const pill = invoiceStatusPill(inv);
-  const when = st === 'sent' ? fmtDateShort(inv.sentAt) + ' · ' + InvMath.ageDays(inv.sentAt, today) + ' days'
+  const when = st === 'sent' ? fmtDateShort(inv.sentAt) + ' · ' + daysText(InvMath.ageDays(inv.sentAt, today))
     : st === 'paid' ? (last ? fmtDateShort(last.dateISO) : '')
       : '';
   return {
@@ -103,7 +103,7 @@ function buildWhoOwes(host) {
   box.appendChild(big);
   box.appendChild(caption(w.openCount === 0 ? 'Nothing open.'
     : w.openCount + (w.openCount === 1 ? ' open invoice' : ' open invoices')
-      + ' · oldest ' + w.oldestDays + ' days (' + invCustomerName(w.oldestCustomerId) + ')'));
+      + ' · oldest ' + daysText(w.oldestDays) + ' (' + invCustomerName(w.oldestCustomerId) + ')'));
   host.appendChild(box);
 }
 

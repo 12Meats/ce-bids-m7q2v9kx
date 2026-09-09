@@ -119,7 +119,7 @@ receipt**, which is what your invoices say.
 - **Address** is the two lines that print under it.
 - **Hourly rate** is what THIS customer is billed an hour. Leave it blank and
   they bill at your shop rate: the row says *Blank bills at your Settings rate.*
-  UDA is $85. Schreiber is 65 while they are still there.
+  UDA is $85. Schreiber is $65 while they are still there.
 - **PO number** is theirs, and it prints on every invoice you write them until
   you change it. Leave it blank when the customer does not use them.
 

@@ -147,6 +147,15 @@ test('half hours read as half hours, not as 4.5000001', () => {
   assert.strictEqual(pileRowText(g, TODAY), 'Sep 8 · 0 days · 3.75 hrs');
 });
 
+test('one day old reads singular: "1 day", not "1 days"', () => {
+  const w = world();
+  const p = S.newProject(w.d, w.uda.id, 'Chiller yard', '2026-09-01');
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: p.id, dateISO: '2026-09-07', createdAt: 4 });
+  e.crew = [{ crewId: w.c1, hours: 4 }];
+  const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'Chiller yard');
+  assert.strictEqual(pileRowText(g, TODAY), 'Sep 7 · 1 day · 4 hrs');
+});
+
 // ---------------------------------------------------------------------------
 // WHAT HE TURNED OFF
 // ---------------------------------------------------------------------------
@@ -227,6 +236,16 @@ test('numbered but not shared is still a draft, and sent says how long ago', () 
   assert.strictEqual(sent.name, '#166818');
   assert.strictEqual(sent.sub, 'Sent · 9/5/26 · 3 days');
   assert.strictEqual(sent.stale, false, 'three days is not old');
+});
+
+test('sent one day ago reads "1 day", not "1 days"', () => {
+  const w = world();
+  const inv = draft(w);
+  inv.number = 166819;
+  inv.dateISO = '2026-09-07';
+  inv.sentAt = '2026-09-07';
+  const sent = invoiceListText(inv, TODAY);
+  assert.strictEqual(sent.sub, 'Sent · 9/7/26 · 1 day');
 });
 
 test('part paid says what came in and what is on it; a sent invoice goes amber at 14 days', () => {

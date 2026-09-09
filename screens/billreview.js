@@ -191,7 +191,7 @@ function buildReviewCard(host, draft, i) {
     const nav = document.createElement('div');
     nav.className = 'bid-nav';
     if (canCombine) {
-      nav.appendChild(textButton('Combine with the next week', 'btn btn-block', () => reviewCombine(i)));
+      nav.appendChild(textButton('Combine with the next one', 'btn btn-block', () => reviewCombine(i)));
     }
     if (canSplit) {
       nav.appendChild(textButton('Split', 'btn btn-block', () => reviewSplit(i)));

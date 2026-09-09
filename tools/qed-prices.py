@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """qed-prices.py: read QED's public list price for each catalog part that has a
-QED part number, and write the price file CE Bids imports.
+QED part number, and write the price file CE Billing imports.
 
     python tools/qed-prices.py --backup ce-bids-backup-2026-09-08.json --out qed-prices.json
     python tools/qed-prices.py --skus 3302434,1234567 --out qed-prices.json
@@ -168,7 +168,7 @@ def selftest():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--backup', help='a CE Bids backup file; parts with a QED part number are read')
+    ap.add_argument('--backup', help='a CE Billing backup file; parts with a QED part number are read')
     ap.add_argument('--skus', help='comma-separated QED part numbers instead of a backup')
     ap.add_argument('--out', default='qed-prices.json')
     ap.add_argument('--pause', type=float, default=PAUSE)

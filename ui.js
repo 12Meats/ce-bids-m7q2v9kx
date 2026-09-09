@@ -1124,6 +1124,11 @@ function fmtDate(iso) { return Dates.fmtDate(iso); }
 // sentence is how one of them ends up carrying the year and the other not.
 function dayText(iso) { return fmtDate(iso).replace(/,\s*\d{4}$/, ''); }
 
+// 'N days' old, except the one day it is not: an invoice sent yesterday says
+// "1 day", not "1 days". Every age on screen (the pile, the invoice list, the
+// who-owes card) reads through here so they agree.
+function daysText(n) { return n + ' ' + (n === 1 ? 'day' : 'days'); }
+
 // '9/4/26'. The home list's rows only — see dates.js for why they are the one
 // place that cannot afford the long form.
 function fmtDateShort(iso) { return Dates.fmtDateShort(iso); }

@@ -2269,7 +2269,8 @@ function buildSetMore() {
 
   box.appendChild(whatsThis([
     'Next bid number: the number the next new bid gets. It starts at 1. Set this to your real '
-      + 'next invoice number the first day you use the app. It counts up on its own after that.',
+      + 'next bid number the first day you use the app. It counts up on its own after that. '
+      + 'Invoice numbers are their own counter, under Invoices.',
     'Company: what prints at the top of a proposal, how it looks, what it says about tax, '
       + 'and where "Check price" goes.',
     'PIN: four digits. There is no way to look it up, so pick one you will not lose.',

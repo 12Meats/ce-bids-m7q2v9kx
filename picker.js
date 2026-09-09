@@ -290,6 +290,10 @@ function lineCatalogPart(it, data) {
 //
 // undoPart is null when the line has no catalog part behind it (a one-off
 // typed straight onto the list), and then there is nothing to save apart.
+//
+// A refused line save still lets the catalog fact through: what a part costs
+// is true whether or not this line survived, and the two restores are
+// independent by design.
 function saveLineAndCatalog(opts, undoLine, undoPart) {
   if (!opts.persistCatalog) return opts.persistOr(() => { undoLine(); if (undoPart) undoPart(); });
   const ok = opts.persistOr(undoLine);
