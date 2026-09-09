@@ -1099,12 +1099,39 @@ function bidPdfPrefix(bidId) { return 'pdf-' + bidId + '-'; }
 // from the LAST dash, never the first. null for anything that isn't one.
 function bidPdfParse(id) {
   if (typeof id !== 'string' || id.indexOf('pdf-') !== 0) return null;
+  // An invoice's PDF sits in the same store under its own prefix, and its id
+  // would otherwise parse here as a bid whose id begins "inv". The archive
+  // asks both of these which kind a file is, so exactly one of them may answer.
+  if (id.indexOf(INVOICE_PDF_PREFIX) === 0) return null;
   const cut = id.lastIndexOf('-');
   if (cut <= 3) return null;
   const at = Number(id.slice(cut + 1));
   if (!isFinite(at) || at <= 0) return null;
   const bidId = id.slice(4, cut);
   return bidId ? { id, bidId, at } : null;
+}
+
+// The same shape for an invoice's PDFs, in its own corner of the same store.
+// The prefix is longer than a bid's on purpose: "pdf-" is where bid PDFs
+// already live and an invoice id dropped straight in beside them would be a
+// bid id to every reader in the app. Three of them ask which kind a file is —
+// the invoice screen lists its own, the archive names it, Settings sends the
+// new ones off with a backup — so the shape is written once, here, beside the
+// bid's.
+const INVOICE_PDF_PREFIX = 'pdf-inv-';
+function invoicePdfPrefix(invId) { return INVOICE_PDF_PREFIX + invId + '-'; }
+
+// Splits one back into the invoice it belongs to and when it was made. Like
+// the bid's: the id has its own dashes in it, so the timestamp comes off the
+// LAST one. null for anything that is not one of these, a bid's PDF included.
+function invoicePdfParse(id) {
+  if (typeof id !== 'string' || id.indexOf(INVOICE_PDF_PREFIX) !== 0) return null;
+  const cut = id.lastIndexOf('-');
+  if (cut < INVOICE_PDF_PREFIX.length) return null;
+  const at = Number(id.slice(cut + 1));
+  if (!isFinite(at) || at <= 0) return null;
+  const invoiceId = id.slice(INVOICE_PDF_PREFIX.length, cut);
+  return invoiceId ? { id, invoiceId, at } : null;
 }
 
 // ---------------------------------------------------------------------------

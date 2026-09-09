@@ -70,14 +70,13 @@ function pileRowText(g, today) {
 function invoiceListText(inv, today) {
   const t = InvMath.totals(inv);
   const st = InvMath.statusOf(inv);
-  const paid = InvMath.paidCents(inv);
   const pays = inv.payments || [];
   // A sent invoice for nothing reads paid with no payment on it, so the date
   // of the last payment is asked for rather than assumed.
   const last = pays.length ? pays[pays.length - 1] : null;
-  const pill = st === 'paid' ? 'Paid'
-    : st === 'sent' ? (paid > 0 ? 'Paid ' + moneyText(paid) + ' of ' + moneyText(t.total) : 'Sent')
-      : 'Draft';
+  // picker.js's, because the invoice's own summary card prints the same words
+  // and the two must never disagree about what an invoice is.
+  const pill = invoiceStatusPill(inv);
   const when = st === 'sent' ? fmtDateShort(inv.sentAt) + ' · ' + InvMath.ageDays(inv.sentAt, today) + ' days'
     : st === 'paid' ? (last ? fmtDateShort(last.dateISO) : '')
       : '';

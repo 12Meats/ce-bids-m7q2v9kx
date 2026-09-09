@@ -184,57 +184,9 @@ function proposalSeedClauses(bid) {
 // every NUMBER in it comes off the model, formatted by moneyText, which is
 // BidMath.fmt, which is what the PDF prints.
 
-// One row of the document: what it is on the left, what it costs on the right.
-// The quantity and the unit price ride with the description rather than in
-// their own columns — four columns at 390px is four columns of nothing.
-//
-// They ride UNDER it, in the muted second line, and that is the whole fix for
-// what an iPhone SE did with them. Run together on one line, "3/4\" EMT ·
-// 240 ft · $1.12" wrapped, and the unit price landed alone on the second line
-// directly beneath the row's total — two dollar amounts stacked, one of them
-// small, reading as the same number printed twice. On its own line it is
-// plainly the detail: what one of them costs, under what they are. The PAPER
-// is unaffected; it has four real columns at fixed widths (docgen.js).
-function proposalPreviewLine(desc, qtyText, unitCents, cents) {
-  const line = document.createElement('div');
-  line.className = 'prop-line';
-
-  const d = document.createElement('span');
-  d.className = 'prop-line-desc';
-  const name = document.createElement('span');
-  name.className = 'prop-line-name';
-  name.textContent = desc;
-  d.appendChild(name);
-
-  // "240 ft at $1.12", the way he says it out loud — and it still reads right
-  // with only one of the two ("48 hrs", "$1.12").
-  const unit = (unitCents === null || unitCents === undefined) ? '' : moneyText(unitCents);
-  const detail = (qtyText && unit) ? (qtyText + ' at ' + unit) : (qtyText || unit);
-  if (detail) {
-    const sub = document.createElement('span');
-    sub.className = 'prop-line-sub';
-    sub.textContent = detail;
-    d.appendChild(sub);
-  }
-
-  const m = document.createElement('span');
-  m.className = 'prop-line-money';
-  m.textContent = cents === null ? '' : moneyText(cents);
-  line.appendChild(d);
-  line.appendChild(m);
-  return line;
-}
-
-function proposalPreviewBullets(lines) {
-  const ul = document.createElement('ul');
-  ul.className = 'prop-bullets';
-  lines.forEach((t) => {
-    const li = document.createElement('li');
-    li.textContent = t;
-    ul.appendChild(li);
-  });
-  return ul;
-}
+// The rows and the bullet blocks of this preview are picker.js's paperLine and
+// paperBullets now: the invoice screen grew a preview of the same shape, and
+// two screens may not share a builder by one of them calling the other's file.
 
 function proposalPreviewHead(doc) {
   const wrap = document.createElement('div');
@@ -310,7 +262,7 @@ function buildPreview(bid, doc) {
     h.className = 'prop-sec-title';
     h.textContent = 'Scope of work';
     paper.appendChild(h);
-    paper.appendChild(proposalPreviewBullets(doc.scope));
+    paper.appendChild(paperBullets(doc.scope));
   }
 
   if (doc.level === 'full') {
@@ -319,22 +271,22 @@ function buildPreview(bid, doc) {
       h.className = 'prop-sec-title';
       h.textContent = sec.title;
       paper.appendChild(h);
-      sec.rows.forEach((r) => paper.appendChild(proposalPreviewLine(r.desc, r.qtyText, r.unitCents, r.cents)));
+      sec.rows.forEach((r) => paper.appendChild(paperLine(r.desc, r.qtyText, r.unitCents, r.cents)));
     });
     // The paper's tail, in the paper's order: Subtotal, tax, then the total
     // block below.
     if (doc.taxLine === 0) {
       if (doc.subtotalCents != null) {
-        paper.appendChild(proposalPreviewLine('Subtotal', '', null, doc.subtotalCents));
+        paper.appendChild(paperLine('Subtotal', '', null, doc.subtotalCents));
       }
-      paper.appendChild(proposalPreviewLine('Tax', '', null, 0));
+      paper.appendChild(paperLine('Tax', '', null, 0));
     }
   } else if (doc.level === 'summary') {
     const h = document.createElement('div');
     h.className = 'prop-sec-title';
     h.textContent = 'Summary';
     paper.appendChild(h);
-    doc.summary.forEach((r) => paper.appendChild(proposalPreviewLine(r.label, '', null, r.cents)));
+    doc.summary.forEach((r) => paper.appendChild(paperLine(r.label, '', null, r.cents)));
   }
 
   const total = document.createElement('div');
@@ -356,7 +308,7 @@ function buildPreview(bid, doc) {
     h.className = 'prop-sec-title';
     h.textContent = DocGen.termsHeading(doc);
     paper.appendChild(h);
-    paper.appendChild(proposalPreviewBullets(doc.terms));
+    paper.appendChild(paperBullets(doc.terms));
   }
 
   if (doc.clauses.length) {
@@ -366,7 +318,7 @@ function buildPreview(bid, doc) {
     paper.appendChild(h);
     // Titles only. The full text is pages of it, and this is a preview he
     // thumbs through on a phone, not the document itself.
-    paper.appendChild(proposalPreviewBullets(doc.clauses.map((c, i) => (i + 1) + '. ' + c.title)));
+    paper.appendChild(paperBullets(doc.clauses.map((c, i) => (i + 1) + '. ' + c.title)));
   }
 
   // The sentence that introduces the signature block on paper, off the same
@@ -443,51 +395,10 @@ function buildDetail(bid) {
 // settings.notePhrases — his own wording, reused — plus anything on this bid
 // that isn't in that list, so a one-off note can still be tapped back off.
 
-function proposalNoteChips(bid) {
-  const phrases = state.data.settings.notePhrases.slice();
-  bid.notes.forEach((n) => { if (phrases.indexOf(n) === -1) phrases.push(n); });
-  return phrases;
-}
-
-function proposalToggleNote(bid, phrase) {
-  const prev = bid.notes.slice();
-  const i = bid.notes.indexOf(phrase);
-  if (i === -1) bid.notes.push(phrase);
-  else bid.notes.splice(i, 1);
-  if (!persistOr(() => { bid.notes = prev; })) { render(); return; }
-  render();
-}
-
-// A new note goes on THIS bid first and is offered to the library second, so a
-// refused save of the phrase list can never cost him the note he just wrote.
-function proposalAddNote(bid) {
-  promptText('', {
-    label: 'Note or exclusion',
-    placeholder: 'Does not include...',
-    done: async (text) => {
-      if (!text) return;
-      if (bid.notes.indexOf(text) === -1) {
-        const prev = bid.notes.slice();
-        bid.notes.push(text);
-        if (!persistOr(() => { bid.notes = prev; })) { render(); return; }
-      }
-      render();
-
-      const s = state.data.settings;
-      if (s.notePhrases.indexOf(text) !== -1) return;
-      const keep = await confirmPanel(
-        'Keep "' + text + '" as a chip on every future bid?',
-        { ok: 'Keep it', cancel: 'Just this bid' }
-      );
-      if (!keep) { render(); return; }
-      const prevPhrases = s.notePhrases.slice();
-      s.notePhrases.push(text);
-      persistOr(() => { s.notePhrases = prevPhrases; });
-      render();
-    },
-  });
-}
-
+// The chips, the toggle and the "keep it as a chip" question are picker.js's
+// notePhrasesPicker: an invoice carries the same kind of sentence in the same
+// kind of list, and the wording it asks about a new one is this screen's to
+// choose (a bid, not "a document").
 function buildNotes(bid) {
   const box = card('Notes & exclusions');
   // Not "under Terms": that block is called Notes & exclusions on Full and
@@ -496,13 +407,17 @@ function buildNotes(bid) {
   box.appendChild((bid.notes || []).length === 0
     ? emptyNote('Add notes and exclusions from the chips, or type your own.')
     : caption('Tap one to put it on this bid. These print above the signature line.'));
-  const chips = document.createElement('div');
-  chips.className = 'prop-chips';
-  proposalNoteChips(bid).forEach((phrase) => {
-    chips.appendChild(chip(phrase, bid.notes.indexOf(phrase) !== -1, () => proposalToggleNote(bid, phrase)));
+  if (!Array.isArray(bid.notes)) bid.notes = [];
+  notePhrasesPicker(box, bid.notes, {
+    data: state.data,
+    persistOr,
+    onChanged: render,
+    label: 'Note or exclusion',
+    placeholder: 'Does not include...',
+    addLabel: '+ Note',
+    keepWhere: 'every future bid',
+    keepCancel: 'Just this bid',
   });
-  box.appendChild(chips);
-  box.appendChild(textButton('+ Note', 'btn btn-block', () => proposalAddNote(bid)));
   return box;
 }
 
@@ -940,7 +855,7 @@ function buildScope(bid) {
       ? 'Nothing yet. The walk had no items to draft from.'
       : 'Nothing yet. Tap Edit to write one.'));
   } else {
-    box.appendChild(proposalPreviewBullets(lines));
+    box.appendChild(paperBullets(lines));
     box.appendChild(caption(bid.scope === null
       ? 'Drafted from your walk. Edit it, or tap the mic to dictate.'
       : 'Your words. Re-draft to go back to what the walk says.'));

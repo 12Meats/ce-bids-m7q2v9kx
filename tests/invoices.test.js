@@ -43,6 +43,21 @@ const sandbox = {
   showBanner: () => {},
   navPush: () => {},
   confirmPanel: () => Promise.resolve(false),
+  // The invoice screen's three panels and the two things it hands a PDF to.
+  // Every one of them is replaced per test by the test that drives it; here
+  // they only have to exist, because the screen reaches for them at load time
+  // in nothing but a closure.
+  promptNumber: () => {},
+  promptMoney: () => {},
+  promptText: () => {},
+  InvDoc: require('../invdoc.js'),
+  DocGen: { blobInvoice: () => Promise.resolve(null), share: () => Promise.resolve('shared') },
+  Photos: {
+    list: () => Promise.resolve([]),
+    get: () => Promise.resolve(null),
+    put: () => Promise.resolve(true),
+    delMany: () => Promise.resolve(true),
+  },
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
@@ -59,10 +74,13 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'log.js'), 'utf8'), s
   { filename: 'log.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'billreview.js'), 'utf8'), sandbox,
   { filename: 'billreview.js' });
+vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoice.js'), 'utf8'), sandbox,
+  { filename: 'invoice.js' });
 
 const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, invGroupOn,
   reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview,
-  reviewCombine } = sandbox;
+  reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
+  invoiceRecordPayment, invoiceStatusPill } = sandbox;
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
@@ -552,4 +570,121 @@ test('a visit moved to another day rebuilds the drafts', () => {
   assert.strictEqual(reviewDrafts.get().length, 2);
   assert.deepStrictEqual(reviewDrafts.get().map((inv) => inv.logIds.length), [1, 2],
     'Monday alone, and the two visits that share the new week');
+});
+
+// ---------------------------------------------------------------------------
+// THE INVOICE SCREEN
+// ---------------------------------------------------------------------------
+// The three answers on it that are decisions rather than drawings: whether an
+// invoice can still be deleted, what the head says while a batch is going out,
+// and what recording a check does to the file.
+
+function invoiceWorld() {
+  const { w } = sendWorld();
+  const saves = [];
+  sandbox.persistOr = (revert) => { saves.push(revert); return true; };
+  sandbox.showBanner = () => {};
+  sandbox.show = () => {};
+  sandbox.render = () => {};
+  w.d.settings.nextInvoiceNumber = 166818;
+  billreviewSend();
+  sandbox.persistOr = () => true;
+  return w;
+}
+
+test('invoiceCanDelete: a numbered draft can go, a sent one and a review draft cannot', () => {
+  const w = invoiceWorld();
+  const inv = w.d.invoices[0];
+  assert.strictEqual(invoiceCanDelete(inv), true, 'numbered, never shared, nobody has seen it');
+  inv.sentAt = '2026-09-08';
+  assert.strictEqual(invoiceCanDelete(inv), false, 'the customer is holding it');
+  inv.sentAt = null;
+  // A draft under review has no id: it is not on the file, and it is unchecked
+  // on the home rather than deleted here.
+  assert.strictEqual(invoiceCanDelete({ id: null, number: null, sentAt: null }), false);
+  assert.strictEqual(invoiceCanDelete(null), false);
+});
+
+test('the head says how many are still behind this one, and nothing when none are', () => {
+  assert.strictEqual(invoiceQueueText(3), '3 more to send');
+  assert.strictEqual(invoiceQueueText(1), '1 more to send');
+  assert.strictEqual(invoiceQueueText(0), null);
+});
+
+test('the pill says draft, sent, part paid and paid, in his words', () => {
+  const w = invoiceWorld();
+  const inv = w.d.invoices[0];
+  assert.strictEqual(invoiceStatusPill(inv), 'Draft', 'numbered is not sent');
+  inv.sentAt = '2026-09-08';
+  assert.strictEqual(invoiceStatusPill(inv), 'Sent');
+  inv.payments.push({ dateISO: '2026-09-15', cents: 50000 });
+  assert.strictEqual(invoiceStatusPill(inv), 'Paid $500.00 of $2,001.00');
+  inv.payments.push({ dateISO: '2026-09-20', cents: 150100 });
+  assert.strictEqual(invoiceStatusPill(inv), 'Paid');
+});
+
+// The two panels a payment comes through, driven by hand: a date on the number
+// keypad and then the money.
+function payWith(t, inv, dateTyped, cents, saved) {
+  const banners = [];
+  stub(t, {
+    // 'today' is one tap on Done with what the keypad already holds.
+    promptNumber: (cur, opts) => opts.done(dateTyped === 'today' ? cur : dateTyped),
+    promptMoney: (cur, opts) => opts.done(cents),
+    persistOr: (revert) => { if (saved === false) { revert(); return false; } return true; },
+    showBanner: (text) => banners.push(text),
+    render: () => {},
+  });
+  invoiceRecordPayment(inv);
+  return banners;
+}
+
+test('a payment lands on the date he typed, and the status follows the money', (t) => {
+  const w = invoiceWorld();
+  const inv = w.d.invoices[0];
+  inv.sentAt = '2026-09-05';
+  inv.status = I.statusOf(inv);
+  enterInvoice(inv.id);
+  assert.strictEqual(invoiceTarget(), inv, 'the screen is looking at the invoice on the file');
+
+  const banners = payWith(t, inv, 915, 50000, true);
+  assert.strictEqual(inv.payments.length, 1);
+  assert.deepStrictEqual({ ...inv.payments[0] }, { dateISO: '2026-09-15', cents: 50000 });
+  assert.strictEqual(inv.status, 'sent', 'half of it is not paid');
+  assert.deepStrictEqual(banners, ['$1,501.00 left on this one.']);
+});
+
+test('a payment that covers the total marks it paid', (t) => {
+  const w = invoiceWorld();
+  const inv = w.d.invoices[0];
+  inv.sentAt = '2026-09-05';
+  enterInvoice(inv.id);
+  const banners = payWith(t, inv, 'today', 200100, true);
+  assert.strictEqual(inv.status, 'paid');
+  assert.strictEqual(I.balanceCents(inv), 0);
+  // One tap on Done takes the day already on the keypad: the day he records a
+  // check is almost always the day it came.
+  assert.strictEqual(inv.payments[0].dateISO, S.todayISO());
+  assert.deepStrictEqual(banners, ['Paid in full.']);
+});
+
+test('a refused save takes the payment back off and puts the status back', (t) => {
+  const w = invoiceWorld();
+  const inv = w.d.invoices[0];
+  inv.sentAt = '2026-09-05';
+  inv.status = 'sent';
+  enterInvoice(inv.id);
+  payWith(t, inv, 915, 200100, false);
+  assert.strictEqual(inv.payments.length, 0, 'nothing came in after all');
+  assert.strictEqual(inv.status, 'sent', 'and it is not paid');
+});
+
+test('Clear on the date keypad is never mind, and records nothing', (t) => {
+  const w = invoiceWorld();
+  const inv = w.d.invoices[0];
+  inv.sentAt = '2026-09-05';
+  enterInvoice(inv.id);
+  const banners = payWith(t, inv, null, 50000, true);
+  assert.strictEqual(inv.payments.length, 0, 'Clear is the way out, not a payment dated today');
+  assert.deepStrictEqual(banners, []);
 });

@@ -14,7 +14,8 @@
 // another screen calls.
 //
 // Sections: THE ROW · THE CHECK · THE PILE SELECTION · THE DRAFTS UNDER REVIEW ·
-// THE LINE STRIP · THE RENTAL EDITOR · THE ITEM PICKER
+// AN INVOICE IN WORDS · THE LINE STRIP · THE RENTAL EDITOR · THE PAPER ·
+// THE NOTE PHRASES · THE ITEM PICKER
 
 // ---------------------------------------------------------------------------
 // THE ROW
@@ -139,6 +140,27 @@ const reviewDrafts = (function () {
     set(next) { drafts = Array.isArray(next) ? next : []; },
   };
 })();
+
+// ---------------------------------------------------------------------------
+// AN INVOICE IN WORDS
+// ---------------------------------------------------------------------------
+// What an invoice IS, in the one or two words a man wants at a glance. The
+// status on file is three flat words (draft, sent, paid) and only one of them
+// is the whole news: "Sent" on an invoice a customer has half paid is the
+// wrong thing to say, so a part-paid one says what came in and what is on it.
+//
+// Two screens print it — the list on the Invoices home and the invoice's own
+// summary card — so it is written once, here, rather than once per screen.
+// InvMath decides what the status IS; this only chooses the words.
+function invoiceStatusPill(inv) {
+  const st = InvMath.statusOf(inv);
+  if (st === 'paid') return 'Paid';
+  if (st === 'draft') return 'Draft';
+  const paid = InvMath.paidCents(inv);
+  return paid > 0
+    ? 'Paid ' + moneyText(paid) + ' of ' + moneyText(InvMath.totals(inv).total)
+    : 'Sent';
+}
 
 // ---------------------------------------------------------------------------
 // THE LINE STRIP
@@ -442,6 +464,149 @@ function rentalActions(box, lineEl, rentals, x, opts) {
   const cap = caption('Prints at ' + moneyText(BidMath.rentalPrice(x, opts.markupPct)));
   strip.parentNode.insertBefore(cap, strip.nextSibling);
   return strip;
+}
+
+// ---------------------------------------------------------------------------
+// THE PAPER
+// ---------------------------------------------------------------------------
+// One row of a document as it is previewed on the glass: what it is on the
+// left, what it costs on the right. The quantity and the unit price ride
+// UNDER the description in the muted second line rather than in columns of
+// their own — four columns at 390px is four columns of nothing, and run
+// together on one line an iPhone SE wrapped the unit price down under the
+// row's total, two dollar amounts stacked with one of them small, reading as
+// the same number printed twice.
+//
+// This was proposalPreviewLine. It moved here when the invoice grew a preview
+// of its own: two documents, two screens, one drawing of a row, and a screen
+// may never call another screen's file. The PAPER is unaffected either way;
+// docgen.js has four real columns at fixed widths.
+function paperLine(desc, qtyText, unitCents, cents) {
+  const line = document.createElement('div');
+  line.className = 'prop-line';
+
+  const d = document.createElement('span');
+  d.className = 'prop-line-desc';
+  const name = document.createElement('span');
+  name.className = 'prop-line-name';
+  name.textContent = desc;
+  d.appendChild(name);
+
+  // "240 ft at $1.12", the way he says it out loud — and it still reads right
+  // with only one of the two ("48 hrs", "$1.12").
+  const unit = (unitCents === null || unitCents === undefined) ? '' : moneyText(unitCents);
+  const detail = (qtyText && unit) ? (qtyText + ' at ' + unit) : (qtyText || unit);
+  if (detail) {
+    const sub = document.createElement('span');
+    sub.className = 'prop-line-sub';
+    sub.textContent = detail;
+    d.appendChild(sub);
+  }
+
+  const m = document.createElement('span');
+  m.className = 'prop-line-money';
+  m.textContent = cents === null ? '' : moneyText(cents);
+  line.appendChild(d);
+  line.appendChild(m);
+  return line;
+}
+
+// A bulleted block on the same preview: scope, terms, the numbered clause
+// titles, the notes on an invoice.
+function paperBullets(lines) {
+  const ul = document.createElement('ul');
+  ul.className = 'prop-bullets';
+  lines.forEach((t) => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    ul.appendChild(li);
+  });
+  return ul;
+}
+
+// ---------------------------------------------------------------------------
+// THE NOTE PHRASES
+// ---------------------------------------------------------------------------
+// The sentences a document carries in its own words: notes and exclusions on a
+// proposal, the line or two he adds to an invoice. Both are a plain array of
+// strings on the record, and both are filled the same way — chips for the
+// wording he already uses (settings.notePhrases) plus anything on THIS
+// document that is not in that list, so a one-off can be tapped back off.
+//
+//   notePhrasesPicker(box, notes, opts)
+//     notes           the array on the record (bid.notes / inv.notes)
+//     opts.data       the shell's data (settings.notePhrases)
+//     opts.persistOr  the caller's save, with an exact restore handed to it
+//     opts.onChanged  () => void   redraw
+//     opts.label      the + button's prompt ('Note or exclusion')
+//     opts.placeholder
+//     opts.addLabel   the + button's own words ('+ Note')
+//     opts.keepWhere  'every future bid' / 'every future invoice', for the
+//     opts.keepCancel one question the library asks about a new sentence
+//
+// The notes array is mutated IN PLACE and restored in place: this file is
+// handed the array, not the record it hangs off, so it has no property to
+// put back.
+function notePhraseChips(notes, data) {
+  const phrases = ((data.settings && data.settings.notePhrases) || []).slice();
+  notes.forEach((n) => { if (phrases.indexOf(n) === -1) phrases.push(n); });
+  return phrases;
+}
+
+function notePhrasesRestore(notes, prev) {
+  notes.length = 0;
+  prev.forEach((n) => notes.push(n));
+}
+
+function noteToggle(notes, phrase, opts) {
+  const prev = notes.slice();
+  const i = notes.indexOf(phrase);
+  if (i === -1) notes.push(phrase);
+  else notes.splice(i, 1);
+  if (!opts.persistOr(() => notePhrasesRestore(notes, prev))) { opts.onChanged(); return; }
+  opts.onChanged();
+}
+
+// A new sentence goes on THIS document first and is offered to the library
+// second, so a refused save of the phrase list can never cost him the note he
+// just wrote.
+function noteAdd(notes, opts) {
+  promptText('', {
+    label: opts.label || 'Note',
+    placeholder: opts.placeholder || '',
+    done: async (text) => {
+      if (!text) return;
+      if (notes.indexOf(text) === -1) {
+        const prev = notes.slice();
+        notes.push(text);
+        if (!opts.persistOr(() => notePhrasesRestore(notes, prev))) { opts.onChanged(); return; }
+      }
+      opts.onChanged();
+
+      const s = opts.data.settings;
+      if (!Array.isArray(s.notePhrases) || s.notePhrases.indexOf(text) !== -1) return;
+      const keep = await confirmPanel(
+        'Keep "' + text + '" as a chip on ' + (opts.keepWhere || 'every future document') + '?',
+        { ok: 'Keep it', cancel: opts.keepCancel || 'Just this one' }
+      );
+      if (!keep) { opts.onChanged(); return; }
+      const prevPhrases = s.notePhrases.slice();
+      s.notePhrases.push(text);
+      opts.persistOr(() => { s.notePhrases = prevPhrases; });
+      opts.onChanged();
+    },
+  });
+}
+
+function notePhrasesPicker(box, notes, opts) {
+  const chips = document.createElement('div');
+  chips.className = 'prop-chips';
+  notePhraseChips(notes, opts.data).forEach((phrase) => {
+    chips.appendChild(chip(phrase, notes.indexOf(phrase) !== -1, () => noteToggle(notes, phrase, opts)));
+  });
+  box.appendChild(chips);
+  box.appendChild(textButton(opts.addLabel || '+ Note', 'btn btn-block', () => noteAdd(notes, opts)));
+  return box;
 }
 
 // ---------------------------------------------------------------------------

@@ -32,7 +32,8 @@ const sandbox = { document: undefined, console, BidMath: B, Store: S };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
-const { bidPdfParse, bidPdfPrefix, bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
+const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
+  bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, detailCaption, itemCountText,
   itemBillText, areaNoteLine, perUnitText,
@@ -51,6 +52,38 @@ test('bidPdfPrefix and bidPdfParse are inverses over a UUID bid id', () => {
 test('bidPdfParse also handles the base36 fallback id shape', () => {
   const id = bidPdfPrefix('k3n8xq2p') + 42;
   assert.deepEqual(bidPdfParse(id), { id, bidId: 'k3n8xq2p', at: 42 });
+});
+
+// An invoice's PDFs sit in the same store under their own prefix. Exactly one
+// of the two parsers may answer for any id: the archive, the backup pile and
+// the two screens that list their own all ask both.
+test('invoicePdfPrefix and invoicePdfParse are inverses, and bidPdfParse keeps off', () => {
+  const invId = '3a91c7d2-88be-4c10-a5f3-70d2e1b94c66';
+  const id = invoicePdfPrefix(invId) + 1757000000000;
+  assert.equal(id, 'pdf-inv-3a91c7d2-88be-4c10-a5f3-70d2e1b94c66-1757000000000');
+  assert.deepEqual(invoicePdfParse(id), { id, invoiceId: invId, at: 1757000000000 });
+  // The one that matters: read as a bid's, this file belongs to a bid called
+  // "inv-3a91c7d2-..." that does not exist, and Settings sends it off with the
+  // wrong backup or the home list deletes it with the wrong bid.
+  assert.equal(bidPdfParse(id), null);
+  assert.equal(bidPdfParse('pdf-inv-x-1'), null);
+});
+
+test('invoicePdfParse refuses anything that is not one of ours', () => {
+  [
+    'pdf-8f1c2b34-1757000000000',   // a bid's
+    'photo-abc-123',
+    'pdf-inv-1757000000000',        // no invoice id at all
+    'pdf-inv--1757000000000',       // empty invoice id
+    'pdf-inv-abc-',                 // no timestamp
+    'pdf-inv-abc-nope',
+    'pdf-inv-abc-0',                // epoch zero is not a moment anything was made
+    'pdf-inv-',
+    '',
+    null,
+    undefined,
+    42,
+  ].forEach((v) => assert.equal(invoicePdfParse(v), null, String(v)));
 });
 
 test('bidPdfParse refuses anything that is not one of ours', () => {
