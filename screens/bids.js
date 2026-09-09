@@ -151,6 +151,11 @@ function bidsDuplicate(id) {
 // keep the button hidden; a won bid with a bare job does not.
 function bidsCanDelete(bid) {
   if (!bid) return false;
+  // An invoice against this bid is money already claimed off it, and the
+  // invoice bills the proposal itself: take the bid away and the paper the
+  // customer is holding has nothing behind it. Same answer as a job with work
+  // written down, and given the same way — the button is simply not there.
+  if (bidHasInvoices(state.data, bid)) return false;
   if (bid.status === 'won' || bid.status === 'complete') return Store.jobIsEmpty(bid.job);
   return true;
 }

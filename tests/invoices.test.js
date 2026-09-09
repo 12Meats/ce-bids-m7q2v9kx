@@ -36,6 +36,9 @@ const sandbox = {
   InvMath: I,
   Catalog: require('../catalog.js'),
   DocModel: require('../docmodel.js'),
+  // The picker's cost keypad offers "Check price" only when there is signal to
+  // check it with, so the line strip reads navigator on its way past.
+  navigator: { onLine: true },
   registerScreen: () => {},
   render: () => {},
   show: () => {},
@@ -81,7 +84,8 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview,
   reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
-  invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, moneyText } = sandbox;
+  invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
+  invoiceLineOpts, lineAskCost, moneyText } = sandbox;
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
@@ -961,4 +965,77 @@ test('a job with no title still reads as a sentence', () => {
   const w = jobWorld();
   w.b.title = '';
   assert.ok(billThisJobConfirm(w.b, w.d).indexOf(' for this job? ') !== -1);
+});
+
+test('bidHasInvoices is what holds a billed bid where it is', () => {
+  const w = jobWorld();
+  assert.strictEqual(bidHasInvoices(w.d, w.b), false, 'nothing billed against it yet');
+  assert.strictEqual(bidHasInvoices(w.d, null), false, 'no bid, no invoices');
+
+  // A pre-v3 file has no invoices array at all and must not throw.
+  const bare = { ...w.d };
+  delete bare.invoices;
+  assert.strictEqual(bidHasInvoices(bare, w.b), false);
+
+  const inv = I.draftProjectInvoice(w.b, w.d, 10000, 1);
+  inv.id = 'proj-1'; inv.number = 166820; inv.dateISO = '2026-09-01';
+  w.d.invoices.push(inv);
+  assert.strictEqual(bidHasInvoices(w.d, w.b), true);
+
+  // Only THIS bid's, and only invoices that name a bid at all: a weekly one
+  // off the pile carries bidId null and belongs to no bid on the file.
+  const other = S.newBid(w.d, { customerName: 'UDA', title: 'Boiler room', jobType: 'project', dateISO: '2026-08-02' });
+  w.d.bids.push(other);
+  assert.strictEqual(bidHasInvoices(w.d, other), false, "another bid's invoice is another bid's business");
+
+  const weekly = I.draftInvoice(I.group(w.d.logs, w.d, S.mondayOf)[0], w.d, 2);
+  weekly.id = 'tm-1';
+  weekly.number = 166821;
+  w.d.invoices.push(weekly);
+  assert.strictEqual(weekly.bidId, null, 'a weekly invoice names no bid');
+  assert.strictEqual(bidHasInvoices(w.d, other), false);
+  assert.strictEqual(bidHasInvoices(w.d, w.b), true, 'and the billed one is still held');
+});
+
+// ---------------------------------------------------------------------------
+// A PRICE LEARNED ON A DRAFT
+// ---------------------------------------------------------------------------
+// Friday night: he opens one of the drafts the review built and fixes a cost he
+// fat-fingered at the truck on Tuesday. The draft is not on the file, so the
+// invoice's own write does nothing — but what the part COSTS is a fact about
+// his catalog and is true whether or not this draft ever becomes paper. One
+// save, and it is the shell's.
+test('a cost fixed on a review draft teaches the catalog, and writes the draft nowhere', (t) => {
+  const w = world();
+  const part = S.addCatalogItem(w.d, { category: 'wire', name: '#12 THHN', unit: 'ft' });
+  part.lastCostCents = 38;
+
+  reviewDrafts.set([I.draftInvoice(groups(w)[0], w.d, 1)]);
+  enterInvoice({ draft: 0 });
+  const draft = invoiceTarget();
+  assert.strictEqual(draft.id, null, 'a draft under review is not on the file');
+
+  const it = { catalogId: part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: 38, priceCents: null };
+  draft.items.push(it);
+
+  const saves = [];
+  stub(t, {
+    persistOr: (revert) => { saves.push(revert); return true; },
+    promptMoney: (cur, o) => { o.done(4200); },
+    showBanner: () => {},
+    render: () => {},
+  });
+
+  lineAskCost(it, invoiceLineOpts(draft));
+
+  assert.strictEqual(it.costCents, 4200, 'the line took the new cost');
+  assert.strictEqual(part.lastCostCents, 4200, 'and so did the catalog');
+  assert.strictEqual(saves.length, 1,
+    'one save: the catalog. The draft is not on the file and wrote nothing');
+
+  // And that one save is the CATALOG's: its restore puts the part's memory
+  // back and leaves the line where he typed it.
+  saves[0]();
+  assert.strictEqual(part.lastCostCents, 38);
+  assert.strictEqual(it.costCents, 4200);
 });

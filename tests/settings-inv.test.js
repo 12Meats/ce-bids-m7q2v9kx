@@ -50,7 +50,7 @@ const sandbox = {
   startPinChange: () => {},
   Photos: { list: () => Promise.resolve([]), get: () => Promise.resolve(null) },
   DocGen: {},
-  APP_VERSION: 'bids-v2.4',
+  APP_VERSION: 'billing-v3',
   APP_BUILT: '2026-09-08',
 };
 sandbox.globalThis = sandbox;
@@ -148,8 +148,10 @@ test('the counts it is handed are the ones storage keeps', () => {
 // ---------------------------------------------------------------------------
 
 test('a customer with no rate of their own is on the shop rate, and says so', () => {
-  assert.strictEqual(settingsCustomerValue({ rateCents: null }), 'Your rate');
-  assert.strictEqual(settingsCustomerValue({}), 'Your rate');
+  // The same three words as the caption under the row it opens, "Blank bills
+  // at your Settings rate", so the value and its explanation are one name.
+  assert.strictEqual(settingsCustomerValue({ rateCents: null }), 'Settings rate');
+  assert.strictEqual(settingsCustomerValue({}), 'Settings rate');
   assert.strictEqual(settingsCustomerValue({ rateCents: 8500 }), '$85.00/hr');
 });
 

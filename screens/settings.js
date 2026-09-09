@@ -1797,7 +1797,12 @@ function renderSettingsInvoices() {
 function buildSetInvoices() {
   const s = setS();
   const box = card('Invoices');
-  const next = Number.isInteger(s.nextInvoiceNumber) ? s.nextInvoiceNumber : 1;
+  // The seed is what is stored; next is what the counter will hand out, which
+  // is the seed raised past anything already on the file. The row shows NEXT,
+  // because the row is answering "what number does my next invoice get?" and
+  // the stored seed is only the app's own bookkeeping.
+  const seed = Number.isInteger(s.nextInvoiceNumber) ? s.nextInvoiceNumber : 1;
+  const next = Store.effectiveNextInvoiceNumber(state.data);
 
   const line = settingRow(box, 'Next invoice number', '#' + next, () => {
     settingsPromptWhole(next, 'The next invoice number', line, 1, SET_INVOICE_NUMBER_MAX,
@@ -1812,12 +1817,14 @@ function buildSetInvoices() {
   }, 'Set this to your real next number the first day. It only goes up.');
 
   // Standing, and only ever on screen when it is true — the way the bid
-  // counter's warning is. Typing one is refused outright, so the only way to
-  // be looking at this is a file restored onto a phone whose counter had
-  // already run past it.
-  if (Store.invoiceNumberInUse(state.data, next)) {
-    box.appendChild(inlineWarn('Invoice #' + next + ' already exists. The next invoice would carry '
-      + 'a number one of yours already has.'));
+  // counter's warning is. Typing a taken number is refused outright, so the
+  // only way to be looking at this is a file restored onto a phone whose
+  // counter had already run past the seed. It says what will happen rather
+  // than what is wrong: the number he gets is already decided, and the row
+  // above is already showing it.
+  if (next !== seed) {
+    box.appendChild(inlineWarn('#' + seed + ' is taken or behind. Your next invoice will be #'
+      + next + '. Numbers only go up.'));
   }
 
   const terms = settingRow(box, 'Default terms', s.invoiceTerms || 'Upon receipt', () => {
@@ -1831,7 +1838,9 @@ function buildSetInvoices() {
   box.appendChild(whatsThis([
     'Next invoice number: the number the next invoice gets, whether it comes off Bill these or off '
       + 'a won bid. It counts up on its own, and a number that has already been used is refused: '
-      + 'numbers are never reused, and there is no voiding an invoice in this app.',
+      + 'numbers are never reused, and there is no voiding an invoice in this app. A number that '
+      + 'sits below one you have already used is raised to the next free one, so what this row '
+      + 'says is always the number you will get.',
     'Default terms: what a NEW invoice starts with. An invoice already written keeps the terms it '
       + 'went out with, and a customer with terms of their own beats this one.',
   ]));
@@ -1884,7 +1893,10 @@ function renderSettingsCustomers() {
 // What the row says on the right: the rate this customer is billed at, which
 // is the one thing on the card that changes what an invoice comes to.
 function settingsCustomerValue(c) {
-  return c.rateCents == null ? 'Your rate' : moneyText(c.rateCents) + '/hr';
+  // "Settings rate" in the same words as the caption under the row it opens
+  // ("Blank bills at your Settings rate"), so the value and the explanation of
+  // it are not two different names for one thing.
+  return c.rateCents == null ? 'Settings rate' : moneyText(c.rateCents) + '/hr';
 }
 
 function buildSetCustomers() {
@@ -1926,13 +1938,26 @@ const SETTINGS_CUSTOMER_FIELDS = [
   ['attn', 'Attn', 'Who the invoice is addressed to', false],
 ];
 
+// EXACT restores, which for an optional key means putting the ABSENCE back.
+// attn, address, po and terms are all keys a customer written before this
+// release simply does not have, and `c[key] = undefined` is not the same
+// document as no key at all: it survives a round trip through JSON as a
+// missing key, but until the next save the object in memory carries a key the
+// file does not, and every restore in this app is meant to leave the document
+// exactly as it was found.
+function settingsRestoreKey(c, key) {
+  const had = Object.prototype.hasOwnProperty.call(c, key);
+  const prev = c[key];
+  return () => { if (had) c[key] = prev; else delete c[key]; };
+}
+
 function settingsCustomerField(box, c, key, label, placeholder, required) {
   const line = settingRow(box, label, c[key] ? String(c[key]) : 'None', () => {
     settingsPromptText(c[key] == null ? '' : String(c[key]), label, placeholder, line,
       { required }, (text) => {
-        const prev = c[key];
+        const undo = settingsRestoreKey(c, key);
         c[key] = text == null ? '' : String(text).trim();
-        settingsSaveAndRender(() => { c[key] = prev; });
+        settingsSaveAndRender(undo);
       });
   });
   return line;
@@ -1952,9 +1977,9 @@ function buildSetCustomerCard(host, c) {
     settingsPromptText(c.address == null ? '' : String(c.address), 'Address',
       '2008 S Hardy Drive\nTempe, AZ 85282', addr,
       { multiline: true, maxLength: Store.ADDRESS_MAX }, (text) => {
-        const prev = c.address;
+        const undo = settingsRestoreKey(c, 'address');
         c.address = text == null ? '' : String(text);
-        settingsSaveAndRender(() => { c.address = prev; });
+        settingsSaveAndRender(undo);
       });
   }, 'Prints under the name in Bill To, a line at a time.');
 
@@ -1962,30 +1987,31 @@ function buildSetCustomerCard(host, c) {
     promptMoney(c.rateCents == null ? null : c.rateCents, {
       label: (c.name || 'This customer') + ', billed an hour',
       done: (cents) => {
-        const prev = c.rateCents;
+        const undo = settingsRestoreKey(c, 'rateCents');
         // Clear puts them back on the shop rate, which is what most of them
-        // are on. null rather than 0: $0.00 an hour is a customer billed
-        // nothing for labour, and on the glass it looks the same as blank.
-        c.rateCents = cents === null ? null : cents;
-        settingsSaveAndRender(() => { c.rateCents = prev; });
+        // are on. The keypad answers null for Clear and a whole number of
+        // cents otherwise, and null is exactly what "no rate of their own"
+        // is on the file, so the answer goes straight on.
+        c.rateCents = cents;
+        settingsSaveAndRender(undo);
       },
     });
   }, 'Blank bills at your Settings rate.', { keypad: true });
 
   const po = settingRow(box, 'PO number', c.po ? String(c.po) : 'None', () => {
     settingsPromptText(c.po == null ? '' : String(c.po), 'PO number', '2526-4213', po, {}, (text) => {
-      const prev = c.po;
+      const undo = settingsRestoreKey(c, 'po');
       c.po = text == null ? '' : String(text).trim();
-      settingsSaveAndRender(() => { c.po = prev; });
+      settingsSaveAndRender(undo);
     });
   }, 'Leave blank when the customer does not use them.');
 
   const terms = settingRow(box, 'Terms', c.terms ? String(c.terms) : (setS().invoiceTerms || 'Upon receipt'), () => {
     settingsPromptText(c.terms == null ? '' : String(c.terms), 'Terms',
       setS().invoiceTerms || 'Upon receipt', terms, {}, (text) => {
-        const prev = c.terms;
+        const undo = settingsRestoreKey(c, 'terms');
         c.terms = text == null ? '' : String(text).trim();
-        settingsSaveAndRender(() => { c.terms = prev; });
+        settingsSaveAndRender(undo);
       });
   }, 'Blank uses the default under Settings, Invoices.');
   host.appendChild(box);
@@ -2167,7 +2193,9 @@ function buildSetDoors() {
   // number rather than to look something up, and the rate on the right is the
   // answer to "is this still what I am charging?" without opening anything.
   box.appendChild(row('Rates', moneyText(s.rateCents) + '/hr', () => show('settings-rates')));
-  box.appendChild(row('Invoices', '#' + (Number.isInteger(s.nextInvoiceNumber) ? s.nextInvoiceNumber : 1),
+  // The number the next invoice will carry, not the stored seed: the same
+  // number the sub-screen's own row shows, from the same rule in storage.
+  box.appendChild(row('Invoices', '#' + Store.effectiveNextInvoiceNumber(state.data),
     () => show('settings-invoices')));
   box.appendChild(row('Parts catalog',
     settingsCountText(state.data.catalog.filter((p) => !p.hidden).length, 'part', 'parts'),

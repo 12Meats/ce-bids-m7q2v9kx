@@ -180,6 +180,17 @@ function billThisJobRemaining(bid, data) {
   return InvMath.projectRemainingCents(bid, data, data.invoices || []);
 }
 
+// Is there an invoice standing against this bid? A project invoice bills the
+// PROPOSAL, so the bid is the paper the invoice is made of: delete the bid and
+// the invoice points at nothing (the validator refuses a bidId that is not on
+// the file at all), and put it back to Sent and it bills a job the app now
+// says was never agreed. Both doors ask this one question rather than each
+// working the link out for itself.
+function bidHasInvoices(data, bid) {
+  if (!bid) return false;
+  return ((data && data.invoices) || []).some((inv) => inv.bidId === bid.id);
+}
+
 function billThisJobText(bid, data) {
   const left = billThisJobRemaining(bid, data);
   return left > 0 ? moneyText(left) + ' left' : 'Invoiced in full';
@@ -209,7 +220,13 @@ function billThisJobConfirm(bid, data) {
 //     opts.markupPct what this line bills at, for the Bills at caption
 //     opts.data      the shell's data (the catalog's memory of the price, the
 //                    settings the price search reads)
-//     opts.persistOr the shell's persistOr
+//     opts.persistOr the save for the LINE, with an exact restore handed to it
+//     opts.persistCatalog the save for what the CATALOG remembers about the
+//                    part (its last cost, its bill price, the date a price was
+//                    checked). Defaults to persistOr. A caller whose own save
+//                    writes nothing — a draft under review, a visit not saved
+//                    yet — hands in the shell's, so a price corrected here
+//                    reaches disk either way. See saveLineAndCatalog.
 //     opts.onChanged () => void   redraw; the strip stays where it is
 //     opts.onClose   () => void   the strip is answered: close it and redraw
 //
@@ -253,6 +270,38 @@ function lineCatalogPart(it, data) {
   return it.catalogId ? ((data.catalog || []).find((p) => p.id === it.catalogId) || null) : null;
 }
 
+// ---------------------------------------------------------------------------
+// TWO FACTS, ONE OR TWO SAVES
+// ---------------------------------------------------------------------------
+// A cost typed on a line changes two different things: what THIS line costs,
+// and what the catalog remembers this part costs. On the walk both live in the
+// same document and one save carries them — one write, and on a refusal one
+// banner, which is why the walk hands in no persistCatalog at all.
+//
+// A draft is where they part company. An invoice under review and a visit that
+// has not been saved yet are objects held in memory: their lines are not on the
+// file and their save writes nothing, while the catalog IS on the file and its
+// memory of a price is true whether or not the draft ever becomes paper. Those
+// callers hand in opts.persistCatalog (the shell's own save) and get two:
+//
+//   opts.persistOr        the LINE, restored exactly
+//   opts.persistCatalog   the CATALOG fact, restored exactly. Defaults to
+//                         persistOr, which is the single-save case above.
+//
+// undoPart is null when the line has no catalog part behind it (a one-off
+// typed straight onto the list), and then there is nothing to save apart.
+function saveLineAndCatalog(opts, undoLine, undoPart) {
+  if (!opts.persistCatalog) return opts.persistOr(() => { undoLine(); if (undoPart) undoPart(); });
+  const ok = opts.persistOr(undoLine);
+  if (undoPart) opts.persistCatalog(undoPart);
+  return ok;
+}
+
+// A write that is ONLY a catalog fact: a part invented mid-draft, and the use
+// count that goes with it. No line to keep it company, so there is nothing to
+// split.
+function saveCatalog(opts, undo) { return (opts.persistCatalog || opts.persistOr)(undo); }
+
 function lineActions(box, lineEl, items, it, opts) {
   const strip = attachedStrip(lineEl, [
     { label: 'Quantity', onTap: () => {
@@ -269,27 +318,7 @@ function lineActions(box, lineEl, items, it, opts) {
         },
       });
     } },
-    { label: 'Cost', onTap: () => {
-      promptMoney(it.costCents, {
-        label: partCostLabel(it.name, it.unit),
-        caption: pickerPriceCaption(),
-        captionAction: pickerPriceAction(opts.data.settings, it.name),
-        done: (cents) => {
-          const part = lineCatalogPart(it, opts.data);
-          const prev = it.costCents;
-          const prevLast = part ? part.lastCostCents : null;
-          it.costCents = cents === null ? 0 : cents;
-          // The catalog remembers the last price he actually paid, so correcting
-          // a fat-fingered cost here also corrects what the next bid offers him.
-          if (part) part.lastCostCents = it.costCents;
-          opts.persistOr(() => {
-            it.costCents = prev;
-            if (part) part.lastCostCents = prevLast;
-          });
-          opts.onClose();
-        },
-      });
-    } },
+    { label: 'Cost', onTap: () => lineAskCost(it, opts) },
     { label: 'Bills at', onTap: () => lineAskBillsAt(it, opts) },
     { label: 'Delete', quiet: true, onTap: async () => {
       const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
@@ -317,6 +346,31 @@ function lineActions(box, lineEl, items, it, opts) {
 // The caption's link is the door to the lot: one number for the whole line.
 // It CLOSES this keypad (captionAction.closes) because promptMoney will not
 // open over an open panel, and a link that did nothing would read as broken.
+// WHAT HE PAID FOR IT. Its own function beside the other two keypads the strip
+// opens, rather than an inline closure in the button list, because it writes in
+// two places (the line and the catalog's memory of the price) and that is the
+// part of the strip worth pinning in a test without a screen in front of it.
+function lineAskCost(it, opts) {
+  promptMoney(it.costCents, {
+    label: partCostLabel(it.name, it.unit),
+    caption: pickerPriceCaption(),
+    captionAction: pickerPriceAction(opts.data.settings, it.name),
+    done: (cents) => {
+      const part = lineCatalogPart(it, opts.data);
+      const prev = it.costCents;
+      const prevLast = part ? part.lastCostCents : null;
+      it.costCents = cents === null ? 0 : cents;
+      // The catalog remembers the last price he actually paid, so correcting
+      // a fat-fingered cost here also corrects what the next bid offers him.
+      if (part) part.lastCostCents = it.costCents;
+      saveLineAndCatalog(opts,
+        () => { it.costCents = prev; },
+        part ? () => { part.lastCostCents = prevLast; } : null);
+      opts.onClose();
+    },
+  });
+}
+
 // A line restored from an old file with a per-unit price of its own
 // (priceCents, which no screen writes any more) says so, because that price
 // wins over this one and a Done that moved nothing would look like a bug.
@@ -343,10 +397,9 @@ function lineAskBillsAt(it, opts) {
       // part still carried the date of an earlier import, that date now lies
       // about where this number came from, so it comes off with it.
       if (part) { part.lastListCents = cents; part.priceCheckedISO = null; }
-      opts.persistOr(() => {
-        it.listCents = prev;
-        if (part) { part.lastListCents = prevLast; part.priceCheckedISO = prevChecked; }
-      });
+      saveLineAndCatalog(opts,
+        () => { it.listCents = prev; },
+        part ? () => { part.lastListCents = prevLast; part.priceCheckedISO = prevChecked; } : null);
       opts.onClose();
     },
   });
@@ -816,7 +869,11 @@ function notePhrasesPicker(box, notes, opts) {
 //     opts.navPush      () => void                 pushed for the step INTO a drawer and for the
 //                                                  FIRST search keystroke, so each of those is
 //                                                  exactly one Back
-//     opts.persistOr    the shell's persistOr
+//     opts.persistOr    the save for the LINE, with an exact restore handed to it
+//     opts.persistCatalog the save for the CATALOG: a part invented here, one more
+//                       use of it, and what it cost this time. Defaults to
+//                       persistOr; a caller whose own save writes nothing hands
+//                       in the shell's. See saveLineAndCatalog.
 //     opts.data         the shell's own data object (catalog, settings)
 //   pickerCommitItem(ps, opts, part, qty, costCents) -> boolean
 //   pickerBackStep(ps) -> boolean: pending, then newPart, then the search, then the category.
@@ -1016,7 +1073,10 @@ function pickerCreatePart(ps, opts, unit) {
   // The catalog entry is saved on its own: if the quantity keypad is cancelled
   // a moment from now, a part that is on screen must already be on disk rather
   // than living in memory until some later save happens to carry it along.
-  if (!opts.persistOr(() => {
+  // Through saveCatalog, so a part invented on a review draft or an unsaved
+  // visit reaches the file through the shell's save rather than through a
+  // draft's, which writes nothing.
+  if (!saveCatalog(opts, () => {
     const i = opts.data.catalog.indexOf(part);
     if (i !== -1) opts.data.catalog.splice(i, 1);
   })) { opts.onChanged(); return; }
@@ -1118,12 +1178,14 @@ function pickerCommitItem(ps, opts, part, qty, costCents) {
   const prevUses = part.uses;
   const prevCost = part.lastCostCents;
   opts.items.push(item);
-  // One mutation, one save: the line and the catalog's memory of the price go
-  // to disk together or not at all.
+  // The line and the catalog's memory of the price: one save on the walk, two
+  // on a draft, and saveLineAndCatalog is where that is decided. Either way
+  // the restores are exact and belong to the fact they undo.
   Store.recordCatalogUse(opts.data, part.id, costCents);
-  if (!opts.persistOr(() => {
+  if (!saveLineAndCatalog(opts, () => {
     const i = opts.items.indexOf(item);
     if (i !== -1) opts.items.splice(i, 1);
+  }, () => {
     part.uses = prevUses;
     part.lastCostCents = prevCost;
   })) {

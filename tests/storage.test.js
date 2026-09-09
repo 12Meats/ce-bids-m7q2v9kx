@@ -1321,3 +1321,49 @@ test('equipmentInUse/crewInUse/catalogInUse swallow a malformed log or invoice r
   assert.strictEqual(S.catalogInUse(f.d, 'anything'), wantCatalog);
   assert.strictEqual(S.equipmentInUse(f.d, 'anything'), wantEquip);
 });
+
+// ---------------------------------------------------------------------------
+// THE NUMBER HE WILL ACTUALLY GET
+// ---------------------------------------------------------------------------
+// The seed in Settings is the app's bookkeeping; this is the promise. They come
+// apart the moment a backup is restored onto a phone whose counter had already
+// run past the seed, and Settings prints THIS one, so the row and the invoice
+// can never say two different numbers.
+
+test('effectiveNextInvoiceNumber is the seed, raised past anything already on the file', () => {
+  const d = S.emptyData();
+  assert.strictEqual(S.effectiveNextInvoiceNumber(d), 1, 'a fresh phone starts at the seed');
+  d.settings.nextInvoiceNumber = 166818;
+  assert.strictEqual(S.effectiveNextInvoiceNumber(d), 166818, 'nothing on file: the seed stands');
+
+  const f = invoiceFixture();                       // one invoice, numbered 166818
+  f.d.settings.nextInvoiceNumber = 166818;
+  assert.strictEqual(S.effectiveNextInvoiceNumber(f.d), 166819, 'a taken seed is raised one past it');
+  f.d.settings.nextInvoiceNumber = 12;
+  assert.strictEqual(S.effectiveNextInvoiceNumber(f.d), 166819, 'a seed far behind is raised the same way');
+  f.d.settings.nextInvoiceNumber = 200000;
+  assert.strictEqual(S.effectiveNextInvoiceNumber(f.d), 200000, 'a seed ahead of the file is left alone');
+
+  // A draft has no number and is nobody's ceiling.
+  f.d.settings.nextInvoiceNumber = 1;
+  f.d.invoices.push({ ...f.inv, id: 'draft', number: null, logIds: [] });
+  assert.strictEqual(S.effectiveNextInvoiceNumber(f.d), 166819);
+});
+
+test('effectiveNextInvoiceNumber reads a pre-v3 file and a junk seed without throwing', () => {
+  const d = S.emptyData();
+  delete d.invoices;
+  d.settings.nextInvoiceNumber = 0;
+  assert.strictEqual(S.effectiveNextInvoiceNumber(d), 1, 'a seed below 1 falls back to 1');
+  delete d.settings.nextInvoiceNumber;
+  assert.strictEqual(S.effectiveNextInvoiceNumber(d), 1, 'no seed at all reads as 1');
+});
+
+test('takeInvoiceNumber hands out exactly what effectiveNextInvoiceNumber promised', () => {
+  const f = invoiceFixture();
+  f.d.settings.nextInvoiceNumber = 12;
+  const promised = S.effectiveNextInvoiceNumber(f.d);
+  assert.strictEqual(S.takeInvoiceNumber(f.d), promised);
+  // And the promise moves on with it: the counter is now past what it spent.
+  assert.strictEqual(S.effectiveNextInvoiceNumber(f.d), promised + 1);
+});

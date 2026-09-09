@@ -1183,10 +1183,26 @@
   // backup, a hand edit) would not just print a wrong number, it would make
   // the very next save fail outright.
   function takeInvoiceNumber(d) {
-    const s = d.settings;
+    const n = effectiveNextInvoiceNumber(d);
+    d.settings.nextInvoiceNumber = n + 1;
+    return n;
+  }
+  // The number the next invoice will ACTUALLY carry, which is not always the
+  // number in Settings. The counter above steps past the highest number on the
+  // file, so a seed left behind — a backup restored onto a phone that had
+  // already run past it, a hand edit — is raised on the spot. Settings has to
+  // print THIS, not the stored seed, or the row promises a number the very next
+  // invoice will not use.
+  //
+  // It lives beside takeInvoiceNumber and takeInvoiceNumber is written in terms
+  // of it, so the number shown and the number handed out can never be two
+  // different rules that drifted apart.
+  function effectiveNextInvoiceNumber(d) {
+    const s = (d && d.settings) || {};
     let n = (Number.isInteger(s.nextInvoiceNumber) && s.nextInvoiceNumber >= 1) ? s.nextInvoiceNumber : 1;
-    for (const inv of (d.invoices || [])) if (Number.isInteger(inv.number) && inv.number >= n) n = inv.number + 1;
-    s.nextInvoiceNumber = n + 1;
+    for (const inv of ((d && d.invoices) || [])) {
+      if (Number.isInteger(inv.number) && inv.number >= n) n = inv.number + 1;
+    }
     return n;
   }
   // Number.isInteger(number) guards a null: a draft invoice's own number is
@@ -1468,6 +1484,7 @@
     addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
     standardCatalogNames, standardEquipmentNames,
     recordCatalogUse, numberInUse,
-    newProject, openProjects, newLogEntry, takeInvoiceNumber, invoiceNumberInUse, customerInUse, customerUseCounts,
+    newProject, openProjects, newLogEntry, takeInvoiceNumber, effectiveNextInvoiceNumber,
+    invoiceNumberInUse, customerInUse, customerUseCounts,
     INVOICE_KIND, INVOICE_STATUS, PROJECT_TITLE_MAX, ADDRESS_MAX };
 });

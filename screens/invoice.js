@@ -240,19 +240,7 @@ function buildInvoiceLines(host, inv) {
     if (invoicePicker.highlight === it) line.classList.add('walk-row-new');
     box.appendChild(line);
     if (invoiceItemMenu === it) {
-      lineActions(box, line, inv.items, it, {
-        markupPct: markup,
-        data: invoiceData(),
-        // Every material line goes through invoiceWrite, the way the rentals
-        // and the equipment do: a quantity, a cost, a bill price and a delete
-        // all change what this invoice comes to, and what it comes to is what
-        // decides whether it reads as paid. The restore this strip hands over
-        // carries the catalog's memory of the price with it, and invoiceWrite
-        // composes the status restore around that.
-        persistOr: (restore) => invoiceWrite(inv, restore),
-        onChanged: render,
-        onClose: () => { invoiceItemMenu = null; render(); },
-      });
+      lineActions(box, line, inv.items, it, invoiceLineOpts(inv));
     }
   });
 
@@ -311,6 +299,33 @@ function buildInvoiceLines(host, inv) {
   host.appendChild(box);
 }
 
+// What the line strip is handed, in one place: the line strip and the test that
+// pins it ask for it the same way, the way invoiceEquipOpts below is already
+// asked for.
+//
+// Every material line goes through invoiceWrite, the way the rentals and the
+// equipment do: a quantity, a cost, a bill price and a delete all change what
+// this invoice comes to, and what it comes to is what decides whether it reads
+// as paid.
+//
+// persistCatalog is the shell's own save, not invoiceWrite. What a part costs
+// and what it bills at are facts about the CATALOG, true whether or not this
+// draft is ever numbered, and on a draft under review invoiceWrite writes
+// nothing at all: without the split, correcting a fat-fingered cost on a
+// Friday-night draft taught the catalog nothing.
+function invoiceLineOpts(inv) {
+  return {
+    // The INVOICE's markup, snapshotted the day it was drafted, never
+    // Settings': a rate changed since then may not move paper already written.
+    markupPct: inv.markupPct,
+    data: invoiceData(),
+    persistOr: (restore) => invoiceWrite(inv, restore),
+    persistCatalog: persistOr,
+    onChanged: render,
+    onClose: () => { invoiceItemMenu = null; render(); },
+  };
+}
+
 // The add-a-part flow: the picker, onto this invoice's own items.
 function renderInvoiceAdd(host, inv) {
   renderItemPicker(host, invoicePicker, {
@@ -322,10 +337,12 @@ function renderInvoiceAdd(host, inv) {
     onDone: () => { invoiceView = 'invoice'; render(); },
     onChanged: render,
     navPush,
-    // invoiceWrite, for the reason spelled out on the line strip above: a part
+    // invoiceWrite, for the reason spelled out on invoiceLineOpts above: a part
     // added here changes what this invoice comes to. The catalog's own memory
-    // rides along inside the restore.
+    // goes to disk through the shell's save beside it, so a part invented on a
+    // draft under review is in the catalog whether or not the draft ever is.
     persistOr: (restore) => invoiceWrite(inv, restore),
+    persistCatalog: persistOr,
     data: invoiceData(),
   });
 }

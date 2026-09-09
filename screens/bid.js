@@ -24,6 +24,7 @@ let bidLostSheetOpen = false;
 let bidRevealUndo = false;
 let bidDraft = null;         // the not-yet-created bid, while state.bidId is null
 let bidShakeField = null;    // 'customer' | 'date' — shaken once after the next render
+let bidBillOpen = false;     // the Bill this job strip is hanging under its row
 
 // ---------------------------------------------------------------------------
 // Entering the screen
@@ -58,6 +59,7 @@ function enterBid(bidId) {
   bidHeaderOpen = false;
   bidLostSheetOpen = false;
   bidShakeField = null;
+  bidBillOpen = false;
   state.bidId = bidId;
   bidDraft = bidId === null ? newBidDraft() : null;
 }
@@ -87,6 +89,14 @@ function customerSuggestions(query) {
   const q = String(query || '').trim().toLowerCase();
   const matches = state.data.customers.filter((c) => {
     if (!c.name || c.name.trim() === '') return false;
+    // Hidden is how a customer is retired. The record stays on the file
+    // because bids and invoices name it, and every other list in the app folds
+    // it away; this one used to offer it as readily as a live one, so the
+    // customer he stopped working for two years ago was still the first
+    // suggestion under an empty box. Store.findOrCreateCustomer still finds it
+    // by an exact name, so typing the name out in full reuses the record
+    // rather than making a second one under the same words.
+    if (c.hidden === true) return false;
     return q === '' || c.name.toLowerCase().indexOf(q) !== -1;
   });
 
@@ -387,6 +397,18 @@ async function bidReopenLost(bid) {
 }
 
 async function bidUndoWon(bid) {
+  // Asked before the question is, because there is no question to ask: an
+  // invoice against this bid bills the proposal, and a bid back on Sent is a
+  // proposal the app says was never agreed. The banner names the number so he
+  // knows which piece of paper is holding the bid where it is.
+  if (bidHasInvoices(state.data, bid)) {
+    const inv = (state.data.invoices || []).find((x) => x.bidId === bid.id);
+    showBanner(inv && inv.number !== null
+      ? 'This bid has invoice #' + inv.number + ' on it.'
+      : 'This bid has an invoice on it.');
+    render();
+    return;
+  }
   const ok = await confirmPanel('Put this bid back to Sent? Nothing has been logged on the job yet.',
     { ok: 'Undo Won' });
   if (!ok) { render(); return; }
@@ -426,12 +448,17 @@ function buildBidBilling(host, bid) {
   const left = InvMath.projectRemainingCents(bid, d, d.invoices || []);
   // Nothing left is a row with nothing to tap: an invoice for $0 is not an
   // invoice, and a button that refuses every press is a button he tries twice.
-  box.appendChild(row('Bill this job', billThisJobText(bid, d),
-    left > 0 ? () => bidBillThisJob(bid) : null));
+  const billRow = row('Bill this job', billThisJobText(bid, d),
+    left > 0 ? () => { bidBillOpen = !bidBillOpen; render(); } : null);
+  box.appendChild(billRow);
+  if (left > 0 && bidBillOpen) bidBillStrip(box, billRow, bid, left);
 
+  // Every one of these carries a number: a project invoice is numbered on the
+  // spot, on the tap that made it, because there is one of them and he is
+  // looking at it. There is no draft state for this row to have a word for.
   const mine = (d.invoices || []).filter((inv) => inv.kind === 'project' && inv.bidId === bid.id);
   mine.forEach((inv) => {
-    box.appendChild(lineRow('Invoiced #' + (inv.number === null ? 'draft' : inv.number),
+    box.appendChild(lineRow('Invoiced #' + inv.number,
       invoiceStatusPill(inv), moneyText(InvMath.totals(inv).total),
       () => show('invoice', inv.id)));
   });
@@ -442,17 +469,27 @@ function buildBidBilling(host, bid) {
   host.appendChild(box);
 }
 
-// Whole, or part. Both answers are answers: the confirm has no "never mind"
-// because backing out of the amount keypad is the way out, and a cancel that
-// meant nothing would put a third button on a two-button question.
-async function bidBillThisJob(bid) {
+// Whole, or part. A strip under the row rather than a confirm panel, because
+// this is not a yes-or-no: it is two answers and a way out, and a confirm has
+// only one of each. It was a confirm whose Cancel meant "Part of it", which
+// made the back gesture — the thing that cancels every other panel in this app —
+// commit him to the amount keypad instead. Now Back closes the strip, the way
+// it closes every other strip, and the question the confirm used to ask is the
+// strip's own heading.
+function bidBillStrip(box, rowEl, bid, left) {
   const d = state.data;
-  const left = InvMath.projectRemainingCents(bid, d, d.invoices || []);
-  // Asked again after the panel: an invoice written while the question was up
-  // could have taken the rest of it.
-  if (!(left > 0)) { showBanner('This job is invoiced in full'); render(); return; }
-  const whole = await confirmPanel(billThisJobConfirm(bid, d), { ok: 'Whole amount', cancel: 'Part of it' });
-  if (whole) { bidWriteProjectInvoice(bid, null); return; }
+  const close = () => { bidBillOpen = false; render(); };
+  box.appendChild(attachedStrip(rowEl, [
+    // Two plain buttons, like every other strip in the app: both are real
+    // answers, and promoting one of them would be the screen leaning on him.
+    { label: 'Whole amount', onTap: () => { bidBillOpen = false; bidBillThisJob(bid, null); } },
+    { label: 'Part of it', onTap: () => { bidBillOpen = false; bidBillAskPart(bid, left); } },
+  ], { label: billThisJobConfirm(bid, d), cancel: close }));
+}
+
+// The amount keypad behind Part of it, capped at what is left so two invoices
+// can never bill the same dollar twice.
+function bidBillAskPart(bid, left) {
   promptMoney(null, {
     label: 'How much of it',
     caption: moneyText(left) + ' is left on this bid.',
@@ -464,9 +501,24 @@ async function bidBillThisJob(bid) {
         render();
         return;
       }
-      bidWriteProjectInvoice(bid, cents);
+      bidBillThisJob(bid, cents);
     },
   });
+}
+
+// The last gate before a number is spent. Asked again here rather than only on
+// the strip: an invoice written while the keypad was up could have taken the
+// rest of the job.
+function bidBillThisJob(bid, partCents) {
+  const d = state.data;
+  const left = InvMath.projectRemainingCents(bid, d, d.invoices || []);
+  if (!(left > 0)) { showBanner('This job is invoiced in full'); render(); return; }
+  if (partCents !== null && partCents > left) {
+    showBanner('That is more than the ' + moneyText(left) + ' left on this bid');
+    render();
+    return;
+  }
+  bidWriteProjectInvoice(bid, partCents);
 }
 
 // Numbered on the spot, unlike the weekly batch: there is one of these and he
@@ -481,12 +533,16 @@ function bidWriteProjectInvoice(bid, partCents) {
   inv.dateISO = Store.todayISO();
   inv.status = InvMath.statusOf(inv);
   // A file restored from before this release has no invoices array at all:
-  // every new key is optional on disk.
-  if (!d.invoices) d.invoices = [];
+  // every new key is optional on disk. The restore has to be able to take the
+  // ARRAY back off with the invoice, or a refused save leaves the document
+  // changed — an empty invoices: [] where there was nothing before.
+  const madeArray = !d.invoices;
+  if (madeArray) d.invoices = [];
   d.invoices.push(inv);
   if (!persistOr(() => {
     const i = d.invoices.indexOf(inv);
     if (i !== -1) d.invoices.splice(i, 1);
+    if (madeArray) delete d.invoices;
     d.settings.nextInvoiceNumber = prevNext;
   })) { render(); return; }
   show('invoice', inv.id);

@@ -37,7 +37,7 @@ const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, detailCaption, itemCountText,
   itemBillText, areaNoteLine, perUnitText,
-  priceSearchUrl } = sandbox;
+  priceSearchUrl, deferredBanner } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
 const MISC_LABEL = vm.runInContext('MISC_LABEL', sandbox);
@@ -850,4 +850,39 @@ test('itemBillText: nothing by default, the unit for a list, the whole amount fo
     'bills $0.00 the lot');
   // A legacy per-unit override is a price the paper prints too, so the row says it.
   assert.equal(itemBillText({ unit: 'ea', qty: 2, costCents: 1500, priceCents: 2000 }, 15), 'bills at $20.00 each');
+});
+
+// ---------------------------------------------------------------------------
+// NEWS THAT HAS TO WAIT
+// ---------------------------------------------------------------------------
+// A banner drawn behind an open panel has timed out by the time he has
+// answered the panel, so the share flows hold their bad news and let it go
+// once the glass is clear. Both halves ask anyPanelOpen for themselves: a
+// flush from inside a panel's own done handler is the ordinary case, and one
+// that trusted the caller would put the banner exactly where it cannot be read.
+test('deferredBanner holds while a panel is open, fires once on flush, and never twice', () => {
+  let open = true;
+  const shown = [];
+  sandbox.anyPanelOpen = () => open;
+  sandbox.showBanner = (text, kind) => shown.push([text, kind]);
+
+  const news = deferredBanner();
+  news.show("Couldn't keep a copy", 'danger');
+  assert.deepEqual(shown, [], 'held: a panel is up');
+  news.flush();
+  assert.deepEqual(shown, [], 'a flush behind a panel holds it still');
+
+  open = false;
+  news.flush();
+  assert.deepEqual(shown, [["Couldn't keep a copy", 'danger']], 'clear glass lets it go');
+  news.flush();
+  assert.strictEqual(shown.length, 1, 'flushed twice, shown once');
+
+  // And with nothing held, a flush is a no-op every way out of the flow calls it.
+  deferredBanner().flush();
+  assert.strictEqual(shown.length, 1);
+
+  // Clear glass at show() time skips the holding altogether.
+  deferredBanner().show('Marked sent', 'ok');
+  assert.deepEqual(shown[1], ['Marked sent', 'ok']);
 });

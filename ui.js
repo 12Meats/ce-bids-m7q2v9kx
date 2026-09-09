@@ -1024,7 +1024,13 @@ function scrollBack(top) {
 //
 // show() puts it up at once when the glass is clear, and holds exactly one
 // piece of news when it is not. flush() is a no-op when there is nothing held,
-// so every way out of the flow can call it.
+// so every way out of the flow can call it — and it asks anyPanelOpen for
+// itself rather than trusting the caller to only call it once the last panel
+// is down. A flush from inside a panel's own done handler is the ordinary
+// case, not a mistake, and a banner raised there would be drawn behind the
+// panel and time out before he ever saw it. Held news stays held until a
+// flush finds clear glass. Once shown, it is let go: flushed twice is shown
+// once.
 function deferredBanner() {
   let held = null;
   return {
@@ -1033,7 +1039,7 @@ function deferredBanner() {
       held = [text, kind];
     },
     flush() {
-      if (!held) return;
+      if (!held || anyPanelOpen()) return;
       const [text, kind] = held;
       held = null;
       showBanner(text, kind);

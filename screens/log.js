@@ -338,14 +338,15 @@ function buildLogLines(host, e) {
       lineActions(box, line, e.items, it, {
         markupPct: markup,
         data: logData(),
-        // The shell's own persistOr, not logCommit, even on a new visit: what
-        // this strip writes besides the line is the CATALOG's memory of what
-        // the part costs and what it bills at, and that is a fact about the
-        // part rather than a field of this draft. The draft's arrays live
-        // outside state.data, so the save writes the catalog and nothing else,
-        // and a refused save still runs the restore, which pulls the line back
-        // out of the draft.
-        persistOr,
+        // Two saves, and they are for two different things. The LINE belongs
+        // to this visit, so it goes through logCommit, which writes nothing
+        // while the visit is still a draft in memory. What the strip writes
+        // BESIDES the line is the CATALOG's memory of what the part costs and
+        // what it bills at, and that is a fact about the part rather than a
+        // field of this draft: it goes to disk through the shell's own save,
+        // whether or not the visit is ever kept.
+        persistOr: logCommit,
+        persistCatalog: persistOr,
         onChanged: render,
         onClose: () => { logItemMenu = null; render(); },
       });
@@ -428,17 +429,15 @@ function renderLogAdd(host, e) {
     onDone: () => { logView = 'entry'; render(); },
     onChanged: render,
     navPush,
-    // The shell's persistOr rather than logCommit, even though this visit is
-    // still a draft in memory. What the picker writes besides the line is the
-    // CATALOG: a part invented at the truck, the unit it is counted in, one
-    // more use, and what it cost this time. Those are facts about his catalog
-    // and they are true whether or not this visit is ever saved — the walk has
-    // always written them at once, and a part invented here and lost on Back
-    // is the same part typed again tomorrow. The line is safe either way: the
-    // draft's arrays live outside state.data, so the save writes the catalog
-    // and nothing else, and a refused save still runs the restore that takes
-    // the line back off the draft.
-    persistOr,
+    // The line goes through logCommit, which writes nothing while this visit is
+    // still a draft in memory. The CATALOG goes through the shell's own save:
+    // a part invented at the truck, the unit it is counted in, one more use,
+    // and what it cost this time are facts about his catalog and they are true
+    // whether or not this visit is ever saved. The walk has always written
+    // them at once, and a part invented here and lost on Back is the same part
+    // typed again tomorrow.
+    persistOr: logCommit,
+    persistCatalog: persistOr,
     data: logData(),
   });
 }
