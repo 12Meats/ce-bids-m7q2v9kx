@@ -46,14 +46,21 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 const root = path.join(__dirname, '..');
 // ui.js first: moneyText, numText and fmtDate are the vocabulary these
-// sentences are written in, and a stub of them would only test the stub.
+// sentences are written in, and a stub of them would only test the stub. Then
+// picker.js, which holds pileSelection and the row builders, and which the log
+// screen calls at load time (its picker state object).
 vm.runInContext(fs.readFileSync(path.join(root, 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
+vm.runInContext(fs.readFileSync(path.join(root, 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoices.js'), 'utf8'), sandbox,
   { filename: 'invoices.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'log.js'), 'utf8'), sandbox,
   { filename: 'log.js' });
 
-const { pileRowText, invoiceListText, logMissing, logCrewValue } = sandbox;
+const { pileRowText, invoiceListText, logMissing, logCrewValue, invGroupOn } = sandbox;
+// pileSelection is a const inside picker.js, and a const declared at the top of
+// a script is not a property of the context's global object the way a function
+// declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
+const pileSelection = vm.runInContext('pileSelection', sandbox);
 
 const TODAY = '2026-09-08';
 
@@ -106,6 +113,37 @@ test('half hours read as half hours, not as 4.5000001', () => {
   e.crew = [{ crewId: w.c1, hours: 2.5 }, { crewId: w.c2, hours: 1.25 }];
   const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'Boiler room');
   assert.strictEqual(pileRowText(g, TODAY), 'Sep 8 · 0 days · 3.75 hrs');
+});
+
+// ---------------------------------------------------------------------------
+// WHAT HE TURNED OFF
+// ---------------------------------------------------------------------------
+// The store remembers the OFF ones, never the on ones, and the difference only
+// shows up on the entry that did not exist yet when he last touched the list.
+
+test('unchecking a group leaves a brand-new entry checked', () => {
+  const w = world();
+  pileSelection.clear();
+  const g = groups(w)[0];
+  // He unchecks the UF week: both of its entries go off.
+  g.entries.forEach((e) => pileSelection.setOn(e.id, false));
+  assert.strictEqual(invGroupOn(g), false, 'the row he unchecked reads unchecked');
+  // Then Thursday happens and he logs another visit. It is on, because he has
+  // never said otherwise about an id that did not exist when he last looked.
+  const later = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-10', createdAt: 9 });
+  assert.strictEqual(pileSelection.isOn(later.id), true, 'an entry logged after his last tap is on');
+  pileSelection.clear();
+});
+
+test('a group he never touched is checked, and clear puts everything back on', () => {
+  const w = world();
+  pileSelection.clear();
+  const g = groups(w)[0];
+  assert.strictEqual(invGroupOn(g), true, 'nothing said means everything billed');
+  pileSelection.setOn(g.entries[0].id, false);
+  assert.strictEqual(invGroupOn(g), false, 'one entry off takes the group off');
+  pileSelection.clear();
+  assert.strictEqual(invGroupOn(g), true, 'the send clears the pile');
 });
 
 // ---------------------------------------------------------------------------

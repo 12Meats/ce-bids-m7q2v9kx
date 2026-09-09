@@ -295,13 +295,10 @@ function buildRentals(bid, markup) {
 // (Adrian's call, 9/05: it is what his paper bids say — "Lift rental · 1 week ·
 // $501"). The line used to read "Scissor lift  $285.00" with an "8 days" chip
 // under it, which reads as $285 a day; the word "total" on the value is what
-// stops that, and the prompt below asks the question the same way.
-function rentalTotalLabel(name) {
-  return 'What will the ' + (name || 'rental') + ' cost in total?';
-}
-function rentalTotalCaption(days) {
-  return 'For all ' + pricePlural(days, 'day', 'days') + ', what the rental house charges.';
-}
+// stops that, and the questions the strip asks say it the same way. Those
+// questions, and the four buttons that ask them, are rentalActions in
+// picker.js now: a visit logged at the truck rents the same lift off the same
+// yard, and two copies of this editor is two sets of words to drift apart.
 
 // ONE tap rule on this screen: tapping a line opens that line's strip, and
 // everything the line can do is in the strip. The rental used to be the
@@ -329,78 +326,37 @@ function buildRentalLine(bid, x, markup, warn) {
 
   if (priceMenu === x) {
     // Days, the money, the markup and the way off the bid — everything this
-    // line can be asked. "Marked up" used to be a chip up on the line, which
-    // said whether the switch was on and never what it did; then it was a
-    // two-state button reading "Markup on/off", which said the state and left
-    // him to work out what tapping it would do. Now the button says the ACTION
-    // — "Add markup", "Remove markup" — and the "Prints at" line under it says
-    // the state, in the only units that matter: the number on the paper.
-    line.appendChild(priceActions([
-      ['Days', '', () => pricePromptDays(x.days, (x.name || 'Rental') + ', how many days?', line, (v) => {
-        const prev = x.days;
-        x.days = v;
-        priceSave(() => { x.days = prev; });
-        render();
-      })],
-      ['Total cost', '', () => {
-        promptMoney(x.cents, {
-          label: rentalTotalLabel(x.name),
-          caption: rentalTotalCaption(x.days),
-          done: (cents) => {
-            const prev = x.cents;
-            // Clear means none of it, which is a real answer here, not a cancel.
-            x.cents = cents === null ? 0 : cents;
-            priceSave(() => { x.cents = prev; });
-            render();
-          },
-        });
-      }],
-      [x.markup ? 'Remove markup' : 'Add markup', '', () => {
-        const prev = x.markup;
-        x.markup = !prev;
-        priceSave(() => { x.markup = prev; });
-        render();
-      }],
-      ['Delete rental', 'quiet', () => priceDeleteRental(bid, x)],
-    ], priceCloseMenu));
-    line.appendChild(caption('Prints at ' + moneyText(prints)));
+    // line can be asked, and all of it in picker.js. "Marked up" used to be a
+    // chip up on the line, which said whether the switch was on and never what
+    // it did; then it was a two-state button reading "Markup on/off", which
+    // said the state and left him to work out what tapping it would do. Now
+    // the button says the ACTION and the "Prints at" line under it says the
+    // state, in the only units that matter: the number on the paper.
+    rentalActions(line, null, bid.rentals, x, {
+      data: state.data,
+      markupPct: markup,
+      persistOr: priceSave,
+      onChanged: render,
+      onClose: priceCloseMenu,
+      // This screen re-asks a day count it refused rather than dropping out of
+      // the flow, and shakes the line he tapped while it does it.
+      promptDays: (current, label, apply) => pricePromptDays(current, label, line, apply),
+    });
   }
   return line;
 }
 
 // Name, then days, then dollars — one question per panel, in the order he
-// would say them out loud. The naming step is the walk's step, from ui.js, so
-// the chips he gets here are the chips he got standing in the plant.
+// would say them out loud. All three are addRental in picker.js; the naming
+// step inside it is the walk's, so the chips he gets here are the chips he got
+// standing in the plant.
 function priceAddRental(bid) {
-  promptRentalName(state.data.catalog, '', (name) => {
-    pricePromptDays(1, name + ', how many days?', null, (days) => {
-      promptMoney(null, {
-        label: rentalTotalLabel(name),
-        caption: rentalTotalCaption(days),
-        done: (cents) => {
-          const rental = { name, days, cents: cents === null ? 0 : cents, markup: false };
-          bid.rentals.push(rental);
-          priceSave(() => {
-            const i = bid.rentals.indexOf(rental);
-            if (i !== -1) bid.rentals.splice(i, 1);
-          });
-          render();
-        },
-      });
-    });
+  addRental(bid.rentals, '', {
+    data: state.data,
+    persistOr: priceSave,
+    onChanged: render,
+    promptDays: (current, label, apply) => pricePromptDays(current, label, null, apply),
   });
-}
-
-async function priceDeleteRental(bid, x) {
-  const ok = await confirmPanel('Delete ' + (x.name || 'this rental') + '?', { ok: 'Delete', danger: true });
-  if (!ok) { render(); return; }
-  const i = bid.rentals.indexOf(x);
-  if (i !== -1) {
-    bid.rentals.splice(i, 1);
-    priceSave(() => { bid.rentals.splice(i, 0, x); });
-  }
-  priceMenu = null;
-  render();
 }
 
 // ---------------------------------------------------------------------------

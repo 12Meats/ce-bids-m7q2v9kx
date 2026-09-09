@@ -7,10 +7,12 @@
 // is the only thing in the flow that writes to disk, and the back step, which
 // is the only thing that decides where Back goes.
 //
-// ui.js is browser code loaded as plain globals, so it is evaluated in a VM
-// with the handful of globals the picker touches — the same trick ui.test.js
-// and docgen.test.js use. document is undefined here on purpose: a function
-// that needs it is a function this file is not testing.
+// picker.js is browser code loaded as plain globals, so it is evaluated in a
+// VM with the handful of globals the picker touches — the same trick
+// ui.test.js and docgen.test.js use — with ui.js in front of it, because the
+// picker is written in ui.js's vocabulary (screenHead, textButton, moneyText).
+// document is undefined here on purpose: a function that needs it is a
+// function this file is not testing.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -44,6 +46,7 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
@@ -205,20 +208,22 @@ test('renderItemPicker refuses rentals with nobody to answer them', () => {
 });
 
 test('the picker knows nothing about the walk', () => {
-  // The comments come off first. This section of ui.js talks about the walk on
-  // purpose — it says why the flow moved out of it — and a scan that read the
-  // prose would either fail on the explanation or force the explanation out of
-  // the file, which is the wrong way round. The [^:] guard keeps the "//" in
-  // an https: URL from being read as the start of a comment.
-  const src = fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
-  ['walkView', 'walkSheet', 'walkAreaId', 'walkAddCat', 'state.screen', 'state.data'].forEach((name) => {
-    // Word boundaries, not indexOf: a longer name that merely contains one of
-    // these is not a reach into the walk, and a bare substring match would
-    // start failing on the first innocent identifier that happens to spell one.
-    const re = new RegExp('\\b' + name.replace(/\./g, '\\.') + '\\b');
-    assert.strictEqual(re.test(src), false, 'ui.js reaches into the walk: ' + name);
+  // The comments come off first. Both files talk about the walk on purpose —
+  // they say why the flow moved out of it — and a scan that read the prose
+  // would either fail on the explanation or force the explanation out of the
+  // file, which is the wrong way round. The [^:] guard keeps the "//" in an
+  // https: URL from being read as the start of a comment.
+  ['ui.js', 'picker.js'].forEach((file) => {
+    const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    ['walkView', 'walkSheet', 'walkAreaId', 'walkAddCat', 'state.screen', 'state.data'].forEach((name) => {
+      // Word boundaries, not indexOf: a longer name that merely contains one of
+      // these is not a reach into the walk, and a bare substring match would
+      // start failing on the first innocent identifier that happens to spell one.
+      const re = new RegExp('\\b' + name.replace(/\./g, '\\.') + '\\b');
+      assert.strictEqual(re.test(src), false, file + ' reaches into the walk: ' + name);
+    });
   });
 });
 

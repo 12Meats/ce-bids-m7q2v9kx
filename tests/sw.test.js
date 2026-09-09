@@ -205,6 +205,27 @@ test('APP_BUILT is an ISO date, bumped with the version', () => {
   assert.ok(!isNaN(d.getTime()), 'APP_BUILT is a real day');
 });
 
+// picker.js is written in ui.js's vocabulary and every screen is written in
+// picker.js's: the row a list of parts is drawn as, the strip a line opens, the
+// picker itself. All three are plain globals evaluated top to bottom, so a
+// screen loaded first would define itself against builders that are not there
+// yet, and the failure would not show until he tapped the row.
+test('ui.js loads before picker.js, and picker.js before every screen', () => {
+  const at = (src) => HTML.indexOf('<script src="' + src + '"');
+  const ui = at('ui.js');
+  const picker = at('picker.js');
+  assert.notStrictEqual(ui, -1, 'index.html loads ui.js');
+  assert.notStrictEqual(picker, -1, 'index.html loads picker.js');
+  assert.ok(ui < picker, 'ui.js must be loaded before picker.js');
+  const screens = fs.readdirSync(path.join(ROOT, 'screens'))
+    .filter((f) => f.endsWith('.js')).map((f) => 'screens/' + f);
+  const early = screens.filter((rel) => {
+    const i = at(rel);
+    return i !== -1 && i < picker;
+  });
+  assert.deepStrictEqual(early, [], 'loaded before picker.js: ' + early.join(', '));
+});
+
 test('the cache name is namespaced to this app', () => {
   // The sibling timesheet app uses 'ce-*'. Sharing a name across two apps on the
   // same origin would have one wipe the other's cache on activate.

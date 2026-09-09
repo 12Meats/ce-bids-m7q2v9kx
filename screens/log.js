@@ -30,12 +30,15 @@ let logItemMenu = null;           // the item showing its action strip
 let logRentalMenu = null;         // the rental showing its action strip
 let logEquipMenu = null;          // the equipment line showing its action strip
 let logSheet = null;             // 'equip' while the equipment picker is up
+let logDiscardAsking = false;     // true while "Throw this visit away?" is up
 
 const LOG_CAPTION_PROJECT = 'Pick the job this visit belongs to. A title stays here until you mark it done.';
 
 // enter(arg): an entry id opens that entry, null starts a new one, and
-// undefined is the Back button coming home from the picker or an invoice,
-// which keeps whatever is on the glass.
+// undefined is the Back button coming home from an invoice, which keeps
+// whatever entry is on the glass. The view, the picker's own step, the three
+// line strips and the equipment sheet are put back either way: coming home
+// should never land on a strip hanging under a row he cannot see.
 function enterLog(arg) {
   logView = 'entry';
   logPicker = pickerState();
@@ -66,9 +69,26 @@ function logTarget() {
 }
 function logIsNew() { return !logId; }
 
+// Whether a new visit has anything on it worth asking about before Back throws
+// it away. Not the date: it starts at today and he never typed it, so a screen
+// he opened by accident is still nothing.
+function logDirty() {
+  const e = logDraft;
+  if (!e) return false;
+  return !!(e.customerId || e.projectId
+    || (e.crew || []).length || (e.items || []).length
+    || (e.rentals || []).length || (e.equipment || []).length
+    || (e.notes || '').trim());
+}
+
 // A new entry is not on the disk, so there is nothing to save and nothing to
 // restore: Back is the undo. An entry that exists writes every change on its
 // own, with an exact restore, the way the walk does.
+//
+// This is for the fields of the VISIT — who it was for, the date, the hours,
+// the notes, the lines themselves. It is NOT what the picker and the line
+// strips are handed: what those write besides the line is a catalog fact, and
+// a catalog fact lands on disk at once (see renderLogAdd).
 function logCommit(restore) {
   if (logIsNew()) return true;
   return persistOr(restore);
@@ -254,14 +274,18 @@ function buildLogCrew(host, e) {
   }
   offered.forEach((c) => {
     const m = (e.crew || []).find((x) => x.crewId === c.id);
-    box.appendChild(row(c.name, logCrewValue(e, c.id), () => {
+    const line = row(c.name, logCrewValue(e, c.id), () => {
       promptNumber(m ? m.hours : null, {
         label: c.name + ', hours',
         allowDecimal: true,
         maxDecimals: 2,
         done: (v) => logSetHours(e, c.id, v),
       });
-    }, { keypad: true }));
+    }, { keypad: true });
+    // "not on this one" is an answer, not a number, and it is muted so that a
+    // card of four men reads at a glance as the two who were there.
+    if (!m) line.classList.add('log-crew-off');
+    box.appendChild(line);
   });
   box.appendChild(caption('Clear takes a man off this visit.'));
   host.appendChild(box);
@@ -314,7 +338,14 @@ function buildLogLines(host, e) {
       lineActions(box, line, e.items, it, {
         markupPct: markup,
         data: logData(),
-        persistOr: logCommit,
+        // The shell's own persistOr, not logCommit, even on a new visit: what
+        // this strip writes besides the line is the CATALOG's memory of what
+        // the part costs and what it bills at, and that is a fact about the
+        // part rather than a field of this draft. The draft's arrays live
+        // outside state.data, so the save writes the catalog and nothing else,
+        // and a refused save still runs the restore, which pulls the line back
+        // out of the draft.
+        persistOr,
         onChanged: render,
         onClose: () => { logItemMenu = null; render(); },
       });
@@ -325,7 +356,15 @@ function buildLogLines(host, e) {
     const line = lineRow(x.name || 'Rental', logRentalSub(x), moneyText(x.cents),
       () => { logRentalMenu = logRentalMenu === x ? null : x; render(); });
     box.appendChild(line);
-    if (logRentalMenu === x) buildLogRentalActions(box, line, e, x);
+    if (logRentalMenu === x) {
+      rentalActions(box, line, e.rentals, x, {
+        data: logData(),
+        markupPct: markup,
+        persistOr: logCommit,
+        onChanged: render,
+        onClose: () => { logRentalMenu = null; render(); },
+      });
+    }
   });
 
   (e.equipment || []).forEach((x) => {
@@ -357,7 +396,14 @@ function buildLogLines(host, e) {
     render();
   }));
   nav.appendChild(textButton('+ Rental', 'btn btn-block', () => logAddRental(e, '')));
-  nav.appendChild(textButton('+ Equipment', 'btn btn-block', () => { logSheet = 'equip'; render(); }));
+  // navPush like + Part above: the tool list is a step into this screen, and
+  // one Back is what closes it. Without the push the back gesture left the
+  // screen entirely and took the half-logged visit with it.
+  nav.appendChild(textButton('+ Equipment', 'btn btn-block', () => {
+    navPush();
+    logSheet = 'equip';
+    render();
+  }));
   box.appendChild(nav);
   host.appendChild(box);
 }
@@ -388,92 +434,38 @@ function renderLogAdd(host, e) {
     onDone: () => { logView = 'entry'; render(); },
     onChanged: render,
     navPush,
-    persistOr: logCommit,
+    // The shell's persistOr rather than logCommit, even though this visit is
+    // still a draft in memory. What the picker writes besides the line is the
+    // CATALOG: a part invented at the truck, the unit it is counted in, one
+    // more use, and what it cost this time. Those are facts about his catalog
+    // and they are true whether or not this visit is ever saved — the walk has
+    // always written them at once, and a part invented here and lost on Back
+    // is the same part typed again tomorrow. The line is safe either way: the
+    // draft's arrays live outside state.data, so the save writes the catalog
+    // and nothing else, and a refused save still runs the restore that takes
+    // the line back off the draft.
+    persistOr,
     data: logData(),
   });
 }
 
 // Name, days, cost, in that order, and then the line is on the visit with its
-// markup switch off. Three panels rather than a form, because there are no
-// forms in this app; the switch is on the line's own strip, where changing it
-// later is the same tap as setting it now.
+// markup switch off and its strip open. All three questions are addRental in
+// picker.js, the same three the bid's Costs & price screen asks: a lift is a
+// lift whether it turns up on a bid or on a Tuesday.
+//
+// No banner. The strip it opens is already the answer, and a banner over an
+// open strip is a sentence about a thing he is looking at.
 function logAddRental(e, prefill) {
-  promptRentalName(logData().catalog, prefill, (name) => {
-    promptNumber(1, {
-      label: (name || 'Rental') + ', how many days?',
-      allowDecimal: true,
-      done: (days) => {
-        if (days === null) return;
-        if (!(days > 0)) { showBanner('Days have to be more than zero'); render(); return; }
-        promptMoney(null, {
-          label: (name || 'Rental') + ', what did it cost?',
-          done: (cents) => {
-            const line = { name, days, cents: cents === null ? 0 : cents, markup: false };
-            e.rentals.push(line);
-            if (!logCommit(() => {
-              const i = e.rentals.indexOf(line);
-              if (i !== -1) e.rentals.splice(i, 1);
-            })) { render(); return; }
-            logRentalMenu = line;
-            if (logView === 'add') logView = 'entry';
-            showBanner(name + ' added. Tap it to bill it with markup.', 'ok');
-            render();
-          },
-        });
-      },
-    });
+  addRental(e.rentals, prefill, {
+    data: logData(),
+    persistOr: logCommit,
+    onChanged: render,
+    onAdded: (line) => {
+      logRentalMenu = line;
+      if (logView === 'add') logView = 'entry';
+    },
   });
-}
-
-function buildLogRentalActions(box, lineEl, e, x) {
-  const close = () => { logRentalMenu = null; render(); };
-  const strip = attachedStrip(lineEl, [
-    { label: 'Days', onTap: () => {
-      promptNumber(x.days, {
-        label: (x.name || 'Rental') + ', how many days?',
-        allowDecimal: true,
-        done: (v) => {
-          if (v === null) return;
-          if (!(v > 0)) { showBanner('Days have to be more than zero'); render(); return; }
-          const prev = x.days;
-          x.days = v;
-          logCommit(() => { x.days = prev; });
-          close();
-        },
-      });
-    } },
-    { label: 'Cost', onTap: () => {
-      promptMoney(x.cents, {
-        label: (x.name || 'Rental') + ', what did it cost?',
-        done: (cents) => {
-          const prev = x.cents;
-          x.cents = cents === null ? 0 : cents;
-          logCommit(() => { x.cents = prev; });
-          close();
-        },
-      });
-    } },
-    // The one switch on a rental: does the customer pay the markup on it, or
-    // does it pass through at what the yard charged. It says which way it is
-    // now, so tapping it is a change he can see the result of.
-    { label: x.markup ? 'Markup on' : 'Markup off', onTap: () => {
-      const prev = x.markup;
-      x.markup = !prev;
-      logCommit(() => { x.markup = prev; });
-      close();
-    } },
-    { label: 'Delete', quiet: true, onTap: async () => {
-      const ok = await confirmPanel('Delete ' + (x.name || 'this rental') + '?', { ok: 'Delete', danger: true });
-      if (!ok) { render(); return; }
-      const i = e.rentals.indexOf(x);
-      if (i !== -1) {
-        e.rentals.splice(i, 1);
-        logCommit(() => { e.rentals.splice(i, 0, x); });
-      }
-      close();
-    } },
-  ], { cancel: close });
-  if (!strip.parentNode) box.appendChild(strip);
 }
 
 // His own gear carries its day rate with it, so the line lands priced. A tool
@@ -655,9 +647,12 @@ function renderLog() {
     host.appendChild(emptyNote('That entry is not here anymore.'));
     return;
   }
-  if (logView === 'add') { renderLogAdd(host, e); return; }
+  // The invoice is asked about FIRST, before the add view: an entry that is on
+  // an invoice is read-only, and read-only holds by construction rather than by
+  // there happening to be no way into the picker from a billed entry.
   const inv = logInvoice(e);
   if (inv) { renderLogBilled(host, e, inv); return; }
+  if (logView === 'add') { renderLogAdd(host, e); return; }
 
   buildLogCustomer(host, e);
   if (e.customerId) buildLogProject(host, e);
@@ -684,6 +679,28 @@ function logBackStep(peek) {
   }
   if (logSheet) {
     if (!peek) { logSheet = null; render(); }
+    return true;
+  }
+  // A new visit with something on it is thrown away by going back, and that is
+  // worth one question: eight parts counted at the tailgate and a thumb on the
+  // edge of the glass is the whole visit gone with nothing to undo it. An
+  // untouched new visit still goes back silently — a screen he opened by
+  // accident is not a thing to confirm.
+  if (logIsNew() && logDirty()) {
+    // The peek must answer without moving, and a second Back while the question
+    // is already up is not a second question.
+    if (peek || logDiscardAsking) return true;
+    logDiscardAsking = true;
+    confirmPanel('Throw this visit away?', { ok: 'Throw it away', cancel: 'Keep it', danger: true })
+      .then((ok) => {
+        logDiscardAsking = false;
+        if (!ok) { render(); return; }
+        logDraft = null;
+        logId = null;
+        // Replace: the gesture that asked the question already spent its own
+        // history entry, and going back is never a step further in.
+        show('invoices', undefined, { replace: true });
+      });
     return true;
   }
   return false;

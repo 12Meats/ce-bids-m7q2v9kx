@@ -24,6 +24,7 @@ const ASSETS = [
   'photos.js',
   'docgen.js',
   'ui.js',
+  'picker.js',
   'app.js',
   'screens/bids.js',
   'screens/bid.js',

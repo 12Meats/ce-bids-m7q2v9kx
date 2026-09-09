@@ -92,6 +92,21 @@
     return groups.slice(0, i).concat(parts, groups.slice(i + 1)).sort(byFrom);
   }
 
+  // What is IN a group, before anything is priced: the hours everybody put in
+  // and what the parts cost him. The pile rows on the Invoices home say both,
+  // and a screen does no arithmetic of its own — these were two reduce chains
+  // sitting in a row builder, which is the shape a rounding bug hides in.
+  //
+  // Parts are at COST here, not at what they bill: this is the row telling him
+  // what is sitting there unbilled, and the customer's price is a decision the
+  // invoice has not made yet.
+  function pileHours(g) {
+    return ((g && g.entries) || []).reduce((s2, e) => s2 + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
+  }
+  function pileParts(g) {
+    return ((g && g.entries) || []).reduce((s2, e) => s2 + B.materialCost({ areas: [{ items: e.items || [] }] }), 0);
+  }
+
   // -------------------------------------------------------------------------
   // THE INVOICE
   // -------------------------------------------------------------------------
@@ -263,7 +278,7 @@
   }
 
   return {
-    AMBER_AFTER_DAYS, group, canCombine, combine, split,
+    AMBER_AFTER_DAYS, group, canCombine, combine, split, pileHours, pileParts,
     draftInvoice, draftProjectInvoice, projectRemainingCents,
     laborCents, totals, paidCents, balanceCents, statusOf,
     ageDays, isStale, whoOwes, invoiceRows, rangeText,

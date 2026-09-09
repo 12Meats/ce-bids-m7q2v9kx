@@ -682,8 +682,11 @@ const SCREEN_FILES = fs.readdirSync(path.join(SRC_ROOT, 'screens'))
 test('no screen file paints a control red', () => {
   const offenders = SCREEN_FILES.filter((rel) => readSrc(rel).includes('btn-danger'));
   assert.deepStrictEqual(offenders, [], 'red on a screen: ' + offenders.join(', '));
-  // ui.js draws the strips for all of them, so it must not hand one out either.
-  assert.equal(readSrc('ui.js').includes('btn-danger'), false, 'ui.js must not paint a control red');
+  // ui.js and picker.js draw the strips for all of them, so neither may hand
+  // one out either.
+  ['ui.js', 'picker.js'].forEach((rel) => {
+    assert.equal(readSrc(rel).includes('btn-danger'), false, rel + ' must not paint a control red');
+  });
 });
 
 test('the red class exists once, for the confirm panel, and has no outline twin', () => {
@@ -777,6 +780,15 @@ test('the two red controls are the confirm primary and the keypad backspace', ()
   const controls = found.filter((sel) => RED_MARKS.indexOf(sel) === -1);
   assert.deepStrictEqual(controls, RED_CONTROLS.slice().sort(),
     'red belongs to the confirm panel primary and the keypad backspace, nothing else');
+});
+
+// A stale row is amber, and .walk-row paints its own transparent background:
+// same specificity, later in the file, so the bare .inv-stale rule lost and the
+// amber never appeared on an invoice row. Both spellings, or neither.
+test('the stale amber names the line row it has to beat', () => {
+  const html = readSrc('index.html');
+  assert.ok(html.includes('.inv-stale, .walk-row.inv-stale {'),
+    '.inv-stale must be written with .walk-row.inv-stale beside it, or the amber loses to .walk-row');
 });
 
 // The two that had it and gave it back. Named rather than counted, so the fix

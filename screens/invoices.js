@@ -15,19 +15,15 @@ const INVOICES_FOLD = 10;
 function invData() { return state.data; }
 function invToday() { return Store.todayISO(); }
 
-// The groups as they will be billed. pileSelection lives in ui.js because the
-// Bill these review reads the same answer and a screen may not call another
-// screen's file; null there means everything unbilled is checked, which is not
-// the same as a Set of today's ids — an entry logged tomorrow is checked too,
-// because he has never said otherwise.
-function invGroups() {
-  const d = invData();
-  const checked = pileSelection.get();
-  const exclude = new Set();
-  if (checked) (d.logs || []).forEach((e) => { if (!checked.has(e.id)) exclude.add(e.id); });
-  return InvMath.group(d.logs || [], d, Store.mondayOf, { exclude });
-}
+// Every group in the pile, checked or not: this screen draws them all and the
+// tick on each row says which ones Friday will bill. pileSelection lives in
+// picker.js because the Bill these review reads the same answer and a screen
+// may not call another screen's file. It remembers what he turned OFF, so an
+// entry logged after the last time he touched this list is on by default.
 function invAllGroups() { return InvMath.group(invData().logs || [], invData(), Store.mondayOf); }
+// A group is checked when every entry in it is: the store holds entry ids, not
+// groups, because Combine and Split on the review change what a group is.
+function invGroupOn(g) { return g.entries.every((e) => pileSelection.isOn(e.id)); }
 function invCustomerName(id) {
   const c = (invData().customers || []).find((x) => x.id === id);
   return c ? c.name : 'Customer';
@@ -44,8 +40,10 @@ function pileDayText(iso) { return fmtDate(iso).replace(/,\s*\d{4}$/, ''); }
 // A single entry does not say "1 entries", and a visit with no parts on it does
 // not say "$0.00 parts".
 function pileRowText(g, today) {
-  const hours = g.entries.reduce((s, e) => s + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
-  const parts = g.entries.reduce((s, e) => s + BidMath.materialCost({ areas: [{ items: e.items || [] }] }), 0);
+  // Both sums are InvMath's: a screen prints what comes back and counts
+  // nothing of its own.
+  const hours = InvMath.pileHours(g);
+  const parts = InvMath.pileParts(g);
   const span = g.from === g.to ? pileDayText(g.from) : pileDayText(g.from) + ' to ' + pileDayText(g.to);
   return span
     + ' · ' + InvMath.ageDays(g.from, today) + ' days'
@@ -102,11 +100,16 @@ function buildWhoOwes(host) {
 // One row per group: the check, "UDA · UF Project", and the sentence above.
 // Age of 14 days or more takes the amber tint, never red.
 function buildPile(host) {
+  // ONE list, read twice: the count in the heading and the tick on each row are
+  // the same question asked of the same groups. They were two different
+  // groupings once — the heading counted the groups the review would build and
+  // the rows drew the groups on file — and a row could say unchecked while the
+  // heading counted it.
   const all = invAllGroups();
   const box = card();
   const head = document.createElement('h3');
   head.className = 'card-title';
-  const checkedCount = invGroups().length;
+  const checkedCount = all.filter(invGroupOn).length;
   head.textContent = 'Ready to bill' + (all.length ? '  ·  ' + checkedCount + ' checked' : '');
   box.appendChild(head);
   if (!all.length) {
@@ -114,9 +117,8 @@ function buildPile(host) {
     host.appendChild(box);
     return;
   }
-  const checked = pileSelection.get();
   all.forEach((g) => {
-    const on = !checked || g.entries.every((e) => checked.has(e.id));
+    const on = invGroupOn(g);
     const line = checkRow(invCustomerName(g.customerId) + ' · ' + g.title, pileRowText(g, invToday()), on,
       () => { invoicesToggle(g, on); render(); },
       () => show('log', g.entries[0].id));
@@ -141,11 +143,7 @@ function buildPile(host) {
 // entry ids, not groups, because Combine and Split on the review change what a
 // group is and the entries are the things that do not move.
 function invoicesToggle(g, wasOn) {
-  const all = new Set((invData().logs || []).filter((e) => !e.invoiceId).map((e) => e.id));
-  const checked = pileSelection.get();
-  const set = checked ? new Set(checked) : all;
-  g.entries.forEach((e) => { if (wasOn) set.delete(e.id); else set.add(e.id); });
-  pileSelection.set(set);
+  g.entries.forEach((e) => pileSelection.setOn(e.id, !wasOn));
 }
 
 function buildInvoiceList(host) {

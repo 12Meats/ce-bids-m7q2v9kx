@@ -271,3 +271,33 @@ test('invoiceRows: what the paper prints, in order, from one primitive', () => {
   const one = I.draftInvoice(I.group(w.entries, w.d, monday)[2], w.d, 1);
   assert.deepStrictEqual(I.invoiceRows(one).labor, [{ qtyText: '4 hrs', desc: 'Labor hours', unitCents: 8500, cents: 34000 }]);
 });
+
+// ---------------------------------------------------------------------------
+// WHAT IS IN A GROUP
+// ---------------------------------------------------------------------------
+// The two numbers the pile row on the Invoices home says out loud. Parts are at
+// COST: that row is telling him what is sitting there unbilled, and what the
+// customer pays is a decision the invoice has not made yet.
+
+test('pileHours adds every man on every entry, and pileParts costs the parts', () => {
+  const g = { entries: [
+    { crew: [{ crewId: 'a', hours: 8 }, { crewId: 'b', hours: 5 }],
+      items: [{ catalogId: null, name: '#12 wire', unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 21600 }] },
+    { crew: [{ crewId: 'a', hours: 2.5 }], items: [] },
+  ] };
+  assert.strictEqual(I.pileHours(g), 15.5);
+  // 500 × 38 cents. The lot price of $216 is what the customer pays and is not
+  // this row's business.
+  assert.strictEqual(I.pileParts(g), 19000);
+});
+
+test('an empty group, and a group with nothing counted on it, are both zero', () => {
+  assert.strictEqual(I.pileHours({ entries: [] }), 0);
+  assert.strictEqual(I.pileParts({ entries: [] }), 0);
+  // An entry straight off newLogEntry has no crew and no items yet.
+  assert.strictEqual(I.pileHours({ entries: [{}] }), 0);
+  assert.strictEqual(I.pileParts({ entries: [{}] }), 0);
+  // And a caller that hands in nothing at all is not a crash.
+  assert.strictEqual(I.pileHours(null), 0);
+  assert.strictEqual(I.pileParts(undefined), 0);
+});

@@ -709,11 +709,25 @@
        corner that behaves differently, because a thumb that misses by 4px
        should do the harmless one, not the surprising one. */
     .check-row { display: flex; align-items: center; gap: var(--space-2); padding: 4px 0; }
+    /* The button is 44px square and the box he sees inside it is 24px: the
+       thing to aim at is bigger than the thing to look at. A 24px button beside
+       a second button that opens a different screen is half the size of every
+       other target in this app, and a thumb that misses it does the surprising
+       thing rather than the harmless one. */
     .check-box {
       flex: none;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .check-mark {
       width: 24px;
       height: 24px;
-      padding: 0;
       border-radius: 7px;
       border: 2px solid var(--color-border);
       background: var(--color-surface);
@@ -727,7 +741,7 @@
       align-items: center;
       justify-content: center;
     }
-    .check-box.on {
+    .check-box.on .check-mark {
       background: var(--color-accent);
       border-color: var(--color-accent);
       color: #fff;
@@ -746,13 +760,21 @@
     /* Old, not wrong. Same amber as .inline-warn, because it is the same kind
        of news: a condition the row is still in, said quietly. Nothing on a
        screen in this app is red. */
-    .inv-stale {
+    /* Both spellings: .walk-row paints its own transparent background, and on a
+       line row that rule is later and just as specific, so a bare .inv-stale
+       lost to it and the amber never appeared. */
+    .inv-stale, .walk-row.inv-stale {
       background: var(--color-warn-bg);
       border-radius: 10px;
       padding-left: var(--space-1);
       padding-right: var(--space-1);
     }
     .inv-stale .walk-row-sub { color: var(--color-warn-text); }
+
+    /* ---------- The log entry ---------- */
+    /* "not on this one" is an answer, not a value: muted, so a list of four men
+       reads at a glance as the two who were there and the two who were not. */
+    .log-crew-off .row-value { color: var(--color-text-muted); font-weight: 600; }
 
     /* ---------- The pinned action ---------- */
     /* One per screen, above the tab bar: the single thing this screen is for,
@@ -2128,6 +2150,7 @@
   <script src="photos.js"></script>
   <script src="docgen.js"></script>
   <script src="ui.js"></script>
+  <script src="picker.js"></script>
   <script src="app.js"></script>
   <script src="screens/bids.js"></script>
   <script src="screens/bid.js"></script>
