@@ -684,3 +684,69 @@ test('matches: a part number matches from the front, not out of the middle', () 
   assert.deepStrictEqual(names(C.matches(numbers, { query: '3302434' })), ['GFCI']);
   assert.deepStrictEqual(names(C.matches(numbers, { query: '330 2434' })), ['GFCI']);
 });
+
+// ---------------------------------------------------------------------------
+// v3.2.1: QED'S TITLE IS READ BY THE WORD
+// ---------------------------------------------------------------------------
+// The title lane went in as a plain substring, and across three hundred
+// imported titles that made a short number useless. "60" came back with every
+// 600 volt wire nut, every 60 Hz contactor and every catalog number that had a
+// 60 buried somewhere inside it, and the breaker he was holding was nowhere he
+// could see it.
+//
+// So the title is read the way its words are said. A query lands only at the
+// START OF A WORD, and a query that is nothing but a number has to BE one of
+// the words: 60 is a 60, not the front of a 600. Words are what whitespace and
+// punctuation leave behind, so the 4 in 4/0 is a word and the 60 in B360 is
+// not.
+//
+// HIS OWN NAMES ARE NOT TOUCHED. He wrote those, he knows what is in them, and
+// the middle of a name he typed is still a hit.
+const TITLES = [
+  Object.assign(part('gear', 'Breaker A', { id: 't1' }), {
+    supplierName: 'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker', sku: '22590',
+  }),
+  Object.assign(part('gear', 'Wire nut', { id: 't2' }), {
+    supplierName: 'Ideal 600 Volt Wire Connector',
+  }),
+  Object.assign(part('gear', 'Transformer', { id: 't3' }), {
+    supplierName: 'Acme 45 kVA Transformer', sku: '58018605',
+  }),
+  Object.assign(part('wire', 'Big feeder', { id: 't4' }), {
+    supplierName: 'Southwire 4/0 AWG THHN Copper',
+  }),
+];
+
+test('matches: a short number in a QED title means that number', () => {
+  // 600 Volt is not a 60, and neither is the 60 sitting inside 58018605.
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '60' })), ['Breaker A'],
+    'only the title that says 60 on its own');
+  // The number he actually typed is still found, whole.
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '600' })), ['Wire nut']);
+  // A fraction is one word on the paper and one word here.
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '4/0' })), ['Big feeder']);
+});
+
+test('matches: a QED title still answers, from the front of a word', () => {
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: 'B360' })), ['Breaker A'],
+    'the catalog number printed in the title');
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: 'siemens' })), ['Breaker A']);
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '45 kVA' })), ['Transformer'],
+    'two words of the title, in the order the title says them');
+  // The tail of a word is not a search for the word.
+  assert.deepStrictEqual(C.matches(TITLES, { query: 'olt' }), []);
+  assert.deepStrictEqual(C.matches(TITLES, { query: 'ircuit' }), []);
+});
+
+test('matches: the part number lane is unchanged, prefix and all', () => {
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '22590' })), ['Breaker A'],
+    'the QED part number, whole');
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '225' })), ['Breaker A'],
+    'and from the front of it, which is where a number is read');
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '5801' })), ['Transformer']);
+});
+
+test('matches: his own names keep the substring they always had', () => {
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: 'ire nu' })), ['Wire nut']);
+  assert.deepStrictEqual(names(C.matches(CATALOG, { query: 'mt' })), ['3/4" EMT', '1" EMT']);
+});

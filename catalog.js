@@ -254,6 +254,50 @@
     return p && p.source && p.source.kind === 'qed' ? 'From QED' : '';
   }
 
+  // -------------------------------------------------------------------------
+  // QED'S TITLE IS READ BY THE WORD
+  // -------------------------------------------------------------------------
+  // v3.2.1. The supplier lane went in as a plain substring, and across three
+  // hundred imported titles that made a short number useless: "60" came back
+  // with every 600 volt wire nut, every 60 Hz contactor and every catalog
+  // number with a 60 buried inside it, and the breaker in his hand was
+  // somewhere down the list where he could not see it.
+  //
+  // So a title is read the way its words are said. Two rules, and they only
+  // ever apply to WORDS SOMEBODY ELSE WROTE:
+  //
+  //   any query    — lands only at the START of a word ("olt" is not a search
+  //                  for "Volt", "b360" still finds "Siemens B360 3-Pole")
+  //   a pure number — has to BE the word ("60" is a 60, not the front of a
+  //                  600; "4/0" is still the 4/0 it is printed as)
+  //
+  // A word is what whitespace and punctuation leave behind, so the 4 in 4/0
+  // is a word of its own and the 60 in B360 is not. # and / and - are allowed
+  // inside a number because that is how a number is printed on the paper
+  // (#10, 4/0, 330-2434) and they are separators here, which makes the second
+  // rule "the query fills a whole run of letters and digits".
+  //
+  // HIS OWN NAMES ARE NOT TOUCHED by any of this. He wrote them, he knows
+  // what words are in them, and the middle of a name he typed is still a hit.
+  // Neither is the part number lane, which was already read from the front.
+  const WORD_CHAR = /[0-9a-z]/;
+  const PURE_NUMBER = /^[0-9#/-]+$/;
+
+  // Both sides already normalized: `query` as matches() built it, `supplier`
+  // straight off the part.
+  function supplierHit(supplier, query) {
+    if (supplier === '' || query === '') return false;
+    const s = normalizeName(supplier);
+    const whole = PURE_NUMBER.test(query);
+    for (let i = s.indexOf(query); i !== -1; i = s.indexOf(query, i + 1)) {
+      if (i > 0 && WORD_CHAR.test(s.charAt(i - 1))) continue;
+      const end = i + query.length;
+      if (whole && end < s.length && WORD_CHAR.test(s.charAt(end))) continue;
+      return true;
+    }
+    return false;
+  }
+
   // matches(catalog, { category, query, includeRentals, includeVariants })
   //
   //   query empty     — the parts in `category`
@@ -298,7 +342,8 @@
     // part he typed "3302434" onto. And it is read from the FRONT: a number
     // typed into the middle of a longer one is not a part number, it is a
     // coincidence, and "60" was dragging in every QED number with a 60
-    // anywhere inside it.
+    // anywhere inside it. QED's title is read by the word for the same
+    // reason: see supplierHit above.
     const qNoSpace = query.replace(/\s+/g, '');
     // Built only where it is used: browsing is the one lane that has to know
     // which parts are riding under another one.
@@ -320,7 +365,7 @@
       if (query) {
         if (normalizeName(name).indexOf(query) !== -1) { out.push({ p, lane: 0 }); return; }
         const supplier = typeof p.supplierName === 'string' ? p.supplierName : '';
-        if (supplier !== '' && normalizeName(supplier).indexOf(query) !== -1) { out.push({ p, lane: 1 }); return; }
+        if (supplierHit(supplier, query)) { out.push({ p, lane: 1 }); return; }
         const sku = typeof p.sku === 'string' ? p.sku.replace(/\s+/g, '').toLowerCase() : '';
         if (sku !== '' && qNoSpace !== '' && sku.indexOf(qNoSpace) === 0) out.push({ p, lane: 1 });
         return;

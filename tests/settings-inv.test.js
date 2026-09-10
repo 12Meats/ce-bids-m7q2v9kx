@@ -70,7 +70,8 @@ const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
   settingsWageLabel, settingsRateLabel,
   settingsCatalogSourceFilter, settingsCatalogSub, settingsBelongsWithOptions,
   settingsBelongsWithNow, settingsHasOptions,
-  settingsImportButton, settingsImportQuestion, settingsImportBanner } = sandbox;
+  settingsImportButton, settingsImportQuestion, settingsImportBanner,
+  settingsImportChanging, settingsImportRightText } = sandbox;
 
 // ---------------------------------------------------------------------------
 // THE NEXT INVOICE NUMBER
@@ -422,6 +423,47 @@ test('neither sentence carries an em dash', () => {
 test('the import question suits what is about to happen', () => {
   assert.strictEqual(settingsImportQuestion(0), 'Update the bill-at prices?');
   assert.strictEqual(settingsImportQuestion(320), 'Go ahead?');
+});
+
+// v3.2.1. MATCHED IS NOT THE SAME AS CHANGED. Adrian sends the whole QED
+// catalog every week, so the ordinary import matches three hundred parts and
+// moves eight of them. "Update 318 prices" was the button promising work it
+// was not going to do, and the one week the file moved nothing at all it read
+// exactly the same as the week it moved everything.
+test('the import counts the prices that would actually move', () => {
+  const row = (was, now) => ({ oldListCents: was, newListCents: now });
+  assert.strictEqual(settingsImportChanging([row(100, 120), row(250, 250), row(null, 400)]), 2,
+    'a part with no price yet is a price that moves');
+  assert.strictEqual(settingsImportChanging([row(250, 250)]), 0);
+  assert.strictEqual(settingsImportChanging([]), 0);
+  assert.strictEqual(settingsImportChanging(null), 0);
+  // And the button says that number, not the number of rows it read.
+  assert.strictEqual(settingsImportButton(8, 0), 'Update 8 prices');
+});
+
+// The ones that were already right are still said out loud, in the shape the
+// moment calls for. With nothing else to do they ARE the answer and the
+// sentence ends by saying so; beside prices that are moving they are a
+// footnote on a summary that already counted the matches.
+test('the import says what is already right', () => {
+  assert.strictEqual(settingsImportRightText(318, 0, 0),
+    'They are already right. Nothing to change.');
+  assert.strictEqual(settingsImportRightText(1, 0, 0),
+    'It is already right. Nothing to change.');
+  assert.strictEqual(settingsImportRightText(318, 8, 0), '310 are already right.');
+  assert.strictEqual(settingsImportRightText(2, 1, 0), 'One is already right.');
+  // Nothing matched, or every match is moving: there is nothing to add.
+  assert.strictEqual(settingsImportRightText(8, 8, 0), '');
+  assert.strictEqual(settingsImportRightText(0, 0, 320), '');
+  // Parts about to appear is work, so this stays a footnote and does not
+  // claim there is nothing to change.
+  assert.strictEqual(settingsImportRightText(318, 0, 40), '318 are already right.');
+});
+
+test('the already-right sentence carries no em dash', () => {
+  [settingsImportRightText(318, 0, 0), settingsImportRightText(318, 8, 0),
+    settingsImportRightText(1, 0, 0), settingsImportRightText(2, 1, 0)]
+    .forEach((s) => assert.strictEqual(s.indexOf('—'), -1));
 });
 
 // A link that lands on nothing is not a link. He deleted the generic, and the

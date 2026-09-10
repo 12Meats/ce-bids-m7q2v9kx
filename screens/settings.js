@@ -1752,10 +1752,42 @@ function buildSetImportPrices(box) {
 // add 320 parts"): the first import of a fresh phone matches nothing and
 // creates everything, and a button that hid that half would be a button that
 // undersold the change.
-function settingsImportButton(matched, creatable) {
-  const prices = 'Update ' + matched + (matched === 1 ? ' price' : ' prices');
+//
+// The count is the prices that would MOVE (settingsImportChanging below), not
+// the rows that found a part.
+function settingsImportButton(changing, creatable) {
+  const prices = 'Update ' + changing + (changing === 1 ? ' price' : ' prices');
   if (!creatable) return prices;
   return prices + ', add ' + creatable + (creatable === 1 ? ' part' : ' parts');
+}
+
+// MATCHED IS NOT THE SAME AS CHANGED. v3.2.1. Adrian sends the whole QED
+// catalog every week, so the ordinary import matches three hundred parts and
+// moves eight of them. Counting the matches made the button promise work it
+// was not going to do ("Update 318 prices" over a file that would move eight),
+// and the week the file moved nothing at all it read exactly like the week it
+// moved everything.
+//
+// A part with no price yet counts as one that moves: oldListCents is null
+// there, and null is not the new number.
+function settingsImportChanging(matched) {
+  const rows = Array.isArray(matched) ? matched : [];
+  return rows.filter((m) => m && m.newListCents !== m.oldListCents).length;
+}
+
+// And the ones that were already right, as their own sentence. Two shapes,
+// because they say two different things. With no price moving and no part to
+// add they ARE the answer, and the sentence has to end by saying so, or a
+// confirm he cannot say yes to looks like a button that did nothing. Beside
+// real work they are a footnote on a summary that already counted the matches.
+//
+// Empty when there is nothing to report: nothing matched, or every match is
+// moving, which is the sentence the summary already opened with.
+function settingsImportRightText(matched, changing, creatable) {
+  const right = matched - changing;
+  if (right <= 0) return '';
+  if (changing || creatable) return (right === 1 ? 'One is' : right + ' are') + ' already right.';
+  return (right === 1 ? 'It is' : 'They are') + ' already right. Nothing to change.';
 }
 
 // The question over that button. With nothing to create it is the sentence it
@@ -1799,15 +1831,23 @@ function settingsImportPrices(file) {
     const parsed = PriceFile.parse(text);
     if (parsed.error) { showBanner(parsed.error, 'danger'); render(); return; }
     const m = PriceFile.plan(parsed.rows, state.data.catalog);
-    const summary = PriceFile.summaryText(m);
+    // What the file would actually DO, which is the number the button and the
+    // question are both about: the matched rows whose price would move, not
+    // every row that found a part. The ones that were already right get a
+    // sentence of their own rather than being counted as work.
+    const changing = settingsImportChanging(m.matched);
+    const right = settingsImportRightText(m.matched.length, changing, m.creatable.length);
+    const summary = PriceFile.summaryText(m) + (right ? ' ' + right : '');
     // Nothing to update AND nothing to create: there is no question to ask, so
-    // the summary is simply said and the screen stays where it is.
-    if (!m.matched.length && !m.creatable.length) { showBanner(summary); render(); return; }
+    // the summary is simply said and the screen stays where it is. A file that
+    // matched three hundred parts and would move none of them is that file,
+    // however many rows it read.
+    if (!changing && !m.creatable.length) { showBanner(summary); render(); return; }
     // confirmPanel refuses to open over another open panel; asking anyway
     // would look like the button did nothing, so say why instead.
     if (anyPanelOpen()) { showBanner('Finish what you were doing, then try the import again.'); render(); return; }
     return confirmPanel(summary + ' ' + settingsImportQuestion(m.creatable.length),
-      { ok: settingsImportButton(m.matched.length, m.creatable.length) }).then((ok) => {
+      { ok: settingsImportButton(changing, m.creatable.length) }).then((ok) => {
       if (!ok) { render(); return; }
       // What apply is about to touch, remembered first by the module itself
       // (PriceFile.snapshot), so a refused save puts every part back exactly
