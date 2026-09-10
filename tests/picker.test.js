@@ -51,7 +51,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sa
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
   partQtyLabel, partCostLabel, partBillLabel, partLotLabel,
-  rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill } = sandbox;
+  rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill,
+  pickerChooserRows, pickerOptionsTag, pickerVariantCounts } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -83,9 +84,9 @@ function world(overrides) {
 // Object prototype and deepStrictEqual would fail on that alone. deepEqual
 // asks the question these tests actually mean: are these the same fields with
 // the same values. ui.test.js reads ui.js the same way.
-test('pickerState is the six things the flow is in the middle of, and nothing else', () => {
+test('pickerState is the seven things the flow is in the middle of, and nothing else', () => {
   assert.deepEqual(pickerState(), {
-    cat: null, search: '', listEl: null, newPart: null, pending: null, highlight: null,
+    cat: null, search: '', listEl: null, newPart: null, choose: null, pending: null, highlight: null,
   });
   // A fresh one every call: two pickers on two screens must not share a step.
   assert.notStrictEqual(pickerState(), pickerState());
@@ -374,4 +375,116 @@ test('entryStatusPill says In progress until he says Ready', () => {
   // an entry that is not there at all is not a crash.
   assert.equal(entryStatusPill({}), 'In progress');
   assert.equal(entryStatusPill(null), 'In progress');
+});
+
+// ---------------------------------------------------------------------------
+// THE CHOOSER
+// ---------------------------------------------------------------------------
+// v3.2. A generic part with options under it does not commit when it is
+// tapped: it opens a chooser, which is the options and then "Just" the generic
+// itself. Everything below is the pure half — what the rows say and where Back
+// goes — because the drawing is DOM and this file has no DOM.
+function optionWorld() {
+  const d = S.emptyData();
+  d.catalog = [];
+  const generic = S.addCatalogItem(d, { category: 'gear', name: '60 A 3-pole breaker', unit: 'ea' });
+  const a = S.addCatalogItem(d, { category: 'gear', name: '60 A 3-pole breaker · B360', unit: 'ea' });
+  const b = S.addCatalogItem(d, { category: 'gear', name: '60 A 3-pole breaker · QO360', unit: 'ea' });
+  const away = S.addCatalogItem(d, { category: 'gear', name: '60 A 3-pole breaker · BR360', unit: 'ea' });
+  a.variantOf = generic.id;
+  a.supplierName = 'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker';
+  a.lastListCents = 9900;
+  b.variantOf = generic.id;
+  b.supplierName = 'Square D QO360 3-Pole 60 Amp Breaker';
+  b.uses = 4;
+  away.variantOf = generic.id;
+  away.hidden = true;
+  return { d, generic, a, b, away };
+}
+
+test('pickerChooserRows: the options, then Just the generic', () => {
+  const w = optionWorld();
+  const rows = pickerChooserRows(w.d.catalog, w.generic.id);
+  assert.deepStrictEqual(rows.map((r) => r.title), [
+    '60 A 3-pole breaker · QO360',
+    '60 A 3-pole breaker · B360',
+    'Just 60 A 3-pole breaker',
+  ], 'most-used option first, and the plain part last');
+  assert.strictEqual(rows[rows.length - 1].part, w.generic);
+  assert.strictEqual(rows[rows.length - 1].sub, '');
+});
+
+// The second line is what tells two breakers apart: whose it is, and what it
+// bills at. A part with no price yet says who makes it and nothing else,
+// rather than a dollar sign with nothing after it.
+test('pickerChooserRows: the sub says whose it is and what it bills at', () => {
+  const w = optionWorld();
+  const rows = pickerChooserRows(w.d.catalog, w.generic.id);
+  const byTitle = (t) => rows.find((r) => r.title === t);
+  assert.strictEqual(byTitle('60 A 3-pole breaker · B360').sub,
+    'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker · $99.00 / ea');
+  assert.strictEqual(byTitle('60 A 3-pole breaker · QO360').sub,
+    'Square D QO360 3-Pole 60 Amp Breaker');
+});
+
+test('pickerChooserRows: a generic that is not there has nothing to choose from', () => {
+  const w = optionWorld();
+  assert.strictEqual(pickerChooserRows(w.d.catalog, 'nobody').length, 0);
+  assert.strictEqual(pickerChooserRows(null, w.generic.id).length, 0);
+});
+
+test('pickerOptionsTag counts in words he would say', () => {
+  assert.strictEqual(pickerOptionsTag(1), '1 option');
+  assert.strictEqual(pickerOptionsTag(3), '3 options');
+});
+
+// One pass over the catalog rather than one pass per row: a list of 120 parts
+// redrawn on every keystroke of a search cannot afford to ask the question 120
+// times.
+test('pickerVariantCounts counts the live options under each generic', () => {
+  const w = optionWorld();
+  const counts = pickerVariantCounts(w.d.catalog);
+  assert.strictEqual(counts.get(w.generic.id), 2, 'the put-away one is not an option');
+  assert.strictEqual(counts.get(w.a.id), undefined);
+  assert.strictEqual(pickerVariantCounts(null).size, 0);
+});
+
+// The chooser is a step, so Back leaves it. It goes AFTER the two panels: the
+// same-price question is opened from inside the chooser, and answering Back
+// there has to take that question down first, or Back would clear the chooser
+// behind a panel that is still on the glass and look like it did nothing.
+test('pickerBackStep leaves the chooser, after the panels and before the list', () => {
+  const ps = pickerState();
+  ps.cat = 'gear';
+  ps.choose = 'g1';
+  ps.pending = { part: {}, qty: 1 };
+
+  assert.strictEqual(pickerBackStep(ps), true);
+  assert.strictEqual(ps.pending, null);
+  assert.strictEqual(ps.choose, 'g1', 'the chooser is still open behind the question');
+  assert.strictEqual(pickerBackStep(ps), true);
+  assert.strictEqual(ps.choose, null);
+  assert.strictEqual(ps.cat, 'gear', 'and he is back in the drawer he was browsing');
+  assert.strictEqual(pickerBackStep(ps), true);
+  assert.strictEqual(ps.cat, null);
+});
+
+// Committing anything out of the chooser closes it: he came in to pick one of
+// the three, and he has picked one. A refused save leaves it open, because
+// nothing was written and nothing is behind him.
+test('pickerCommitItem closes the chooser, and a refused save leaves it open', () => {
+  const w = world();
+  w.ps.choose = 'g1';
+  assert.strictEqual(pickerCommitItem(w.ps, w.opts, w.part, 2, 100), true);
+  assert.strictEqual(w.ps.choose, null);
+
+  const w2 = world();
+  w2.ps.choose = 'g1';
+  w2.opts.persistOr = () => false;
+  assert.strictEqual(pickerCommitItem(w2.ps, w2.opts, w2.part, 2, 100), false);
+  assert.strictEqual(w2.ps.choose, 'g1');
+});
+
+test('pickerState starts with no chooser open', () => {
+  assert.strictEqual(pickerState().choose, null);
 });

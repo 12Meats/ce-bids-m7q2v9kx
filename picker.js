@@ -849,7 +849,7 @@ function notePhrasesPicker(box, notes, opts) {
 // The picker knows nothing about who is using it: it is handed a state object
 // and a list to push onto, and it calls back for everything else.
 //
-//   pickerState() -> { cat, search, listEl, newPart, pending, highlight }
+//   pickerState() -> { cat, search, listEl, newPart, choose, pending, highlight }
 //   renderItemPicker(host, ps, opts) draws the whole add flow into host:
 //     opts.title        'Add to Lactose room'      (screenHead, centered)
 //     opts.items        the array a picked part is pushed onto
@@ -881,7 +881,8 @@ function notePhrasesPicker(box, notes, opts) {
 //                       in the shell's. See saveLineAndCatalog.
 //     opts.data         the shell's own data object (catalog, settings)
 //   pickerCommitItem(ps, opts, part, qty, costCents) -> boolean
-//   pickerBackStep(ps) -> boolean: pending, then newPart, then the search, then the category.
+//   pickerBackStep(ps) -> boolean: pending, then newPart, then the chooser, then
+//                     the search and the category together.
 //
 // Every mutation goes through opts.persistOr with an exact restore. The flash
 // timer outlives the screen it was started on, so the caller clears
@@ -896,6 +897,7 @@ function pickerState() {
     search: '',
     listEl: null,       // the live list, so typing in search redraws only it
     newPart: null,      // { category, name } while the unit picker is up
+    choose: null,       // the id of the generic whose options are on the glass
     pending: null,      // { part, qty } waiting on the same-price answer
     highlight: null,    // the item flashed for a second after it was added
   };
@@ -938,6 +940,10 @@ function renderItemPicker(host, ps, opts) {
       // are typing. One entry, so one Back puts the tiles back.
       if (ps.search.trim() === '' && value.trim() !== '') opts.navPush();
       ps.search = value;
+      // Typing is a new question, so the chooser is not still standing over
+      // the answer: the box below would otherwise keep showing three breakers
+      // while he types the name of something else entirely.
+      ps.choose = null;
       if (ps.listEl && ps.listEl.isConnected) pickerBody(ps, opts, ps.listEl);
       else opts.onChanged();
     },
@@ -958,6 +964,15 @@ function renderItemPicker(host, ps, opts) {
 // tiles back exactly where they were.
 function pickerBody(ps, opts, host) {
   host.textContent = '';
+  // The chooser stands where the list was, in the same box, with the search
+  // still above it: it is a step inside the list rather than a panel over the
+  // whole screen, and the running tally and Done stay where they were.
+  if (ps.choose) {
+    const box = card();
+    pickerChooser(ps, opts, box);
+    host.appendChild(box);
+    return;
+  }
   if (ps.search.trim() === '' && !ps.cat) {
     host.appendChild(pickerTiles(ps, opts));
     return;
@@ -1033,15 +1048,30 @@ function pickerList(ps, opts, box) {
   if (list.length === 0) {
     box.appendChild(emptyNote(searching ? 'Nothing matches that.' : 'Nothing in here yet.'));
   } else {
+    // One pass over the catalog for the whole list rather than one per row: a
+    // drawer of a hundred parts is redrawn on every keystroke of a search.
+    const counts = pickerVariantCounts(opts.data.catalog);
     list.forEach((p) => {
       // Search crosses categories on purpose — typing "3/4" should find the
       // hubs as well as the EMT — so each row has to say which drawer it came
       // out of, or two identical-looking names are indistinguishable.
-      const sub = searching ? catalogCategoryLabel(p.category) : '';
+      const bits = [];
+      if (searching) bits.push(catalogCategoryLabel(p.category));
+      // "3 options": the row is a doorway, not a part. Said on the row itself
+      // because the alternative is a tap that does something he was not
+      // expecting, which on a walk is a tap he learns to distrust.
+      const options = counts.get(p.id) || 0;
+      if (options) bits.push(pickerOptionsTag(options));
+      const sub = bits.join(' · ');
       const value = p.lastCostCents === null
         ? p.unit
         : BidMath.fmt(p.lastCostCents) + ' / ' + p.unit;
-      box.appendChild(lineRow(p.name, sub, value, () => pickerPickPart(ps, opts, p), { keypad: true }));
+      // A generic with options takes a chevron, because the tap opens
+      // something; a plain part keeps the keypad look it always had.
+      box.appendChild(lineRow(p.name, sub, value, () => {
+        if (options) { ps.choose = p.id; opts.navPush(); opts.onChanged(); return; }
+        pickerPickPart(ps, opts, p);
+      }, { keypad: !options }));
     });
   }
 
@@ -1058,6 +1088,78 @@ function pickerList(ps, opts, box) {
       },
     });
   }));
+}
+
+// THE CHOOSER
+// ---------------------------------------------------------------------------
+// He taps "60 A 3-pole breaker" and gets the three breakers QED actually sells
+// under that name, and then "Just 60 A 3-pole breaker" for the day he does not
+// care which. Scattered across the browsing list those three were three rows
+// he had to read the ends of; behind the one row that names the thing, they
+// are a question with three answers.
+//
+// Every row commits through the same path a tapped part has always taken, so
+// an option picked here asks for a quantity and a price exactly as the plain
+// part does, and the line it writes is a line like any other.
+
+// "1 option" / "3 options". Shared, because Settings says it on its own rows.
+function pickerOptionsTag(n) { return n + (n === 1 ? ' option' : ' options'); }
+
+// How many live options each generic has, counted in one pass. A put-away
+// option is not offered, so it is not counted either.
+function pickerVariantCounts(catalog) {
+  const counts = new Map();
+  (Array.isArray(catalog) ? catalog : []).forEach((p) => {
+    if (!p || p.hidden !== false) return;
+    if (typeof p.variantOf !== 'string' || p.variantOf === '') return;
+    counts.set(p.variantOf, (counts.get(p.variantOf) || 0) + 1);
+  });
+  return counts;
+}
+
+// The second line under an option: whose it is, and what it bills at. That
+// pair is the whole reason the chooser exists — three rows whose names differ
+// only in the number on the end are told apart by the brand and the price. A
+// part with no bill-at price yet says who makes it and stops there.
+function pickerChooserSub(p) {
+  const supplier = typeof p.supplierName === 'string' && p.supplierName.trim() !== '' ? p.supplierName : '';
+  const price = Number.isInteger(p.lastListCents)
+    ? BidMath.fmt(p.lastListCents) + ' / ' + (p.unit || 'ea') : '';
+  if (supplier && price) return supplier + ' · ' + price;
+  return supplier || price;
+}
+
+// pickerChooserRows(catalog, genericId) -> [{ part, title, sub }]
+// The options in the order the list would have offered them, then the generic
+// itself. Pure, so what the chooser says is tested without a browser.
+function pickerChooserRows(catalog, genericId) {
+  const list = Array.isArray(catalog) ? catalog : [];
+  const generic = list.find((p) => p && p.id === genericId) || null;
+  if (!generic) return [];
+  const rows = Catalog.variantsOf(list, genericId)
+    .map((p) => ({ part: p, title: p.name, sub: pickerChooserSub(p) }));
+  // "Just the breaker" is the way out that is not Back: he wants the line on
+  // the bid and he will sort out whose breaker it is at the counter. It adds
+  // the generic exactly as tapping it did before there were any options.
+  rows.push({ part: generic, title: 'Just ' + generic.name, sub: '' });
+  return rows;
+}
+
+function pickerChooser(ps, opts, box) {
+  box.textContent = '';
+  const rows = pickerChooserRows(opts.data.catalog, ps.choose);
+  // A generic that went away under him (a restore, another screen) leaves
+  // nothing to choose from; the chooser closes rather than standing empty.
+  if (!rows.length) { ps.choose = null; pickerList(ps, opts, box); return; }
+
+  const h = document.createElement('h3');
+  h.className = 'card-title';
+  h.textContent = rows[rows.length - 1].part.name;
+  box.appendChild(h);
+
+  rows.forEach((r) => {
+    box.appendChild(lineRow(r.title, r.sub, null, () => pickerPickPart(ps, opts, r.part), { keypad: true }));
+  });
 }
 
 function pickerUnitPicker(ps, opts) {
@@ -1204,6 +1306,10 @@ function pickerCommitItem(ps, opts, part, qty, costCents) {
   // trips out to the area and back in through the tiles; the running strip at
   // the top is what says the last one landed, and Done is the way out.
   ps.pending = null;
+  // He came into the chooser to pick one of the three and he has picked one.
+  // Only on the way out that WROTE something: a refused save above leaves it
+  // open, because nothing was saved and nothing is behind him.
+  ps.choose = null;
   ps.highlight = item;
   opts.onChanged();
   setTimeout(() => {
@@ -1226,6 +1332,11 @@ function pickerBackStep(ps) {
   // contract names is the order the code reads in.
   if (ps.pending) { ps.pending = null; return true; }
   if (ps.newPart) { ps.newPart = null; return true; }
+  // The chooser goes AFTER those two and not before. The same-price question
+  // is opened from inside the chooser, and renderItemPicker draws that
+  // question over everything: clearing the chooser first would take away the
+  // thing behind the panel and look like Back did nothing at all.
+  if (ps.choose) { ps.choose = null; return true; }
   // A search and a category are the same step out of the tiles, and both go
   // back to them rather than all the way out of the add flow.
   if (ps.cat || ps.search.trim() !== '') {
