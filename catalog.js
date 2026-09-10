@@ -202,7 +202,59 @@
     return order.length;
   }
 
-  // matches(catalog, { category, query, includeRentals })
+  // -------------------------------------------------------------------------
+  // OPTIONS UNDER A PART
+  // -------------------------------------------------------------------------
+  // v3.2. A generic part of his — "60 A 3-pole breaker" — can have OPTIONS
+  // under it: the real breakers QED sells, each one a full catalog part with
+  // its own number, its own title on the paper and its own price. A part says
+  // which generic it belongs under with `variantOf`, the generic's id.
+  //
+  // An id and not a name, so renaming either end leaves the link standing. And
+  // a link that lands on nothing — a generic he deleted, or one he has put
+  // away for the season — is read as NO LINK: the option stops riding under
+  // anything and stands on the walk as its own part, rather than vanishing
+  // with the row it was hiding behind. Nothing in this app disappears because
+  // a pointer broke.
+
+  function indexById(catalog) {
+    const m = new Map();
+    (Array.isArray(catalog) ? catalog : []).forEach((p) => {
+      if (p && typeof p.id === 'string' && p.id !== '' && !m.has(p.id)) m.set(p.id, p);
+    });
+    return m;
+  }
+
+  // The generic this part rides under, or null. Takes the INDEX rather than
+  // the list, so the browsing filter below builds it once instead of once per
+  // part.
+  function liveGeneric(byId, p) {
+    if (!p || typeof p.variantOf !== 'string' || p.variantOf === '') return null;
+    const g = byId.get(p.variantOf);
+    return g && g.hidden === false ? g : null;
+  }
+
+  // isVariant(catalog, p) — true only when this part is riding under a generic
+  // that is still on the walk. This is the question the browsing list asks.
+  function isVariant(catalog, p) { return liveGeneric(indexById(catalog), p) !== null; }
+
+  // variantsOf(catalog, id) — the live options under one generic, in the order
+  // the walk offers everything else: most-used first, then the rack order. A
+  // put-away option is not offered, the same as any put-away part.
+  function variantsOf(catalog, id) {
+    const list = Array.isArray(catalog) ? catalog : [];
+    if (typeof id !== 'string' || id === '') return [];
+    return list.filter((p) => p && p.hidden === false && p.variantOf === id).sort(rackOrder);
+  }
+
+  // What a row says about where a part came from. "" for the ones he typed and
+  // the ones the seed list put there, which is what makes the words mean
+  // something on the ones that carry them.
+  function sourceLabel(p) {
+    return p && p.source && p.source.kind === 'qed' ? 'From QED' : '';
+  }
+
+  // matches(catalog, { category, query, includeRentals, includeVariants })
   //
   //   query empty     — the parts in `category`
   //   query non-empty — every category, name containing the query, because
@@ -229,41 +281,78 @@
     const o = opts || {};
     const query = expandUnits(normalizeName(typeof o.query === 'string' ? o.query : ''));
     const includeRentals = o.includeRentals === true;
+    const includeVariants = o.includeVariants === true;
+
+    // Two more lanes for a search, both v3.2, because an OPTION is found by
+    // what is printed on it rather than by what he calls it: QED's own title
+    // and QED's number. The catalog number is already inside the tile name
+    // ("60 A 3-pole breaker · B360"), so the name lane catches that one on its
+    // own and no third rule is needed for it.
+    //
+    // The part number loses its whitespace on both sides, the same rule the
+    // price file's matching uses, so "330 2434" off a receipt lands on the
+    // part he typed "3302434" onto.
+    const qNoSpace = query.replace(/\s+/g, '');
+    // Built only where it is used: browsing is the one lane that has to know
+    // which parts are riding under another one.
+    const byId = query ? null : indexById(list);
 
     const out = list.filter((p) => {
       if (!p || p.hidden !== false) return false;
       if (!includeRentals && p.category === RENTALS) return false;
       const name = typeof p.name === 'string' ? p.name : '';
-      if (query) return normalizeName(name).indexOf(query) !== -1;
-      return p.category === o.category;
+      if (query) {
+        if (normalizeName(name).indexOf(query) !== -1) return true;
+        const supplier = typeof p.supplierName === 'string' ? p.supplierName : '';
+        if (supplier !== '' && normalizeName(supplier).indexOf(query) !== -1) return true;
+        const sku = typeof p.sku === 'string' ? p.sku.replace(/\s+/g, '').toLowerCase() : '';
+        return sku !== '' && qNoSpace !== '' && sku.indexOf(qNoSpace) !== -1;
+      }
+      if (p.category !== o.category) return false;
+      // THE RACK, NOT THE SHELF. Three breakers that are all "a 60 amp three
+      // pole" belong behind the one row that says so; spread across the list
+      // they are three rows he has to read the ends of to tell apart. The
+      // generic carries them, and tapping it opens the chooser.
+      //
+      // includeVariants puts them back, for a list that is not the walk:
+      // Settings is where he renames a part, puts one away or says which
+      // generic it belongs with, and a part he cannot see is a part he cannot
+      // do any of that to.
+      if (!includeVariants && liveGeneric(byId, p)) return false;
+      return true;
     });
 
-    return out.sort((a, b) => {
-      const uses = (b.uses || 0) - (a.uses || 0);
-      if (uses) return uses;
-      // A sizeless name still sorts after every name that has a size, the way
-      // it always did. The rule moved up a level, from the part to the family
-      // it belongs to, and lands in the same place: every member of a family
-      // is sized, or none of them is.
-      const ka = sizeKey(a.name);
-      const kb = sizeKey(b.name);
-      if ((ka === null) !== (kb === null)) return ka === null ? 1 : -1;
-      // The category's own opinion about its families, where it has one, and
-      // only between two parts that are in the same category.
-      if (a.category === b.category) {
-        const ra = familyRank(a.category, a.name);
-        const rb = familyRank(b.category, b.name);
-        if (ra !== rb) return ra - rb;
-      }
-      // Codepoint order on the normalized family, not localeCompare: the
-      // collator ignores the dots in "S.S. conduit" and files it under "ss",
-      // which is not where he would look for it.
-      const fa = familyKey(a.name);
-      const fb = familyKey(b.name);
-      if (fa !== fb) return fa < fb ? -1 : 1;
-      if (ka !== kb) return ka < kb ? -1 : 1;
-      return String(a.name).localeCompare(String(b.name));
-    });
+    return out.sort(rackOrder);
+  }
+
+  // THE ORDER THINGS SIT ON THE RACK. Lifted out of matches() in v3.2 so the
+  // chooser can offer one generic's options in the same order the list they
+  // came out of would have offered them in.
+  function rackOrder(a, b) {
+    const uses = (b.uses || 0) - (a.uses || 0);
+    if (uses) return uses;
+    // A sizeless name still sorts after every name that has a size, the way
+    // it always did. The rule moved up a level, from the part to the family
+    // it belongs to, and lands in the same place: every member of a family
+    // is sized, or none of them is.
+    const ka = sizeKey(a.name);
+    const kb = sizeKey(b.name);
+    if ((ka === null) !== (kb === null)) return ka === null ? 1 : -1;
+    // The category's own opinion about its families, where it has one, and
+    // only between two parts that are in the same category.
+    if (a.category === b.category) {
+      const ra = familyRank(a.category, a.name);
+      const rb = familyRank(b.category, b.name);
+      if (ra !== rb) return ra - rb;
+    }
+    // Codepoint order on the normalized family, not localeCompare: the
+    // collator ignores the dots in "S.S. conduit" and files it under "ss",
+    // which is not where he would look for it.
+    const fa = familyKey(a.name);
+    const fb = familyKey(b.name);
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return String(a.name).localeCompare(String(b.name));
   }
 
   // -------------------------------------------------------------------------
@@ -385,5 +474,6 @@
   }
 
   return { matches, straighten, normalizeName, sizeKey, familyKey, familyRank,
+    variantsOf, isVariant, sourceLabel,
     nearDuplicates, fitWithin, RENTALS };
 });

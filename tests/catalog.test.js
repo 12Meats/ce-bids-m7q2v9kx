@@ -536,3 +536,108 @@ test('nearDuplicates skips what is already put away, and takes plain strings', (
   assert.deepStrictEqual(C.nearDuplicates(['Tugger'], standard), [],
     'a shorter name is not a spelling of a longer one');
 });
+
+// ---------------------------------------------------------------------------
+// v3.2: OPTIONS UNDER A PART
+// ---------------------------------------------------------------------------
+// A generic part of his ("60 A 3-pole breaker") can have options under it: the
+// real breakers QED sells, each one a full catalog part with its own number
+// and its own price. On the walk the options ride UNDER the generic rather
+// than scattering across the browsing list, and a search finds them directly,
+// because a man who types B360 knows exactly which one he wants.
+
+const GENERIC = part('gear', '60 A 3-pole breaker', { id: 'g1', uses: 3 });
+const HIDDEN_GENERIC = part('gear', '20 A 1-pole breaker', { id: 'g2', hidden: true });
+const VARIANTS = [
+  Object.assign(part('gear', '60 A 3-pole breaker · B360', { id: 'v1' }), {
+    variantOf: 'g1', sku: '22590', supplierName: 'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker',
+    source: { kind: 'qed', checkedISO: '2026-09-09' },
+  }),
+  Object.assign(part('gear', '60 A 3-pole breaker · QO360', { id: 'v2', uses: 5 }), {
+    variantOf: 'g1', sku: '99001', supplierName: 'Square D QO360 3-Pole 60 Amp Breaker',
+  }),
+  Object.assign(part('gear', '60 A 3-pole breaker · BR360', { id: 'v3' }), {
+    variantOf: 'g1', hidden: true,
+  }),
+  // Its generic is put away, so this one stands on its own and shows up in the
+  // browsing list like any other part: options with nowhere to ride do not
+  // disappear off the walk.
+  Object.assign(part('gear', '20 A 1-pole breaker · QO120', { id: 'v4' }), { variantOf: 'g2' }),
+  // A link pointing at a part that is no longer in the file. Same answer.
+  Object.assign(part('gear', 'Orphan breaker', { id: 'v5' }), { variantOf: 'gone' }),
+];
+const OPTIONS = [GENERIC, HIDDEN_GENERIC].concat(VARIANTS);
+
+test('variantsOf: the live options under a generic, in the order the walk offers them', () => {
+  // v2 has been tapped five times and v1 never, so history wins the way it
+  // wins everywhere else. v3 is put away and is not offered at all.
+  assert.deepStrictEqual(names(C.variantsOf(OPTIONS, 'g1')),
+    ['60 A 3-pole breaker · QO360', '60 A 3-pole breaker · B360']);
+  assert.deepStrictEqual(C.variantsOf(OPTIONS, 'g2').map((p) => p.id), ['v4']);
+  assert.deepStrictEqual(C.variantsOf(OPTIONS, 'nobody'), []);
+  assert.deepStrictEqual(C.variantsOf(OPTIONS, ''), []);
+  assert.deepStrictEqual(C.variantsOf(null, 'g1'), []);
+});
+
+test('isVariant: only a link that lands on a part still on the walk', () => {
+  assert.strictEqual(C.isVariant(OPTIONS, VARIANTS[0]), true);
+  assert.strictEqual(C.isVariant(OPTIONS, GENERIC), false, 'a part with no link');
+  assert.strictEqual(C.isVariant(OPTIONS, VARIANTS[3]), false, 'its generic is put away');
+  assert.strictEqual(C.isVariant(OPTIONS, VARIANTS[4]), false, 'its generic is gone');
+  assert.strictEqual(C.isVariant(OPTIONS, null), false);
+});
+
+// The browsing list is the rack: one row per kind of thing. Three breakers
+// that are all "a 60 amp three pole" belong behind the one row that says so,
+// not spread across it.
+test('matches: browsing shows the generic, not its options', () => {
+  assert.deepStrictEqual(names(C.matches(OPTIONS, { category: 'gear' })), [
+    '60 A 3-pole breaker',
+    '20 A 1-pole breaker · QO120',
+    'Orphan breaker',
+  ]);
+});
+
+// Settings is not the walk. He goes there to rename a part, put one away, or
+// say which generic it belongs with, and a part he cannot see is a part he
+// cannot do any of that to.
+test('matches: includeVariants puts the options back in the list', () => {
+  const listed = names(C.matches(OPTIONS, { category: 'gear', includeVariants: true }));
+  assert.ok(listed.indexOf('60 A 3-pole breaker · QO360') !== -1);
+  assert.ok(listed.indexOf('60 A 3-pole breaker · B360') !== -1);
+  assert.ok(listed.indexOf('60 A 3-pole breaker') !== -1, 'the generic is still there too');
+});
+
+// A search is the other half of the bargain. He types the number off the
+// breaker in his hand and the option itself comes back, ready to tap.
+test('matches: a search finds the options, by name, by number and by QED title', () => {
+  assert.deepStrictEqual(names(C.matches(OPTIONS, { query: 'B360' })), ['60 A 3-pole breaker · B360']);
+  assert.deepStrictEqual(names(C.matches(OPTIONS, { query: '22590' })), ['60 A 3-pole breaker · B360'],
+    'the QED part number');
+  assert.deepStrictEqual(names(C.matches(OPTIONS, { query: 'Siemens B360 3-Pole' })), ['60 A 3-pole breaker · B360'],
+    "QED's own title");
+  assert.deepStrictEqual(names(C.matches(OPTIONS, { query: 'square d' })), ['60 A 3-pole breaker · QO360']);
+  // The generic and both live options all say "60 A 3-pole breaker".
+  assert.strictEqual(C.matches(OPTIONS, { query: '60 A 3-pole' }).length, 3);
+});
+
+// A part number typed off a receipt carries spaces; the one stored on the part
+// may too. Both sides lose their whitespace so the two land on each other, the
+// same rule the price file's own matching uses.
+test('matches: a part number matches with the spaces taken out', () => {
+  const spaced = [Object.assign(part('gear', 'GFCI', { id: 's1' }), { sku: '330 2434' })];
+  assert.deepStrictEqual(names(C.matches(spaced, { query: '3302434' })), ['GFCI']);
+  assert.deepStrictEqual(names(C.matches(spaced, { query: '330 2434' })), ['GFCI']);
+});
+
+// A hidden part is still never offered, however it was found.
+test('matches: a search does not reach a part that is put away', () => {
+  assert.deepStrictEqual(C.matches(OPTIONS, { query: 'BR360' }), []);
+});
+
+test('sourceLabel says where a part came from, and nothing at all when he typed it', () => {
+  assert.strictEqual(C.sourceLabel(VARIANTS[0]), 'From QED');
+  assert.strictEqual(C.sourceLabel(GENERIC), '');
+  assert.strictEqual(C.sourceLabel({ source: { kind: 'other', checkedISO: '2026-09-09' } }), '');
+  assert.strictEqual(C.sourceLabel(null), '');
+});
