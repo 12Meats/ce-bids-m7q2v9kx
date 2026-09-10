@@ -1,22 +1,29 @@
 'use strict';
-// screens/log.js — one visit, written at the truck before he drives off.
+// screens/log.js — one invoice in progress, kept at the truck as the job runs.
 //
 // This is the first of the three moments the Invoices tab is built around, and
 // it is the one that has to be quick: he is standing at the tailgate with the
 // phone in one hand. Nothing here is typed that can be tapped. The customer is
-// a chip, the project is a chip, the date is four digits on the number keypad,
-// the hours are a keypad each, and the parts come through the same picker the
-// walk uses, so the flow he already knows is the flow he gets here.
+// a chip, the project is a chip, the dates come off a calendar, the hours are a
+// keypad each, and the parts come through the same picker the walk uses, so the
+// flow he already knows is the flow he gets here.
+//
+// It was a page about ONE DAY until the first week on v3. What he actually does
+// is open the invoice when the job starts, add to it as the week goes, and say
+// it is finished when the work is: so an entry carries a From and a To he moves
+// as it runs on, and a switch that says Ready. Nothing merges on its own and
+// nothing is billed on its own. The number is not spent until Bill these, which
+// the caption at the top says out loud.
 //
 // A NEW entry lives in memory until Save: Back throws it away, and nothing
-// half-logged can end up in the pile waiting to be billed. An entry he opens
-// again from the pile is edited in place and saves as he goes, the way the
+// half-logged can end up in the list waiting to be billed. An entry he opens
+// again from the list is edited in place and saves as he goes, the way the
 // walk does, because it is already a thing that exists. One entry that is
 // already on an invoice is read-only — the invoice is the record now, and
 // changing the hours under it would make the paper a lie.
 //
-// Sections: VIEW STATE · CUSTOMER · PROJECT · DATE · WHO AND HOURS ·
-// PARTS, RENTALS, EQUIPMENT · NOTES · SAVE · REGISTER
+// Sections: VIEW STATE · CUSTOMER · PROJECT · FROM AND TO · READY TO BILL ·
+// WHO AND HOURS · PARTS, RENTALS, EQUIPMENT · NOTES · SAVE · REGISTER
 
 // ---------------------------------------------------------------------------
 // VIEW STATE
@@ -33,6 +40,21 @@ let logSheet = null;             // 'equip' while the equipment picker is up
 let logDiscardAsking = false;     // true while "Throw this visit away?" is up
 
 const LOG_CAPTION_PROJECT = 'Pick the job this visit belongs to. A title stays here until you mark it done.';
+
+// The one line at the top of an entry that is not billed yet. He asked where
+// the number was on his first day: it is not spent until Bill these, and a
+// screen that never says so reads like a number that failed to appear.
+const LOG_NUMBER_CAPTION = 'It gets its number when you bill it.';
+
+// What the top bar says. An entry IS the invoice now, before it has a number;
+// once an invoice carries its hours the invoice is the record and this screen
+// is only what happened on the day. Read off the FILE rather than off
+// logTarget(), which builds a draft as a side effect of being asked.
+function logScreenTitle() {
+  const d = logData();
+  const e = logId && d ? (d.logs || []).find((x) => x.id === logId) : null;
+  return e && e.invoiceId ? 'Billed visit' : 'Invoice in progress';
+}
 
 // enter(arg): an entry id opens that entry, null starts a new one, and
 // undefined is the Back button coming home from an invoice, which keeps
@@ -184,11 +206,43 @@ function logPickCustomer(e, id) {
 // PROJECT
 // ---------------------------------------------------------------------------
 
+// The jobs this entry may name: the ones still open under this customer, plus
+// the one it already names. The crew rows have worked this way for two
+// releases and for the same reason — a job marked done last month is still the
+// job this visit was on, and dropping its chip would make the entry he is
+// looking at read as an entry with no job on it.
+function logProjectsOffered(e) {
+  const open = Store.openProjects(logData(), e.customerId);
+  if (!e.projectId || open.some((p) => p.id === e.projectId)) return open;
+  const mine = (logData().projects || []).find((p) => p.id === e.projectId);
+  return mine ? open.concat([mine]) : open;
+}
+
+// MARK IT DONE, from the screen he is standing on. Settings keeps its own, and
+// this is the same flag: the title comes off the chips and stops being offered
+// on the next visit. The sentence says both halves, because "done" on a job
+// with two unbilled visits on it reads like it takes them with it.
+function logMarkDoneText(title) {
+  return 'Mark ' + title + ' done? It leaves the chips. Its unbilled invoices stay in the list.';
+}
+
+async function logMarkDone(p) {
+  const ok = await confirmPanel(logMarkDoneText(p.title), { ok: 'Mark done' });
+  if (!ok) { render(); return; }
+  // Not logCommit: a job being finished is a fact about the JOB, true whether
+  // or not this visit is ever saved, the same split the catalog and the crew
+  // already have.
+  p.done = true;
+  if (!persistOr(() => { p.done = false; })) { render(); return; }
+  render();
+  showBanner(p.title + ' is done.', 'ok');
+}
+
 function buildLogProject(host, e) {
   const box = card('Project');
   const chips = document.createElement('div');
   chips.className = 'equip-chips';
-  Store.openProjects(logData(), e.customerId).forEach((p) => {
+  logProjectsOffered(e).forEach((p) => {
     chips.appendChild(chip(p.title, e.projectId === p.id, () => logPickProject(e, p.id)));
   });
   chips.appendChild(chip('+ New', false, () => {
@@ -213,6 +267,13 @@ function buildLogProject(host, e) {
   }));
   box.appendChild(chips);
   box.appendChild(caption(LOG_CAPTION_PROJECT));
+  // The way to say a job is finished, from the screen he is standing on. Quiet,
+  // under the chips, and only when there is a job to say it about.
+  const picked = e.projectId ? logProjectsOffered(e).find((p) => p.id === e.projectId) : null;
+  if (picked && !picked.done) {
+    box.appendChild(textButton('Mark ' + picked.title + ' done', 'link-btn link-btn-quiet',
+      () => logMarkDone(picked)));
+  }
   host.appendChild(box);
 }
 
@@ -224,31 +285,100 @@ function logPickProject(e, id) {
 }
 
 // ---------------------------------------------------------------------------
-// DATE
+// FROM AND TO
 // ---------------------------------------------------------------------------
-// The bid screen's idiom, and the app's only one: four digits on the number
-// keypad, six with a year. There is no date picker in this app and none is
-// added for this screen.
+// An entry used to be one day and one keypad. The first week on v3 said
+// otherwise: he opens the invoice when the job starts and keeps adding to it
+// until the work is done, which is how the paper always worked. So there are
+// two dates, both of them his to move until it is billed, and both of them
+// opening the calendar — "the Friday" is a thing a man finds by looking, and
+// the keypad is still one tap under the grid for a day he knows the number of.
+//
+// The To is OPTIONAL on disk and follows the From while it is absent, so every
+// entry written before this release reads as the one day it was.
 
-function buildLogDate(host, e) {
+const LOG_SWAP_TEXT = 'That day is before the From, so the two of them swapped.';
+const LOG_DATE_CAPTION = 'Move the To along as the job runs on. It is the range the invoice will cover.';
+
+function buildLogDates(host, e) {
   const box = card();
-  box.appendChild(row('Date', fmtDate(e.dateISO), () => {
-    promptNumber(null, {
-      label: 'Date: type 915 for Sep 15, or 91526',
-      maxChars: 6,
-      wasText: 'was ' + fmtDate(e.dateISO),
-      done: (v) => {
-        if (v === null) return;
-        const iso = Dates.parseTypedDate(v, Store.todayISO());
-        if (!iso) { showBanner('That date needs 4 digits (MMDD) or 6 (MMDDYY)'); render(); return; }
-        const prev = e.dateISO;
-        e.dateISO = iso;
-        logCommit(() => { e.dateISO = prev; });
-        render();
-      },
-    });
+  box.appendChild(row('From', fmtDate(InvMath.entryFrom(e)), () => {
+    promptDate(InvMath.entryFrom(e), 'From', (iso) => logSetFrom(e, iso),
+      { wasText: 'was ' + fmtDate(InvMath.entryFrom(e)) });
   }, { keypad: true }));
+  box.appendChild(row('To', fmtDate(InvMath.entryTo(e)), () => {
+    promptDate(InvMath.entryTo(e), 'To', (iso) => logSetTo(e, iso),
+      { wasText: 'was ' + fmtDate(InvMath.entryTo(e)) });
+  }, { keypad: true }));
+  box.appendChild(caption(LOG_DATE_CAPTION));
   host.appendChild(box);
+}
+
+// The restore both setters share. A To that was never there has to go back to
+// never having been there: writing null instead would be a key validateImport
+// refuses, on an entry he only meant to look at.
+function logDateRestore(e, prev) {
+  return () => {
+    e.dateISO = prev.dateISO;
+    if (prev.toISO === undefined) delete e.toISO; else e.toISO = prev.toISO;
+  };
+}
+
+// Two dates the wrong way round is not an error to send him back to undo: they
+// swap, and the banner says so, which is one tap instead of three. Both rows
+// do it, because he can arrive at the same impossible pair from either end.
+function logSetFrom(e, iso) {
+  if (!iso) return;
+  const prev = { dateISO: e.dateISO, toISO: e.toISO };
+  const swap = typeof e.toISO === 'string' && e.toISO < iso;
+  if (swap) { e.dateISO = e.toISO; e.toISO = iso; }
+  else e.dateISO = iso;
+  logCommit(logDateRestore(e, prev));
+  if (swap) showBanner(LOG_SWAP_TEXT);
+  render();
+}
+
+function logSetTo(e, iso) {
+  if (!iso) return;
+  const prev = { dateISO: e.dateISO, toISO: e.toISO };
+  const swap = iso < InvMath.entryFrom(e);
+  if (swap) { e.toISO = e.dateISO; e.dateISO = iso; }
+  else e.toISO = iso;
+  logCommit(logDateRestore(e, prev));
+  if (swap) showBanner(LOG_SWAP_TEXT);
+  render();
+}
+
+// ---------------------------------------------------------------------------
+// READY TO BILL
+// ---------------------------------------------------------------------------
+// The switch that ends the invoice. Nothing merges on its own and nothing is
+// billed on its own: Bill these takes the ones he has said are finished, and
+// this is where he says it, at the truck, on the entry itself. The pile row on
+// the home flips the same flag and shows the same two words.
+//
+// Only on an entry that EXISTS. A brand-new draft is not on the disk, so a
+// switch on it would write nothing and promise something; it turns up the
+// moment he saves.
+
+const LOG_READY_CAPTION = 'Bill these only takes the ones that are ready.';
+
+function buildLogReady(host, e) {
+  const box = card();
+  box.appendChild(fieldLabel('Ready to bill'));
+  box.appendChild(toggleRow([[false, 'In progress'], [true, 'Ready']], InvMath.isReady(e),
+    (v) => logSetReady(e, v)));
+  box.appendChild(caption(LOG_READY_CAPTION));
+  host.appendChild(box);
+}
+
+function logSetReady(e, v) {
+  const on = v === true;
+  if (on === InvMath.isReady(e)) return;
+  const prev = e.ready;
+  e.ready = on;
+  logCommit(() => { if (prev === undefined) delete e.ready; else e.ready = prev; });
+  render();
 }
 
 // ---------------------------------------------------------------------------
@@ -549,7 +679,7 @@ function renderLogBilled(host, e, inv) {
   const box = card('Billed');
   box.appendChild(row('Customer', logCustomerName(e.customerId), null));
   box.appendChild(row('Project', logProjectTitle(e.projectId), null));
-  box.appendChild(row('Date', fmtDate(e.dateISO), null));
+  box.appendChild(row('Service', InvMath.rangeText(InvMath.entryFrom(e), InvMath.entryTo(e)), null));
   logCrewOffered(e).forEach((c) => {
     const m = (e.crew || []).find((x) => x.crewId === c.id);
     if (m) box.appendChild(row(c.name, logCrewValue(e, c.id), null));
@@ -594,9 +724,15 @@ function renderLog() {
   if (inv) { renderLogBilled(host, e, inv); return; }
   if (logView === 'add') { renderLogAdd(host, e); return; }
 
+  // What this screen IS, said once at the top. He asked where the invoice
+  // number was; it is not spent until Friday, and a screen that says nothing
+  // about that reads like a number that failed to appear.
+  host.appendChild(caption(LOG_NUMBER_CAPTION));
   buildLogCustomer(host, e);
   if (e.customerId) buildLogProject(host, e);
-  buildLogDate(host, e);
+  buildLogDates(host, e);
+  // Only on an entry that exists: a switch on a draft would write nothing.
+  if (!logIsNew()) buildLogReady(host, e);
   buildLogCrew(host, e);
   buildLogLines(host, e);
   buildLogNotes(host, e);
@@ -665,7 +801,7 @@ function logBackStep(peek) {
 
 registerScreen('log', {
   id: 'screen-log', tab: 'invoices',
-  title: 'Log hours',
+  title: logScreenTitle,
   back: 'invoices',
   backStep: logBackStep,
   enter: enterLog,

@@ -85,7 +85,14 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
-  invoiceLineOpts, lineAskCost, moneyText } = sandbox;
+  invoiceLineOpts, lineAskCost, moneyText,
+  enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady,
+  logMarkDone, logMarkDoneText, logProjectsOffered, entryStatusPill } = sandbox;
+// Two of the log screen's sentences are top-level consts, which are lexical
+// rather than properties of the context's global object. Read the way
+// pileSelection is, just below.
+const LOG_NUMBER_CAPTION = vm.runInContext('LOG_NUMBER_CAPTION', sandbox);
+const LOG_SWAP_TEXT = vm.runInContext('LOG_SWAP_TEXT', sandbox);
 // pileSelection is a const inside picker.js, and a const declared at the top of
 // a script is not a property of the context's global object the way a function
 // declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
@@ -1057,4 +1064,185 @@ test('a cost fixed on a review draft teaches the catalog, and writes the draft n
   saves[0]();
   assert.strictEqual(part.lastCostCents, 38);
   assert.strictEqual(it.costCents, 4200);
+});
+
+// ---------------------------------------------------------------------------
+// AN INVOICE IN PROGRESS
+// ---------------------------------------------------------------------------
+// The log screen stopped being a page about one day. It is the invoice before
+// it has a number: a From, a To he moves as the job runs on, and a switch that
+// says he is finished with it. What is pinned here is the three sentences and
+// the one rule that can put a date the wrong way round.
+
+test('the screen says what it is looking at, and what it will become', () => {
+  const w = world();
+  enterLog(null);
+  assert.strictEqual(logScreenTitle(), 'Invoice in progress', 'a new one is already the invoice');
+  enterLog(w.d.logs[0].id);
+  assert.strictEqual(logScreenTitle(), 'Invoice in progress');
+  // Once it is on an invoice the invoice is the record, and the entry is what
+  // it was on the day.
+  w.d.logs[0].invoiceId = 'inv1';
+  assert.strictEqual(logScreenTitle(), 'Billed visit');
+  w.d.logs[0].invoiceId = null;
+  assert.strictEqual(LOG_NUMBER_CAPTION, 'It gets its number when you bill it.');
+});
+
+test('a new entry starts today at both ends, and an old one reads From = To', () => {
+  const w = world();
+  enterLog(null);
+  const draft = logTarget();
+  assert.strictEqual(draft.dateISO, S.todayISO());
+  assert.strictEqual(I.entryTo(draft), draft.dateISO, 'To follows From until he moves it');
+  // Every entry written before this release: one day, and it still reads as
+  // one day rather than as a range with a blank on the end.
+  const old = w.d.logs[0];
+  assert.strictEqual(old.toISO, undefined);
+  assert.strictEqual(I.entryFrom(old), '2026-08-24');
+  assert.strictEqual(I.entryTo(old), '2026-08-24');
+});
+
+test('moving the To keeps the From, and moving it before the From swaps them', (t) => {
+  const w = world();
+  const e = w.d.logs[0];                     // Aug 24
+  enterLog(e.id);
+  const banners = [];
+  stub(t, { persistOr: () => true, showBanner: (text) => banners.push(text), render: () => {} });
+
+  logSetTo(e, '2026-08-28');
+  assert.strictEqual(e.dateISO, '2026-08-24');
+  assert.strictEqual(e.toISO, '2026-08-28');
+  assert.deepStrictEqual(banners, [], 'a To after the From is simply the answer');
+
+  // He meant the 20th, and tapped it on the To row. Two dates the wrong way
+  // round is not an error to go back and undo: they swap, and it says so.
+  logSetTo(e, '2026-08-20');
+  assert.strictEqual(e.dateISO, '2026-08-20');
+  assert.strictEqual(e.toISO, '2026-08-24');
+  assert.deepStrictEqual(banners, [LOG_SWAP_TEXT]);
+});
+
+test('moving the From past the To swaps them the same way', (t) => {
+  const w = world();
+  const e = w.d.logs[0];
+  e.toISO = '2026-08-28';
+  enterLog(e.id);
+  const banners = [];
+  stub(t, { persistOr: () => true, showBanner: (text) => banners.push(text), render: () => {} });
+
+  logSetFrom(e, '2026-08-31');
+  assert.strictEqual(e.dateISO, '2026-08-28');
+  assert.strictEqual(e.toISO, '2026-08-31');
+  assert.deepStrictEqual(banners, [LOG_SWAP_TEXT]);
+
+  // An entry with no To of its own has nothing to be the wrong way round:
+  // the To follows the From wherever he puts it.
+  delete e.toISO;
+  banners.length = 0;
+  logSetFrom(e, '2026-07-01');
+  assert.strictEqual(e.dateISO, '2026-07-01');
+  assert.strictEqual(e.toISO, undefined);
+  assert.strictEqual(I.entryTo(e), '2026-07-01');
+  assert.deepStrictEqual(banners, []);
+});
+
+test('a refused save puts both dates back, including the one that was never there', (t) => {
+  const w = world();
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  stub(t, { persistOr: (revert) => { revert(); return false; }, showBanner: () => {}, render: () => {} });
+
+  logSetTo(e, '2026-08-28');
+  assert.strictEqual(e.dateISO, '2026-08-24');
+  assert.strictEqual(e.toISO, undefined, 'a key that was absent is absent again, not null');
+
+  logSetFrom(e, '2026-08-25');
+  assert.strictEqual(e.dateISO, '2026-08-24');
+});
+
+test('Ready is his to set, on the entry itself', (t) => {
+  const w = world();
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  stub(t, { persistOr: () => true, showBanner: () => {}, render: () => {} });
+  assert.strictEqual(I.isReady(e), false, 'nothing is ready until he says so');
+  logSetReady(e, true);
+  assert.strictEqual(e.ready, true);
+  logSetReady(e, false);
+  assert.strictEqual(e.ready, false);
+});
+
+test('a refused save takes Ready back off, and leaves no key where there was none', (t) => {
+  const w = world();
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  stub(t, { persistOr: (revert) => { revert(); return false; }, showBanner: () => {}, render: () => {} });
+  logSetReady(e, true);
+  assert.strictEqual(I.isReady(e), false, 'the disk said no, so he never said it');
+  assert.strictEqual(e.ready, undefined, 'and the key it never had is still not there');
+});
+
+// ---------------------------------------------------------------------------
+// MARKING THE JOB DONE
+// ---------------------------------------------------------------------------
+// The title stays on the chips until he says the job is finished, and until
+// this release the only place to say it was Settings. The sentence says both
+// halves of what happens, because "done" on a job with two unbilled visits on
+// it reads like it takes them with it.
+
+test('the confirm says what leaves and what stays', () => {
+  assert.strictEqual(logMarkDoneText('UF Project'),
+    'Mark UF Project done? It leaves the chips. Its unbilled invoices stay in the list.');
+});
+
+test('marking it done writes the flag and says so once', async (t) => {
+  const w = world();
+  const banners = [];
+  stub(t, {
+    confirmPanel: () => Promise.resolve(true),
+    persistOr: () => true,
+    showBanner: (text, kind) => banners.push([text, kind]),
+    render: () => {},
+  });
+  await logMarkDone(w.uf);
+  assert.strictEqual(w.uf.done, true);
+  assert.deepStrictEqual(banners, [['UF Project is done.', 'ok']]);
+});
+
+test('a refused save leaves the job open', async (t) => {
+  const w = world();
+  stub(t, {
+    confirmPanel: () => Promise.resolve(true),
+    persistOr: (revert) => { revert(); return false; },
+    showBanner: () => {},
+    render: () => {},
+  });
+  await logMarkDone(w.uf);
+  assert.strictEqual(w.uf.done, false, 'the disk said no, so the job is still open');
+});
+
+test('Cancel on the confirm changes nothing', async (t) => {
+  const w = world();
+  stub(t, {
+    confirmPanel: () => Promise.resolve(false),
+    persistOr: () => { throw new Error('nothing may be written'); },
+    showBanner: () => {},
+    render: () => {},
+  });
+  await logMarkDone(w.uf);
+  assert.strictEqual(w.uf.done, false);
+});
+
+test('the job he is standing on is still offered after it is marked done', () => {
+  const w = world();
+  const e = w.d.logs[0];
+  w.uf.done = true;
+  // Store.openProjects has dropped it, which is the whole point of done. The
+  // entry that names it still has to show it, or the visit he is looking at
+  // reads as a visit with no job on it. The crew rows have said this for two
+  // releases: the men Settings still shows, plus anyone already on this one.
+  assert.deepStrictEqual(S.openProjects(w.d, w.uda.id).map((p) => p.title), []);
+  assert.deepStrictEqual(logProjectsOffered(e).map((p) => p.title), ['UF Project']);
+  w.uf.done = false;
+  assert.deepStrictEqual(logProjectsOffered(e).map((p) => p.title), ['UF Project'], 'and only once');
 });

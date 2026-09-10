@@ -31,6 +31,8 @@ const sandbox = {
   BidMath: B,
   Store: S,
   Catalog: C,
+  // entryStatusPill asks InvMath what Ready is; the pill only chooses words.
+  InvMath: require('../invmath.js'),
   navigator: { onLine: true },
   // Every panel the picker opens is a call into app.js. None of the pure
   // parts below reaches one; a stub that throws would be a better alarm than
@@ -49,7 +51,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sa
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
   partQtyLabel, partCostLabel, partBillLabel, partLotLabel,
-  rentalSubText, equipSubText, addEquipment, pushEquipment } = sandbox;
+  rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -354,4 +356,22 @@ test('the two sub-lines a shared line wears', () => {
     '3 days · $501.00 · markup off');
   assert.equal(equipSubText({ name: 'Scissor lift', days: 1, dayCents: 15000 }), '1 day · $150.00 a day');
   assert.equal(equipSubText({ name: 'Scissor lift', days: 2.5, dayCents: 15000 }), '2.5 days · $150.00 a day');
+});
+
+// ---------------------------------------------------------------------------
+// WHAT AN ENTRY IS, IN TWO WORDS
+// ---------------------------------------------------------------------------
+// The pill on the pile row and on the entry itself. Two screens print it, so
+// it is written once here beside invoiceStatusPill, for the same reason: the
+// card on the home and the switch on the entry may never say two different
+// things about the same visit.
+
+test('entryStatusPill says In progress until he says Ready', () => {
+  assert.equal(entryStatusPill({ dateISO: '2026-09-09' }), 'In progress');
+  assert.equal(entryStatusPill({ dateISO: '2026-09-09', ready: false }), 'In progress');
+  assert.equal(entryStatusPill({ dateISO: '2026-09-09', ready: true }), 'Ready');
+  // An entry off a backup written before this release has no such field, and
+  // an entry that is not there at all is not a crash.
+  assert.equal(entryStatusPill({}), 'In progress');
+  assert.equal(entryStatusPill(null), 'In progress');
 });

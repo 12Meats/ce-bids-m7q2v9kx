@@ -162,6 +162,16 @@ function invoiceStatusPill(inv) {
     : 'Sent';
 }
 
+// WHAT AN ENTRY IS, in the two words the pile row and the entry itself both
+// wear. Two screens print it — the card on the Invoices home, where the check
+// flips it, and the switch on the entry at the truck — so it is written here
+// beside invoiceStatusPill rather than once per screen. InvMath decides what
+// Ready IS; this only chooses the words.
+//
+// In progress is the neutral pill and Ready is the accent one, the same pair
+// the bid statuses wear.
+function entryStatusPill(e) { return InvMath.isReady(e) ? 'Ready' : 'In progress'; }
+
 // ---------------------------------------------------------------------------
 // BILLING A WON JOB
 // ---------------------------------------------------------------------------
