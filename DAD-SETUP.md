@@ -54,6 +54,12 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
 **QED part number.** Tap a part, then **QED part #**, and type the number off your QED receipt (or from under the product on their site). Once a part has its number, Adrian can update its bill-at price from QED with one file: Settings › Backup › **Import parts and prices**. The app tells you what moved before it changes anything, and bids you already wrote never move. A price you type yourself on the walk is yours, and the QED date comes off that part until the next import.
 
+**Import parts and prices.** Adrian sends you a price file, one QED price per part. Settings › Backup › **Import parts and prices**, pick the file, and read the button before you tap it: it says exactly what will happen, like **Update 0 prices, add 318 parts**. Everything it adds is a real QED part with its number, QED's own name for it, and its price. Nothing you already have is renamed, put away or taken off. Send it the same file twice and the second time adds nothing.
+
+**A part with options.** After an import, a part like **60 A 3-pole breaker** carries a small **3 options** on its line. Tapping it does not add it: it opens the three breakers QED actually sells, each with the maker's name and what it bills at, and at the bottom **Just 60 A 3-pole breaker** for the day you do not care which. Pick one and it goes on the bid like anything else, and the customer's paper prints QED's full name for it. Searching finds the options straight away: type **B360** or the QED number and tap the one you want.
+
+**Sorting them out later.** Settings › Parts catalog now has **All / Typed by hand / From QED** over the list, so you can go through the imported ones without touching the parts you typed. On any part, **Belongs with** says which part it is an option of, or **None** to stand it back on its own. That is also how a part you typed yourself becomes one of the choices under another one.
+
 **Every number in Rates is new bids only.** Change the labor rate today and it is what the next bid starts at. A bid you already wrote keeps the numbers it was figured at, so nothing you handed a customer moves behind your back.
 
 ## Your first bid
