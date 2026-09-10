@@ -277,24 +277,80 @@
   // (#10, 4/0, 330-2434) and they are separators here, which makes the second
   // rule "the query fills a whole run of letters and digits".
   //
-  // HIS OWN NAMES ARE NOT TOUCHED by any of this. He wrote them, he knows
-  // what words are in them, and the middle of a name he typed is still a hit.
-  // Neither is the part number lane, which was already read from the front.
+  // HIS OWN NAMES ARE NOT TOUCHED by this one. He wrote them, he knows what
+  // words are in them, and the middle of a name he typed is still a hit.
   const WORD_CHAR = /[0-9a-z]/;
-  const PURE_NUMBER = /^[0-9#/-]+$/;
 
   // Both sides already normalized: `query` as matches() built it, `supplier`
-  // straight off the part.
+  // straight off the part. WORDS ONLY: a query that is nothing but a number
+  // goes through numberHit below instead.
   function supplierHit(supplier, query) {
     if (supplier === '' || query === '') return false;
     const s = normalizeName(supplier);
-    const whole = PURE_NUMBER.test(query);
     for (let i = s.indexOf(query); i !== -1; i = s.indexOf(query, i + 1)) {
       if (i > 0 && WORD_CHAR.test(s.charAt(i - 1))) continue;
-      const end = i + query.length;
-      if (whole && end < s.length && WORD_CHAR.test(s.charAt(end))) continue;
       return true;
     }
+    return false;
+  }
+
+  // -------------------------------------------------------------------------
+  // A NUMBER IN THE SEARCH IS A WHOLE NUMBER
+  // -------------------------------------------------------------------------
+  // v3.2.2. v3.2.1 fixed the supplier title and left the other two lanes as
+  // they were, and on the live phone "60" still came back with six rows he did
+  // not want. The 60 was hiding in three different places:
+  //
+  //   in his own names — the import hangs QED's catalog number off the end of
+  //                      the tile name, so "10/2 MC cable · 2107-60-02" and
+  //                      "#12 THHN · 58018605" both carry a 60 in the middle
+  //                      of a number he never typed
+  //   in QED's titles  — "50/60 Hz" on every photocell, where the 60 is half
+  //                      of one printed number and not a number of its own
+  //   in QED's numbers — the number lane was a prefix, so sku 603 answered 60
+  //
+  // So it is ONE rule now, in all three lanes, and it applies only when the
+  // query is nothing but a number: the query has to BE one of the numbers that
+  // are printed, not a run of digits sitting inside one.
+  //
+  // A printed number is what whitespace, the middle dot the tile names hang a
+  // catalog number off, and the quote marks leave behind. A hyphen, a slash
+  // and a dot stay INSIDE, because that is how a number is printed on the
+  // paper: 4/0, 3/4, 1-1/4, 50/60 and 2107-60-02 are each one number, and the
+  // 60 inside the last two is not a number anybody typed. The # in front and
+  // the inch or foot mark on the end come off both sides, so "#12" and "12"
+  // are the same search and 1" is found by "1 in".
+  //
+  // ANYTHING WITH A LETTER IN IT IS UNCHANGED. "ircuit" still finds the middle
+  // of a name he wrote, "B360" still reads from the front of a word in QED's
+  // title, and neither one goes near this.
+  const TOKEN_BREAK = /[\s·"'‘’‛“”‟′″]+/;
+  const EDGE_MARKS = /^#+|["'‘’‛“”‟′″]+$/g;
+  const PURE_NUMBER = /^[0-9][0-9/.-]*$/;
+
+  // A printed number with its printing taken off.
+  function bareNumber(t) { return t.replace(EDGE_MARKS, ''); }
+
+  // Is what he typed a number and nothing else? A digit has to lead it, so
+  // "-4" and ".5" are not numbers he read off anything, and a space rules it
+  // out too: two numbers with a space between them are two of these, which is
+  // the part-number-off-a-receipt case the sku lane already handles its own
+  // way.
+  function isNumberQuery(q) { return PURE_NUMBER.test(bareNumber(q)); }
+
+  // How many digits he typed, which is the only thing the sku lane needs to
+  // know: a short number is one he read off the part in his hand, a long one
+  // is him typing the front of one.
+  function digitCount(q) { const m = q.match(/[0-9]/g); return m ? m.length : 0; }
+
+  // Does one of the printed numbers in `text` equal the query? `text` is a
+  // name of his or a title of QED's; `query` is already normalized.
+  function numberHit(text, query) {
+    if (text === '') return false;
+    const q = bareNumber(query);
+    if (q === '') return false;
+    const toks = normalizeName(text).split(TOKEN_BREAK);
+    for (let i = 0; i < toks.length; i += 1) if (bareNumber(toks[i]) === q) return true;
     return false;
   }
 
@@ -345,6 +401,15 @@
     // anywhere inside it. QED's title is read by the word for the same
     // reason: see supplierHit above.
     const qNoSpace = query.replace(/\s+/g, '');
+
+    // v3.2.2. Did he type a NUMBER or did he type words? A number is read
+    // whole in every lane: see numberHit above.
+    const numeric = query !== '' && isNumberQuery(query);
+    // And in the number lane, whole means the whole sku. Under five digits is
+    // a number he read off the part, so 60 is a 60 and not the front of 603;
+    // five or more is him typing the front of a long one, which is how he
+    // finds a part from half a line on a receipt.
+    const wholeSku = numeric && digitCount(query) < 5;
     // Built only where it is used: browsing is the one lane that has to know
     // which parts are riding under another one.
     const byId = query ? null : indexById(list);
@@ -363,11 +428,16 @@
       if (!includeRentals && p.category === RENTALS) return;
       const name = typeof p.name === 'string' ? p.name : '';
       if (query) {
-        if (normalizeName(name).indexOf(query) !== -1) { out.push({ p, lane: 0 }); return; }
+        const ownHit = numeric ? numberHit(name, query)
+          : normalizeName(name).indexOf(query) !== -1;
+        if (ownHit) { out.push({ p, lane: 0 }); return; }
         const supplier = typeof p.supplierName === 'string' ? p.supplierName : '';
-        if (supplierHit(supplier, query)) { out.push({ p, lane: 1 }); return; }
+        const titleHit = numeric ? numberHit(supplier, query) : supplierHit(supplier, query);
+        if (titleHit) { out.push({ p, lane: 1 }); return; }
         const sku = typeof p.sku === 'string' ? p.sku.replace(/\s+/g, '').toLowerCase() : '';
-        if (sku !== '' && qNoSpace !== '' && sku.indexOf(qNoSpace) === 0) out.push({ p, lane: 1 });
+        const skuHit = sku !== '' && qNoSpace !== ''
+          && (wholeSku ? sku === qNoSpace : sku.indexOf(qNoSpace) === 0);
+        if (skuHit) out.push({ p, lane: 1 });
         return;
       }
       if (p.category !== o.category) return;

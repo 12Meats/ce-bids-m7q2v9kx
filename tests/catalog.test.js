@@ -680,7 +680,9 @@ test('matches: a part number matches from the front, not out of the middle', () 
     Object.assign(part('gear', 'Panel breaker', { id: 's2' }), { sku: '2368605' }),
   ];
   assert.deepStrictEqual(names(C.matches(numbers, { query: '60' })), []);
-  assert.deepStrictEqual(names(C.matches(numbers, { query: '236' })), ['Panel breaker']);
+  // v3.2.2 tightened the short end of this: three digits is a whole number he
+  // read, not the front of a seven-digit one. Five is where the front starts.
+  assert.deepStrictEqual(names(C.matches(numbers, { query: '23686' })), ['Panel breaker']);
   assert.deepStrictEqual(names(C.matches(numbers, { query: '3302434' })), ['GFCI']);
   assert.deepStrictEqual(names(C.matches(numbers, { query: '330 2434' })), ['GFCI']);
 });
@@ -738,15 +740,151 @@ test('matches: a QED title still answers, from the front of a word', () => {
   assert.deepStrictEqual(C.matches(TITLES, { query: 'ircuit' }), []);
 });
 
-test('matches: the part number lane is unchanged, prefix and all', () => {
+test('matches: the part number lane reads a long number from the front', () => {
   assert.deepStrictEqual(names(C.matches(TITLES, { query: '22590' })), ['Breaker A'],
     'the QED part number, whole');
-  assert.deepStrictEqual(names(C.matches(TITLES, { query: '225' })), ['Breaker A'],
-    'and from the front of it, which is where a number is read');
-  assert.deepStrictEqual(names(C.matches(TITLES, { query: '5801' })), ['Transformer']);
+  assert.deepStrictEqual(names(C.matches(TITLES, { query: '58018' })), ['Transformer'],
+    'and from the front of it, once there is enough of it to be a front');
+  // v3.2.2: three and four digits are numbers he read off the part in his
+  // hand, and they have to be the whole part number. See the block below.
+  assert.deepStrictEqual(C.matches(TITLES, { query: '225' }), []);
+  assert.deepStrictEqual(C.matches(TITLES, { query: '5801' }), []);
 });
 
 test('matches: his own names keep the substring they always had', () => {
   assert.deepStrictEqual(names(C.matches(TITLES, { query: 'ire nu' })), ['Wire nut']);
   assert.deepStrictEqual(names(C.matches(CATALOG, { query: 'mt' })), ['3/4" EMT', '1" EMT']);
+});
+
+// ---------------------------------------------------------------------------
+// v3.2.2: A NUMBER IN THE SEARCH IS A WHOLE NUMBER
+// ---------------------------------------------------------------------------
+// v3.2.1 fixed QED's titles and left the other two lanes alone, and on the
+// live phone "60" still came back with six rows he did not want. The number
+// was hiding in three different places:
+//
+//   in his own names   — the import hangs QED's catalog number off the end of
+//                        the tile name, so "10/2 MC cable · 2107-60-02" and
+//                        "#12 THHN · 58018605" both have a 60 in the middle of
+//                        a number he never typed
+//   in QED's titles    — "50/60 Hz" on every photocell, where the 60 is half
+//                        of one printed number and not a number of its own
+//   in QED's numbers   — the number lane was a prefix, so sku 603 answered 60
+//
+// So it is one rule now, in all three lanes: a query that is nothing but a
+// number has to BE one of the printed numbers. A printed number is what
+// whitespace, the middle dot and the quote marks leave behind, so 4/0, 3/4,
+// 1-1/4, 50/60 and 2107-60-02 are each ONE number and the 60 inside the last
+// two is not a number anybody typed. The # in front and the inch mark on the
+// end come off both sides, so "#12" and "12" are the same search.
+//
+// WORDS ARE NOT TOUCHED. Anything with a letter in it reads exactly as it did:
+// the middle of a name he wrote is still a hit.
+const NUMBERS = [
+  part('gear', '60 A 3-pole breaker', { id: 'n1' }),
+  part('wire', '10/2 MC cable · 2107-60-02', { id: 'n2' }),
+  part('wire', '#12 THHN · 58018605', { id: 'n3' }),
+  part('wire', '#10 THHN · B03605', { id: 'n4' }),
+  Object.assign(part('conduit', '1-1/4" liquidtight connector · 3405', { id: 'n5' }), {
+    sku: '603',
+  }),
+  Object.assign(part('gear', 'Photocell 120 V', { id: 'n6' }), {
+    supplierName: 'Intermatic Photocontrol 120 Volt 50/60 Hz',
+  }),
+  Object.assign(part('gear', 'Photocell 208 V', { id: 'n7' }), {
+    supplierName: 'Tork Photocontrol 208 Volt 50/60 Hz',
+  }),
+  Object.assign(part('gear', '60 A 3-pole breaker · B360', { id: 'n8' }), {
+    sku: '22590', supplierName: 'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker',
+  }),
+];
+
+// The list off the live phone, and what is left of it.
+test('matches: "60" is the breakers, and none of the numbers with a 60 inside', () => {
+  assert.deepStrictEqual(names(C.matches(NUMBERS, { query: '60' })),
+    ['60 A 3-pole breaker', '60 A 3-pole breaker · B360']);
+});
+
+// Each row that was wrong, named, so none of them can come back one at a time.
+test('matches: a 60 in the middle of a printed number is not a 60', () => {
+  const got = names(C.matches(NUMBERS, { query: '60' }));
+  ['10/2 MC cable · 2107-60-02', '#12 THHN · 58018605', '#10 THHN · B03605',
+    '1-1/4" liquidtight connector · 3405', 'Photocell 120 V', 'Photocell 208 V',
+  ].forEach((n) => {
+    assert.ok(got.indexOf(n) === -1, n + ' should not answer 60');
+  });
+});
+
+// The other half of the bargain: the whole number he typed still lands.
+test('matches: the whole printed number still finds the part', () => {
+  assert.deepStrictEqual(names(C.matches(NUMBERS, { query: '2107-60-02' })),
+    ['10/2 MC cable · 2107-60-02'], 'the catalog number off the end of his own name');
+  assert.deepStrictEqual(names(C.matches(NUMBERS, { query: '58018605' })), ['#12 THHN · 58018605']);
+  assert.deepStrictEqual(names(C.matches(NUMBERS, { query: '3405' })),
+    ['1-1/4" liquidtight connector · 3405']);
+  assert.deepStrictEqual(names(C.matches(NUMBERS, { query: '50/60' })),
+    ['Photocell 120 V', 'Photocell 208 V'], "one printed number in QED's title");
+  assert.deepStrictEqual(names(C.matches(NUMBERS, { query: '10/2' })),
+    ['10/2 MC cable · 2107-60-02']);
+});
+
+// A size is a printed number too, and the marks around it are printing.
+const SIZES = [
+  part('conduit', '3/4" EMT', { id: 'z1' }),
+  part('conduit', '1-1/4" EMT', { id: 'z2' }),
+  part('wire', '4/0 THHN', { id: 'z3' }),
+  part('wire', '#12 THHN', { id: 'z4' }),
+];
+
+test('matches: a size is one number, marks and all', () => {
+  assert.deepStrictEqual(names(C.matches(SIZES, { query: '3/4' })), ['3/4" EMT']);
+  assert.deepStrictEqual(names(C.matches(SIZES, { query: '4/0' })), ['4/0 THHN']);
+  assert.deepStrictEqual(names(C.matches(SIZES, { query: '1-1/4' })), ['1-1/4" EMT']);
+  // The # is how a gauge is printed, so he may type it or leave it off.
+  assert.deepStrictEqual(names(C.matches(SIZES, { query: '#12' })), ['#12 THHN']);
+  assert.deepStrictEqual(names(C.matches(SIZES, { query: '12' })), ['#12 THHN']);
+  // And a 4 on its own is not the 4 in 3/4" or 4/0.
+  assert.deepStrictEqual(C.matches(SIZES, { query: '4' }), []);
+});
+
+// THE NUMBER LANE. Short is a number he read off the part in his hand, and it
+// has to be the whole part number; long is him typing the front of one.
+const SKUS = [
+  Object.assign(part('gear', 'Liquidtight connector', { id: 'k1' }), { sku: '603' }),
+  Object.assign(part('gear', 'Contactor', { id: 'k2' }), { sku: '601234' }),
+  Object.assign(part('gear', 'Breaker', { id: 'k3' }), { sku: '22590' }),
+  Object.assign(part('gear', 'GFCI', { id: 'k4' }), { sku: '330 2434' }),
+];
+
+test('matches: a short number is the whole part number, a long one is its front', () => {
+  assert.deepStrictEqual(C.matches(SKUS, { query: '60' }), [],
+    'neither sku 603 nor sku 601234 is a 60');
+  assert.deepStrictEqual(names(C.matches(SKUS, { query: '603' })), ['Liquidtight connector']);
+  assert.deepStrictEqual(names(C.matches(SKUS, { query: '22590' })), ['Breaker'],
+    'five digits, whole');
+  assert.deepStrictEqual(C.matches(SKUS, { query: '2259' }), [],
+    'four digits is a whole number he read, not the front of one');
+  assert.deepStrictEqual(names(C.matches(SKUS, { query: '60123' })), ['Contactor'],
+    'five digits reads from the front');
+  assert.deepStrictEqual(names(C.matches(SKUS, { query: '3302434' })), ['GFCI']);
+  assert.deepStrictEqual(names(C.matches(SKUS, { query: '330 2434' })), ['GFCI'],
+    'the spaces come out of a number off a receipt');
+});
+
+// The guard on the whole thing: this is a rule about NUMBERS. A query with a
+// letter in it reads the way it always did, and the middle of a name he wrote
+// is still a hit.
+test('matches: words are unchanged, mid-name and all', () => {
+  const words = [
+    part('gear', 'Circuit tracer', { id: 'x1' }),
+    Object.assign(part('gear', 'Breaker', { id: 'x2' }), {
+      supplierName: 'Siemens B360 3-Pole 60 Amp Circuit Breaker',
+    }),
+  ];
+  assert.deepStrictEqual(names(C.matches(words, { query: 'ircuit' })), ['Circuit tracer'],
+    'the middle of his own name');
+  assert.deepStrictEqual(names(C.matches(words, { query: 'B360' })), ['Breaker'],
+    "a mixed query still reads from the front of a word in QED's title");
+  assert.deepStrictEqual(names(C.matches(words, { query: '60 Amp' })), ['Breaker'],
+    'and two words of it, in the order the title says them');
 });
