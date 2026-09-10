@@ -264,7 +264,11 @@
   // stopped carrying stays in the file (old bids reference it by id and must
   // keep validating) without being in his way.
   //
-  // Order: most-used first, then family, then size, then alphabetical — with
+  // Order, on a search: the parts whose own names answered the query, then the
+  // ones only QED's title or QED's number answered it with. Inside each of
+  // those, and on a browse, the rack order below.
+  //
+  // Rack order: most-used first, then family, then size, then alphabetical — with
   // the category's own family order (familyRank, above) taking the first word
   // on family where it has one. His own history still wins — the part he
   // reaches for forty times a month is at the top wherever the alphabet would
@@ -291,24 +295,37 @@
     //
     // The part number loses its whitespace on both sides, the same rule the
     // price file's matching uses, so "330 2434" off a receipt lands on the
-    // part he typed "3302434" onto.
+    // part he typed "3302434" onto. And it is read from the FRONT: a number
+    // typed into the middle of a longer one is not a part number, it is a
+    // coincidence, and "60" was dragging in every QED number with a 60
+    // anywhere inside it.
     const qNoSpace = query.replace(/\s+/g, '');
     // Built only where it is used: browsing is the one lane that has to know
     // which parts are riding under another one.
     const byId = query ? null : indexById(list);
 
-    const out = list.filter((p) => {
-      if (!p || p.hidden !== false) return false;
-      if (!includeRentals && p.category === RENTALS) return false;
+    // WHOSE WORDS THE HIT CAME IN ON, and it is the first thing the order
+    // asks. Lane 0 is his own name for the part; lane 1 is a hit found only
+    // inside QED's title or QED's number. The import wrote "with ground" into
+    // three hundred supplier titles, so "ground" — the word he types to find
+    // the one bare copper part on the truck — came back as eight MC cables he
+    // has run forty times each with his own part buried under them. His
+    // history still decides the order INSIDE a lane; it just no longer
+    // decides which lane comes first.
+    const out = [];
+    list.forEach((p) => {
+      if (!p || p.hidden !== false) return;
+      if (!includeRentals && p.category === RENTALS) return;
       const name = typeof p.name === 'string' ? p.name : '';
       if (query) {
-        if (normalizeName(name).indexOf(query) !== -1) return true;
+        if (normalizeName(name).indexOf(query) !== -1) { out.push({ p, lane: 0 }); return; }
         const supplier = typeof p.supplierName === 'string' ? p.supplierName : '';
-        if (supplier !== '' && normalizeName(supplier).indexOf(query) !== -1) return true;
+        if (supplier !== '' && normalizeName(supplier).indexOf(query) !== -1) { out.push({ p, lane: 1 }); return; }
         const sku = typeof p.sku === 'string' ? p.sku.replace(/\s+/g, '').toLowerCase() : '';
-        return sku !== '' && qNoSpace !== '' && sku.indexOf(qNoSpace) !== -1;
+        if (sku !== '' && qNoSpace !== '' && sku.indexOf(qNoSpace) === 0) out.push({ p, lane: 1 });
+        return;
       }
-      if (p.category !== o.category) return false;
+      if (p.category !== o.category) return;
       // THE RACK, NOT THE SHELF. Three breakers that are all "a 60 amp three
       // pole" belong behind the one row that says so; spread across the list
       // they are three rows he has to read the ends of to tell apart. The
@@ -318,11 +335,12 @@
       // Settings is where he renames a part, puts one away or says which
       // generic it belongs with, and a part he cannot see is a part he cannot
       // do any of that to.
-      if (!includeVariants && liveGeneric(byId, p)) return false;
-      return true;
+      if (!includeVariants && liveGeneric(byId, p)) return;
+      out.push({ p, lane: 0 });
     });
 
-    return out.sort(rackOrder);
+    // Browsing is all one lane, so this is the rack order it always was.
+    return out.sort((a, b) => (a.lane - b.lane) || rackOrder(a.p, b.p)).map((x) => x.p);
   }
 
   // THE ORDER THINGS SIT ON THE RACK. Lifted out of matches() in v3.2 so the

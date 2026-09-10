@@ -641,3 +641,46 @@ test('sourceLabel says where a part came from, and nothing at all when he typed 
   assert.strictEqual(C.sourceLabel({ source: { kind: 'other', checkedISO: '2026-09-09' } }), '');
   assert.strictEqual(C.sourceLabel(null), '');
 });
+
+// ---------------------------------------------------------------------------
+// v3.2: WHOSE WORDS THE HIT CAME IN ON
+// ---------------------------------------------------------------------------
+// The import brought QED's own titles onto three hundred parts, and QED writes
+// "with ground" into the title of every MC cable it sells. So "ground" — the
+// word he types to find the one bare copper part on the truck — came back as
+// eight cables he has run forty times each, with his own part somewhere under
+// them. His name for a thing is the name he searched for.
+const GROUND = [
+  part('wire', '#6 bare copper ground', { id: 'w0' }),
+  Object.assign(part('wire', '12/2 MC · 1002GT', { id: 'w1', uses: 40 }), {
+    supplierName: 'Southwire 12/2 MC cable with ground', sku: '11111',
+  }),
+  Object.assign(part('wire', '12/3 MC · 1003GT', { id: 'w2', uses: 30 }), {
+    supplierName: 'Southwire 12/3 MC cable with ground', sku: '22222',
+  }),
+];
+
+test('matches: his own name for a part beats a hit inside QED\'s words', () => {
+  // Both cables have been tapped and the ground wire never has, so the use
+  // count would have put it last of the three.
+  assert.deepStrictEqual(names(C.matches(GROUND, { query: 'ground' })),
+    ['#6 bare copper ground', '12/2 MC · 1002GT', '12/3 MC · 1003GT']);
+  // Inside one lane nothing changed: history still wins.
+  assert.deepStrictEqual(names(C.matches(GROUND, { query: 'with ground' })),
+    ['12/2 MC · 1002GT', '12/3 MC · 1003GT']);
+});
+
+// A part number is read from the FRONT. Typed in the middle it is not a part
+// number at all, it is four digits that happen to sit inside a longer one, and
+// "60" pulling in every QED number with a 60 in it made the number lane worse
+// than useless on a short query.
+test('matches: a part number matches from the front, not out of the middle', () => {
+  const numbers = [
+    Object.assign(part('gear', 'GFCI', { id: 's1' }), { sku: '330 2434' }),
+    Object.assign(part('gear', 'Panel breaker', { id: 's2' }), { sku: '2368605' }),
+  ];
+  assert.deepStrictEqual(names(C.matches(numbers, { query: '60' })), []);
+  assert.deepStrictEqual(names(C.matches(numbers, { query: '236' })), ['Panel breaker']);
+  assert.deepStrictEqual(names(C.matches(numbers, { query: '3302434' })), ['GFCI']);
+  assert.deepStrictEqual(names(C.matches(numbers, { query: '330 2434' })), ['GFCI']);
+});
