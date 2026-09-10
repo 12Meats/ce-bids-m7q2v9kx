@@ -48,11 +48,11 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
    **Material markup** should read **15%**. If yours says 18, tap it and put in 15. Bids you already wrote keep the markup they were figured at.
 4. **Equipment ›.** Thirty tools. Tap one and put in a **Cost new**. A tool with no cost asks for one the first time you use it.
-5. **Company ›.** Check the phone, the address, and the ROC number. Pick a **Proposal style**: **Blue & logo** or **Plain black**. **Supply house search** is where the **Check price** link points: set it to `https://www.qedelectric.com/product/search?q={q}` so Check price opens QED's own search. A part with a QED part number searches by the number and lands on the exact product.
+5. **Company ›.** Check the phone, the address, and the ROC number. Pick a **Proposal style**: **Blue & logo** or **Plain black**. **Supply house search** is where the **Check price** link points, and it already says **QED**. Nothing to do: Check price opens QED's own search, and a part with a QED part number searches by the number and lands on the exact product.
 
 **Parts catalog** (210 parts), **Terms library** (27 clauses), **Anything missing** and **Note phrases** come filled in. Nothing to do there yet.
 
-**QED part number.** Tap a part, then **QED part #**, and type the number off your QED receipt (or from under the product on their site). Once a part has its number, Adrian can update its bill-at price from QED with one file: Settings › Parts catalog › **Import prices**. The app tells you what moved before it changes anything, and bids you already wrote never move. A price you type yourself on the walk is yours, and the QED date comes off that part until the next import.
+**QED part number.** Tap a part, then **QED part #**, and type the number off your QED receipt (or from under the product on their site). Once a part has its number, Adrian can update its bill-at price from QED with one file: Settings › Backup › **Import parts and prices**. The app tells you what moved before it changes anything, and bids you already wrote never move. A price you type yourself on the walk is yours, and the QED date comes off that part until the next import.
 
 **Every number in Rates is new bids only.** Change the labor rate today and it is what the next bid starts at. A bid you already wrote keeps the numbers it was figured at, so nothing you handed a customer moves behind your back.
 
@@ -98,8 +98,8 @@ Wrong button? Until you log hours there is a one tap **Undo Won** or **Reopen** 
 
 ## Invoices
 
-Three moments. Log the visit at the truck, bill the week on Friday, mark the
-check when it comes in.
+Three moments. Start the invoice at the truck and keep it as the job runs, bill
+the ones you have finished with on Friday, mark the check when it comes in.
 
 ### Set it up once
 
@@ -126,17 +126,21 @@ receipt**, which is what your invoices say.
 Under the same customer are their **open projects**, and each one has a quiet
 **Done** on it. Tap Done when a job is finished: *Done projects stop being
 offered on the log screen*, so the list you pick from at the truck stays short.
+There is the same **Mark ... done** on the entry screen, under the project
+chips, for the day you finish a job standing at the truck.
 
 ### At the truck
 
-Tap the **Invoices** tab, then **+ Log hours** at the bottom. It takes about
+Tap the **Invoices** tab, then **+ Start invoice** at the bottom. It takes about
 twenty seconds:
 
 1. **Customer.** Tap the chip, or **+ New** for one you have never billed.
 2. **Project.** The jobs that customer has open. **+ New** starts one. Pick the
-   same project every time you are on that job: that is what puts a week of
-   visits on one invoice instead of five.
-3. **Date.** Today is already in. Type **0903** on the keypad for another day.
+   same project every time you are on that job. Under the chips there is a quiet
+   **Mark ... done** for the day the job is finished.
+3. **From** and **To.** Both start on today, and both open a calendar: tap the
+   day, or use the arrows for another month. **Type it** under the grid is the
+   old keypad if you would rather punch **0903**.
 4. **Who and hours.** Tap a man, put his hours in. **Clear** takes him off.
 5. **Parts, rentals, equipment.** **+ Part** is the same picker as the walk,
    tiles and a search box. **+ Rental** for a lift. **+ Equipment** for your own.
@@ -144,36 +148,37 @@ twenty seconds:
 6. **Notes** is what you saw. It does not go on the customer's paper.
 7. **Save.**
 
-That is the visit. It sits in the pile on the Invoices tab until Friday.
+That is the invoice started. It has no number yet, and the screen says so: *It
+gets its number when you bill it.* Come back to it tomorrow, move the **To** out
+to today, add the hours, and it is still the one invoice. When the work is
+finished, flip **Ready to bill** on it.
 
 ### Friday
 
-Open the **Invoices** tab. The top card is **who owes you**. Under it is **the
-pile**: one row for each job, each week. A row says the days it covers, how old
-it is, how many visits, the hours and the parts. A row goes **yellow** once it
-has been sitting two weeks.
+Open the **Invoices** tab. The first line says how the week went: the hours, how
+many invoices are open, how many are ready, and what they add up to. Under it is
+**who owes you**, and under that **Invoices in progress**, one card each, oldest
+first. A card says the days it covers, **In progress** or **Ready**, and the
+hours. A Ready one also says how long it has been waiting and goes **yellow**
+after two weeks. An open one never does: the job is not finished, so it is not
+late.
 
-Every row is checked. **Uncheck** anything you want to hold back, then tap
-**Bill these**.
-
-That opens the review. One card per invoice, with the visits listed under it.
-Nothing has a number yet and nothing has gone anywhere.
-
-- **Combine** joins two weeks of the same job into one invoice. That is the
-  catch-up case, when you fell behind.
-- **Split** breaks one card into a separate invoice per visit.
-- Tap a card to open it and look at it properly: change the **billed hours**
-  (the hours you logged sit right beside them), fix a price, add a note, put a
-  **PO number** on it. **Preview** shows the paper.
+Nothing is checked on its own. Tick the ones the work is done on, which is the
+same switch as **Ready to bill** on the entry itself, then tap **Bill these**.
+Until something is ticked the button waits and says so. That opens the review:
+one invoice per entry, nothing numbered, nothing gone anywhere. **Combine with
+the next one** joins two of the same job, **Combine all 3 of this job** folds a
+whole run of them, and **Split** breaks one back into a day each. Tap a card to
+change the **billed hours** (what you logged sits right beside them), fix a
+price, add a note or a **PO number**. **Preview** shows the paper.
 
 When they look right, tap **Number and send**. That is the moment the numbers
-are spent, in date order, and the visits lock: they read **Billed on #166818**
-and cannot be edited any more.
-
-Then it walks you through them one at a time. On each invoice tap **Send
-invoice**, pick **Mail**, and answer the two questions the way you do on a
-proposal: **"Sent to the customer?"** and **"Did you save a copy on the phone?"**.
-Saving to Files? Put it in **iCloud Drive › Cantu Electric › Invoices › 2026**.
+are spent, in date order, and the entries lock: they read **Billed on #166818**
+and cannot be edited any more. Then it walks you through them one at a time. On
+each invoice tap **Send to the office**, pick **Mail**, and send it to whoever
+mails your invoices. Then answer the two questions: **"Sent it to the office?"**
+and **"Did you save a copy on the phone?"**. Saving to Files? Put it in **iCloud
+Drive › Cantu Electric › Invoices › 2026**.
 
 ### When the check comes
 

@@ -26,7 +26,7 @@
 // The build the phone is actually running, shown at the bottom of Settings.
 // Must match CACHE in sw.js; both bump on every deploy that changes a cached
 // file. tests/sw.test.js fails if the two ever drift.
-const APP_VERSION = 'billing-v3';
+const APP_VERSION = 'billing-v3.1';
 
 // The day that build was made, as a plain ISO date. The version line at the
 // bottom of Settings reads "CE Billing · v3 · built Sep 9, 2026" off these two
