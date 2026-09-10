@@ -1367,3 +1367,19 @@ test('takeInvoiceNumber hands out exactly what effectiveNextInvoiceNumber promis
   // And the promise moves on with it: the counter is now past what it spent.
   assert.strictEqual(S.effectiveNextInvoiceNumber(f.d), promised + 1);
 });
+
+// ---------------------------------------------------------------------------
+// A LOG ENTRY'S To AND ITS Ready FLAG (v3.1)
+// ---------------------------------------------------------------------------
+// Both are optional on disk. A v3 backup has neither and loads unchanged: the
+// entry reads as one day, still in progress, which is what it was.
+
+test('validateImport takes an entry with a To and a Ready on it, and one without', () => {
+  const ok = (mutate) => { const f = invoiceFixture(); mutate(f); return S.validateImport(JSON.stringify(f.d)) !== null; };
+  assert.ok(ok((f) => { f.log.toISO = '2026-08-28'; f.log.ready = true; }), 'the new shape loads');
+  assert.ok(ok((f) => { f.log.ready = false; }), 'ready without a To');
+  assert.ok(ok(() => {}), 'and neither of them, which is every entry on a v3 phone');
+  assert.ok(!ok((f) => { f.log.toISO = '8/28/26'; }), 'a To that is not an ISO date');
+  assert.ok(!ok((f) => { f.log.toISO = null; }), 'null is not a date; absent is how a v3 entry says it');
+  assert.ok(!ok((f) => { f.log.ready = 'yes'; }), 'ready is a boolean');
+});

@@ -301,3 +301,38 @@ test('an empty group, and a group with nothing counted on it, are both zero', ()
   assert.strictEqual(I.pileHours(null), 0);
   assert.strictEqual(I.pileParts(undefined), 0);
 });
+
+// ---------------------------------------------------------------------------
+// AN ENTRY IS AN INVOICE IN PROGRESS
+// ---------------------------------------------------------------------------
+// A visit used to be one day. After the first day on v3 it is an open tab: a
+// From and a To, and a state that says whether he is finished with it. Both
+// new fields are optional on disk, so a backup written before this release
+// reads as a one-day entry that is still in progress — which is exactly what
+// it was.
+
+test('entryFrom is the From date; entryTo falls back to it', () => {
+  assert.strictEqual(I.entryFrom({ dateISO: '2026-09-09' }), '2026-09-09');
+  assert.strictEqual(I.entryTo({ dateISO: '2026-09-09' }), '2026-09-09');
+  assert.strictEqual(I.entryTo({ dateISO: '2026-09-09', toISO: '2026-09-12' }), '2026-09-12');
+  // The same day written into both is not a range, and reads as neither.
+  assert.strictEqual(I.entryTo({ dateISO: '2026-09-09', toISO: '2026-09-09' }), '2026-09-09');
+  // Anything that is not a date is not a To: an old file, a hand edit, a null
+  // left by a half-finished write all read as the day it started.
+  assert.strictEqual(I.entryTo({ dateISO: '2026-09-09', toISO: null }), '2026-09-09');
+  assert.strictEqual(I.entryTo({ dateISO: '2026-09-09', toISO: '' }), '2026-09-09');
+  assert.strictEqual(I.entryTo({ dateISO: '2026-09-09', toISO: 42 }), '2026-09-09');
+  // And a caller with nothing in hand gets null rather than a crash.
+  assert.strictEqual(I.entryFrom(null), null);
+  assert.strictEqual(I.entryTo(undefined), null);
+});
+
+test('isReady is true only when he said so', () => {
+  assert.strictEqual(I.isReady({ dateISO: '2026-09-09' }), false, 'an entry off an old backup is in progress');
+  assert.strictEqual(I.isReady({ ready: false }), false);
+  assert.strictEqual(I.isReady({ ready: true }), true);
+  // Truthy is not true: only the boolean this app writes counts.
+  assert.strictEqual(I.isReady({ ready: 'yes' }), false);
+  assert.strictEqual(I.isReady({ ready: 1 }), false);
+  assert.strictEqual(I.isReady(null), false);
+});

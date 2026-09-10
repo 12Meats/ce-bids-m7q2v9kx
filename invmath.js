@@ -16,6 +16,32 @@
   const AMBER_AFTER_DAYS = 14;
 
   // -------------------------------------------------------------------------
+  // AN ENTRY: WHAT IT COVERS, AND WHETHER HE IS FINISHED WITH IT
+  // -------------------------------------------------------------------------
+  // A visit was one day until the first week on v3 said otherwise: he opens an
+  // entry on Monday and keeps adding to it until the job is done, which is the
+  // way the paper always worked. So an entry has a From (dateISO, the field
+  // that was always there) and a To (toISO, new and optional), and a state that
+  // says whether it is finished: ready, also new and also optional.
+  //
+  // Both fall back rather than being migrated. A backup written before this
+  // release has neither, and every one of its entries reads as one day, still
+  // in progress, which is what it was on the phone that wrote it. Nothing in
+  // this app writes a toISO that is not an ISO date, so anything else — a null
+  // left behind, a hand edit, a half-finished write — reads as the day it
+  // started rather than as a date the screens would then try to print.
+  function isISOish(x) { return typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x); }
+  function entryFrom(e) { return e && isISOish(e.dateISO) ? e.dateISO : null; }
+  function entryTo(e) {
+    if (!e) return null;
+    return isISOish(e.toISO) ? e.toISO : entryFrom(e);
+  }
+  // Ready is a decision he made, not a shape the data fell into: only the
+  // boolean this app writes counts, so a truthy string off a hand-edited file
+  // is not him saying the week is finished.
+  function isReady(e) { return !!e && e.ready === true; }
+
+  // -------------------------------------------------------------------------
   // THE PILE: which entries become which invoices
   // -------------------------------------------------------------------------
   // customer + project + the Monday that starts the week. He bills weekly; the
@@ -286,6 +312,7 @@
   }
 
   return {
+    AMBER_AFTER_DAYS, entryFrom, entryTo, isReady,
     AMBER_AFTER_DAYS, group, canCombine, combine, split, pileHours, pileParts,
     draftInvoice, draftProjectInvoice, projectRemainingCents,
     billedHours, laborCents, totals, paidCents, balanceCents, statusOf,

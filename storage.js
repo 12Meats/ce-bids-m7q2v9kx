@@ -854,6 +854,14 @@
         if (!isObj(e) || !isStr(e.id) || e.id === '' || logIds.has(e.id)) return null;
         logIds.add(e.id);
         if (!isISO(e.dateISO) || !customerIds.has(e.customerId) || !projectIds.has(e.projectId)) return null;
+        // v3.1: an entry is an invoice in progress, so it has a To as well as
+        // a From, and a flag saying he is finished with it. Both OPTIONAL: a
+        // v3 file has neither and every one of its entries reads as one day,
+        // still in progress. Absent is the only way to say "not set" — a null
+        // toISO is refused rather than treated as absent, because nothing here
+        // writes one and a file that has one has been edited by hand.
+        if (e.toISO !== undefined && !isISO(e.toISO)) return null;
+        if (e.ready !== undefined && !isBool(e.ready)) return null;
         if (!isArr(e.crew)) return null;
         for (const m of e.crew) {
           if (!isObj(m) || !crewIds.has(m.crewId) || !isFiniteGt0(m.hours)) return null;

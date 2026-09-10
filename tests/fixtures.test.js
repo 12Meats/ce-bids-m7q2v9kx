@@ -441,6 +441,17 @@ test('backup-bids-v3.json really is a v3 file', () => {
   assert.strictEqual(weeks.size, 2, 'two weeks of the same job');
   assert.strictEqual(d.logs.filter((e) => !e.invoiceId).length, 1, 'one visit still in the pile');
 
+  // v3.1 gave an entry a To and a Ready flag. Neither is on this photograph,
+  // and neither may become required: every visit here reads as one day, still
+  // in progress, which is exactly what it was on the phone that wrote it.
+  d.logs.forEach((e) => {
+    assert.strictEqual(e.toISO, undefined, 'a v3 entry has no To');
+    assert.strictEqual(e.ready, undefined, 'and no Ready');
+    assert.strictEqual(I.entryFrom(e), e.dateISO);
+    assert.strictEqual(I.entryTo(e), e.dateISO, 'so From and To are the one day');
+    assert.strictEqual(I.isReady(e), false, 'and it is in progress');
+  });
+
   // THE LINKS, BOTH WAYS. A log entry names the invoice that billed it and
   // that invoice names the entry back. One-sided in either direction is a
   // visit that can be billed twice, or hours locked to nothing.
