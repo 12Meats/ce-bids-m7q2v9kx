@@ -221,10 +221,15 @@ function reviewCombine(i) {
 // re-read of the list between each of them, and three is exactly the week he
 // fell behind on, which is the one he most wants in a single envelope. The
 // button only exists when there is more to fold than Combine would take.
+//
+// The number on it is what the tap will FOLD, which is this card and the ones
+// UNDER it: combine reaches down the list and never up, so a card of the same
+// job sitting above him is not one of them. Counting the whole list promised
+// an invoice with more visits on it than the button could make.
 function reviewSameJobCount(groups, i) {
   const a = (groups || [])[i];
   if (!a) return 0;
-  return groups.filter((g) => g.customerId === a.customerId && g.projectId === a.projectId).length;
+  return groups.slice(i).filter((g) => g.customerId === a.customerId && g.projectId === a.projectId).length;
 }
 function reviewCombineAllLabel(groups, i) {
   const n = reviewSameJobCount(groups, i);

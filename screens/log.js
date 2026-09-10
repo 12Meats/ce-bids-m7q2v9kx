@@ -657,6 +657,11 @@ function logSave() {
   e.rentals = draft.rentals;
   e.equipment = draft.equipment;
   e.notes = draft.notes;
+  // The To is OPTIONAL on disk and newLogEntry does not make one, so it is
+  // copied over the same way it is written: only when there is one. A draft he
+  // gave a range to has to be saved with the range, and a one-day visit has to
+  // land without the key at all, the way every entry written before v3.1 did.
+  if (typeof draft.toISO === 'string') e.toISO = draft.toISO;
   if (!persistOr(() => {
     const i = d.logs.indexOf(e);
     if (i !== -1) d.logs.splice(i, 1);

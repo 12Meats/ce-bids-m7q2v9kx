@@ -90,7 +90,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   thisWeekText, invAllGroups, invReadyCount, invoicesToggle,
   reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
   invoicePinnedLabel, invoiceSentCaption,
-  enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady,
+  enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady, logSave,
   logMarkDone, logMarkDoneText, logProjectsOffered, entryStatusPill } = sandbox;
 // Three sentences on these screens are top-level consts, which are lexical
 // rather than properties of the context's global object, so they are read out
@@ -1074,6 +1074,64 @@ test('a refused save puts both dates back, including the one that was never ther
   assert.strictEqual(e.dateISO, '2026-08-24');
 });
 
+// A new visit is a draft in memory until Save, and Save builds the entry that
+// lands on disk out of the draft's fields one at a time. The To is the one he
+// sets on the first screen he ever sees of a job that runs a week, and the
+// only way to notice it was dropped is to look at the invoice a week later.
+test('a To set on a new visit is on the entry that Save writes', (t) => {
+  const w = world();
+  stub(t, { persistOr: () => true, showBanner: () => {}, render: () => {}, show: () => {} });
+
+  enterLog(null);
+  const draft = logTarget();
+  draft.customerId = w.uda.id;
+  draft.projectId = w.uf.id;
+  draft.crew = [{ crewId: w.c1, hours: 8 }];
+  draft.dateISO = '2026-09-07';        // Monday, the day he opened it
+  logSetTo(draft, '2026-09-11');       // and the Friday the job runs to
+  logSave();
+
+  const saved = w.d.logs[w.d.logs.length - 1];
+  assert.strictEqual(I.entryFrom(saved), '2026-09-07');
+  assert.strictEqual(I.entryTo(saved), '2026-09-11', 'the range he set is the range it was saved with');
+});
+
+test('a To that landed before the From is saved swapped, and no To at all stays absent', (t) => {
+  const w = world();
+  const banners = [];
+  stub(t, { persistOr: () => true, showBanner: (text) => banners.push(text), render: () => {}, show: () => {} });
+
+  // He tapped the Friday on the To row and then found the job had started the
+  // week before, so the earlier day went on the To and the two swapped.
+  enterLog(null);
+  const draft = logTarget();
+  draft.customerId = w.uda.id;
+  draft.projectId = w.uf.id;
+  draft.crew = [{ crewId: w.c1, hours: 8 }];
+  draft.dateISO = '2026-09-07';
+  logSetTo(draft, '2026-09-02');
+  assert.deepStrictEqual(banners, [LOG_SWAP_TEXT]);
+  logSave();
+
+  const swapped = w.d.logs[w.d.logs.length - 1];
+  assert.strictEqual(I.entryFrom(swapped), '2026-09-02');
+  assert.strictEqual(I.entryTo(swapped), '2026-09-07');
+
+  // And the one-day visit, which is most of them: the key it never had is
+  // still not on the entry, so it reads as the one day it was.
+  enterLog(null);
+  const plain = logTarget();
+  plain.customerId = w.uda.id;
+  plain.projectId = w.uf.id;
+  plain.crew = [{ crewId: w.c1, hours: 4 }];
+  plain.dateISO = '2026-09-08';
+  logSave();
+
+  const one = w.d.logs[w.d.logs.length - 1];
+  assert.strictEqual(one.toISO, undefined, 'absent stays absent');
+  assert.strictEqual(I.entryTo(one), '2026-09-08');
+});
+
 test('Ready is his to set, on the entry itself', (t) => {
   const w = world();
   const e = w.d.logs[0];
@@ -1388,6 +1446,40 @@ test('Combine all folds the whole job into one invoice', () => {
   assert.strictEqual(drafts[0].logIds.length, 3);
   assert.strictEqual(drafts[0].serviceFrom, '2026-08-24');
   assert.strictEqual(drafts[0].serviceTo, '2026-09-02');
+});
+
+// The number on the button is what the button will FOLD, which is this card
+// and the ones under it. Combine all reaches down the list, never up: a count
+// of the whole job would promise a card that is already above him.
+test('the count is this card and the ones under it, not every card of the job', () => {
+  const w = enterWorld();
+  enterBillreview();
+  const groups = vm.runInContext('reviewGroups', sandbox);
+  assert.strictEqual(reviewSameJobCount(groups, 1), 2, 'the second of three has two, itself and the last');
+  assert.strictEqual(reviewCombineAllLabel(groups, 1), null, 'and two is Combine\'s own business');
+  reviewCombineAll(1);
+  const drafts = reviewDrafts.get();
+  assert.strictEqual(drafts.length, 2, 'the first visit was never in it');
+  assert.strictEqual(drafts[1].logIds.length, 2);
+});
+
+test('the label from the middle of the pile promises the drafts it makes', () => {
+  const w = enterWorld();
+  // A fourth visit of the same job, so there is enough under the second card
+  // for the second button to turn up on it at all.
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-04', createdAt: 7 });
+  e.crew = [{ crewId: w.c1, hours: 2 }];
+  e.ready = true;
+  enterBillreview();
+  const groups = vm.runInContext('reviewGroups', sandbox);
+  assert.strictEqual(groups.length, 4);
+  assert.strictEqual(reviewCombineAllLabel(groups, 1), 'Combine all 3 of this job');
+  reviewCombineAll(1);
+  const drafts = reviewDrafts.get();
+  assert.strictEqual(drafts.length, 2, 'the one above it is still its own invoice');
+  assert.strictEqual(drafts[1].logIds.length, 3, 'the three the label promised');
+  assert.strictEqual(drafts[1].serviceFrom, '2026-08-28');
+  assert.strictEqual(drafts[1].serviceTo, '2026-09-04');
 });
 
 // ---------------------------------------------------------------------------
