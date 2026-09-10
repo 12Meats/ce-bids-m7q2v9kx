@@ -1595,12 +1595,29 @@ function settingsCatalogSourceFilter(list, mode) {
 // are not already options of something else, and never the part itself. A
 // two-deep chain would be a chooser that opens a chooser, and a man on a
 // ladder has one tap in him for this.
+//
+// "Already an option of something else" is Catalog.isVariant and not the bare
+// pointer, because everywhere else in this app a link that lands on nothing —
+// a generic he deleted, or one he has put away for the season — is read as NO
+// link. Read here as a live one, it took a part that is standing on its own
+// off the list of places he could put anything.
 function settingsBelongsWithOptions(catalog, p) {
   const rows = Array.isArray(catalog) ? catalog : [];
   if (!p) return [];
   return rows.filter((q) => q && q !== p && q.id !== p.id && !q.hidden
     && q.category === p.category
-    && !(typeof q.variantOf === 'string' && q.variantOf !== ''));
+    && !Catalog.isVariant(rows, q));
+}
+
+// Does anything in the file ride under this part? Asked of the FILE and not of
+// the walk: an option he has put away for the season is still an option, and a
+// generic whose three options are all put away is still the row they are
+// behind. Answered off the catalog rather than off the "3 options" count on
+// the row, which is about what he can see today.
+function settingsHasOptions(catalog, p) {
+  const rows = Array.isArray(catalog) ? catalog : [];
+  if (!p || typeof p.id !== 'string' || p.id === '') return false;
+  return rows.some((q) => q && q.variantOf === p.id);
 }
 
 function buildSetBelongsWith() {
@@ -1610,14 +1627,14 @@ function buildSetBelongsWith() {
   const counts = pickerVariantCounts(state.data.catalog);
   // "None" first, because it is the answer every part starts with and the one
   // he comes back here to give.
-  box.appendChild(lineRow('None', 'It stands on its own', settingsBelongsWithNow(p, null),
+  box.appendChild(lineRow('None', 'It stands on its own', settingsBelongsWithNow(state.data.catalog, p, null),
     () => settingsSetBelongsWith(p, null), { keypad: true }));
   list.forEach((g) => {
     // How many options each one already carries: they are all out of the same
     // drawer, so naming the drawer on every row would say nothing, and what he
     // wants to know is which of them is already the row that holds the others.
     const has = counts.get(g.id) || 0;
-    box.appendChild(lineRow(g.name, has ? pickerOptionsTag(has) : '', settingsBelongsWithNow(p, g.id),
+    box.appendChild(lineRow(g.name, has ? pickerOptionsTag(has) : '', settingsBelongsWithNow(state.data.catalog, p, g.id),
       () => settingsSetBelongsWith(p, g.id), { keypad: true }));
   });
   if (!list.length) {
@@ -1630,9 +1647,11 @@ function buildSetBelongsWith() {
 }
 
 // The row he is already on says so, rather than the list looking like a set of
-// choices none of which has been made.
-function settingsBelongsWithNow(p, id) {
-  const now = typeof p.variantOf === 'string' && p.variantOf !== '' ? p.variantOf : null;
+// choices none of which has been made. Resolved through the same rule the list
+// above is built with: a pointer at a part that is gone or put away is None,
+// which is where the walk already has him.
+function settingsBelongsWithNow(catalog, p, id) {
+  const now = Catalog.isVariant(catalog, p) ? p.variantOf : null;
   return now === id ? 'Now' : null;
 }
 
@@ -1901,7 +1920,11 @@ function buildSetCatalogRow(box, p, searching, options) {
   // something else would be a chooser inside a chooser. This is the door his
   // own hand-typed part goes through to become one of the choices, and the
   // door back out of it.
-  if (!(options > 0)) {
+  //
+  // Asked of the file and not of the count on the row: the count is the
+  // options he can SEE, and a generic whose three options are all put away
+  // was being offered the one action that would build the chain.
+  if (!settingsHasOptions(state.data.catalog, p)) {
     actions.push(['Belongs with', '', () => { navPush(); settingsBelongsWith = p.id; render(); }]);
   }
   // Neither an edit nor a delete, so neither a button in the grid nor the

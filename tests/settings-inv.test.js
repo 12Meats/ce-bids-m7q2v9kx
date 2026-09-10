@@ -69,6 +69,7 @@ const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
   settingsPriceSearchIsDefault, settingsPriceSearchValue,
   settingsWageLabel, settingsRateLabel,
   settingsCatalogSourceFilter, settingsCatalogSub, settingsBelongsWithOptions,
+  settingsBelongsWithNow, settingsHasOptions,
   settingsImportButton, settingsImportQuestion, settingsImportBanner } = sandbox;
 
 // ---------------------------------------------------------------------------
@@ -421,4 +422,47 @@ test('neither sentence carries an em dash', () => {
 test('the import question suits what is about to happen', () => {
   assert.strictEqual(settingsImportQuestion(0), 'Update the bill-at prices?');
   assert.strictEqual(settingsImportQuestion(320), 'Go ahead?');
+});
+
+// A link that lands on nothing is not a link. He deleted the generic, and the
+// option under it went back to standing on its own everywhere else in the app.
+// "Belongs with" was the one place still reading the dead pointer as a live
+// one, so a part he could no longer see the generic of could not be offered as
+// somewhere to put anything, and its own row said it already belonged to
+// something.
+test('settingsBelongsWithOptions: a link that lands on nothing is not a link', () => {
+  const p = catPart('Siemens 60 A breaker');
+  const orphan = catPart('Old option', { variantOf: 'a generic he deleted' });
+  const putAwayGeneric = catPart('20 A 1-pole breaker', { hidden: true });
+  const underPutAway = catPart('20 A 1-pole breaker · QO120', { variantOf: '20 A 1-pole breaker' });
+  const list = [p, orphan, putAwayGeneric, underPutAway];
+  assert.deepStrictEqual(settingsBelongsWithOptions(list, p).map((x) => x.name),
+    ['Old option', '20 A 1-pole breaker · QO120']);
+});
+
+test('settingsBelongsWithNow: the marker reads a dead link the same way', () => {
+  const generic = catPart('60 A 3-pole breaker');
+  const live = catPart('60 A 3-pole breaker · B360', { variantOf: '60 A 3-pole breaker' });
+  const orphan = catPart('Orphan breaker', { variantOf: 'gone' });
+  const list = [generic, live, orphan];
+  assert.strictEqual(settingsBelongsWithNow(list, live, '60 A 3-pole breaker'), 'Now');
+  assert.strictEqual(settingsBelongsWithNow(list, live, null), null);
+  // The dead pointer is None, which is where the rest of the app already has
+  // him: None is the row that says "Now".
+  assert.strictEqual(settingsBelongsWithNow(list, orphan, null), 'Now');
+  assert.strictEqual(settingsBelongsWithNow(list, orphan, 'gone'), null);
+});
+
+// Whether the part is a doorway is a question about the file, not about what
+// is on the walk today. Put every option under a generic away and the generic
+// is still the row they are behind: offering it "Belongs with" would let him
+// build the chain the chooser cannot draw.
+test('settingsHasOptions: a generic whose options are all put away still has them', () => {
+  const generic = catPart('60 A 3-pole breaker');
+  const putAway = catPart('60 A 3-pole breaker · B360', { variantOf: '60 A 3-pole breaker', hidden: true });
+  const plain = catPart('Wire nuts');
+  const list = [generic, putAway, plain];
+  assert.strictEqual(settingsHasOptions(list, generic), true);
+  assert.strictEqual(settingsHasOptions(list, plain), false);
+  assert.strictEqual(settingsHasOptions(list, null), false);
 });
