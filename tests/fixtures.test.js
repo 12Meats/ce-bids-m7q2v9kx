@@ -586,3 +586,18 @@ test('backup-bids-v1.json: adding the standard parts leaves seven of his own spe
   assert.deepStrictEqual(C.nearDuplicates(d.catalog, S.standardCatalogNames()), [],
     'once hidden they are not asked about again');
 });
+
+// v3.2 added variantOf and source to a catalog part. Every fixture predates
+// them, so none of their parts may carry either: a fixture that suddenly had
+// one would mean somebody edited a photograph of a file that already exists
+// on his phone, which is the one thing this file exists to stop.
+test('no fixture part is an option of another, or came from a price file', () => {
+  for (const file of files) {
+    const d = S.validateImport(fs.readFileSync(path.join(dir, file), 'utf8'));
+    assert.ok(d, file + ' no longer loads');
+    d.catalog.forEach((p) => {
+      assert.strictEqual('variantOf' in p, false, file + ': ' + p.name + ' carries a variantOf');
+      assert.strictEqual('source' in p, false, file + ': ' + p.name + ' carries a source');
+    });
+  }
+});

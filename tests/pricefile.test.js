@@ -460,3 +460,143 @@ test('plan: an option is counted the way its generic is counted', () => {
   const m = P.plan(rows, d.catalog);
   assert.deepStrictEqual(m.creatable.map((c) => c.unit), ['ea', 'roll']);
 });
+
+// ---------------------------------------------------------------------------
+// v3.2: the parts an import makes
+// ---------------------------------------------------------------------------
+// newParts turns what plan() said it WOULD create into catalog parts, shaped
+// exactly like the ones Store.emptyData seeds and the ones + New part builds,
+// with two optional fields on top: which generic this is an option of, and the
+// stamp that says the import put it here rather than his own thumb.
+function creatableFor(overrides) {
+  return Object.assign({
+    row: { sku: '22590', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+      forPart: '60 A 3-pole breaker', catalogNo: 'B360' },
+    name: '60 A 3-pole breaker · B360',
+    unit: 'ea',
+    category: 'gear',
+    seedPart: null,
+  }, overrides || {});
+}
+
+function counter() {
+  let i = 0;
+  return () => 'new' + (i += 1);
+}
+
+test('newParts builds a catalog part, stamped and linked', () => {
+  const generic = { id: 'g1', name: '60 A 3-pole breaker', category: 'gear', unit: 'ea' };
+  const made = P.newParts([creatableFor({ seedPart: generic })], '2026-09-09', counter());
+  assert.strictEqual(made.length, 1);
+  const p = made[0];
+  assert.deepStrictEqual(p, {
+    id: 'new1',
+    category: 'gear',
+    name: '60 A 3-pole breaker · B360',
+    unit: 'ea',
+    lastCostCents: null,
+    lastListCents: 9900,
+    uses: 0,
+    hidden: false,
+    sku: '22590',
+    supplierName: 'Siemens B360 3-Pole 60 Amp Circuit Breaker',
+    priceCheckedISO: '2026-09-09',
+    variantOf: 'g1',
+    source: { kind: 'qed', checkedISO: '2026-09-09' },
+  });
+});
+
+// The same keys the seed catalog carries, so a part the import made and a part
+// he typed are the same kind of thing everywhere downstream: the walk, the
+// paper, the validator on the next save.
+test('newParts: the shape is the seed catalog shape, plus the two optional fields', () => {
+  const made = P.newParts([creatableFor()], '2026-09-09', counter());
+  const seeded = Object.keys(S.emptyData().catalog[0]).sort();
+  assert.deepStrictEqual(Object.keys(made[0]).sort(), seeded.concat(['source']).sort());
+});
+
+// A part with nothing to hang under carries no variantOf at all rather than a
+// null one: absent is what "stands on its own" is spelled as everywhere else
+// in this file, and it is what the walk's rules read.
+test('newParts: no generic means no variantOf key', () => {
+  const made = P.newParts([creatableFor()], '2026-09-09', counter());
+  assert.strictEqual('variantOf' in made[0], false);
+  assert.deepStrictEqual(made[0].source, { kind: 'qed', checkedISO: '2026-09-09' });
+});
+
+// The price is converted into the unit the part is actually counted in, the
+// same arithmetic an update goes through. A per QED sells by that cannot cross
+// into his unit leaves the part with no bill-at price rather than a guess.
+test('newParts: the price crosses into the part unit, or does not come at all', () => {
+  const perC = creatableFor({ unit: 'ft', name: '1" EMT · 101543',
+    row: { sku: '3362', name: "1\" x 10' Steel EMT Conduit", listCents: 7679, per: 'c' } });
+  const perRoll = creatableFor({ unit: 'roll', name: '#12 THHN · B07827',
+    row: { sku: 'x', name: 'THHN #12 (500ft Spool)', listCents: 18000, per: 'm' } });
+  const made = P.newParts([perC, perRoll], '2026-09-09', counter());
+  assert.strictEqual(made[0].lastListCents, 77);
+  assert.strictEqual(made[1].lastListCents, null);
+});
+
+// The supplier's own title is what prints on the paper, and it wears the same
+// 120-character ceiling here that it wears everywhere else it is stored.
+test('newParts: the supplier name is capped at 120', () => {
+  const long = creatableFor({ row: { sku: '1', name: 'z'.repeat(200), listCents: 100, per: 'ea' } });
+  const made = P.newParts([long], '2026-09-09', counter());
+  assert.strictEqual(made[0].supplierName.length, 120);
+});
+
+test('newParts: nothing to create is an empty list, not a null', () => {
+  assert.deepStrictEqual(P.newParts([], '2026-09-09', counter()), []);
+});
+
+// The confirm is the one moment he can still say no, so it says how many parts
+// are about to appear on his walk and names a handful of them.
+test('summaryText names the new parts, at most five of them', () => {
+  const mk = (name) => ({ name });
+  const three = P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [],
+    creatable: ['A', 'B', 'C'].map(mk) });
+  assert.match(three, /3 new parts/);
+  assert.match(three, /A, B, C\./);
+
+  const seven = P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [],
+    creatable: ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map(mk) });
+  assert.match(seven, /A, B, C, D, E, and 2 more\./);
+
+  const one = P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [], creatable: [mk('A')] });
+  assert.match(one, /1 new part\b/);
+});
+
+// A summary with nothing to create says nothing about new parts, and the
+// sentence a file with no creatable rows always gave is unchanged.
+test('summaryText: no creatable rows, no new-parts sentence', () => {
+  const m = { matched: [{ part: { name: 'GFCI' }, newListCents: 200, oldListCents: 200, changePct: 0 }],
+    unmatched: [], mismatched: [], duplicates: [], creatable: [] };
+  assert.strictEqual(P.summaryText(m), '1 of your parts matched.');
+  assert.doesNotMatch(P.summaryText(m), /new part/);
+});
+
+// A file that matched nothing and creates everything must not tell him to go
+// put part numbers on his parts: it is about to put them there itself.
+test('summaryText: creating parts is not an empty-handed file', () => {
+  const t = P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [],
+    creatable: [{ name: 'A' }, { name: 'B' }] });
+  assert.doesNotMatch(t, /Put the part numbers/);
+  assert.doesNotMatch(t, /None of your parts got a new price/);
+  assert.match(t, /^2 new parts/);
+});
+
+// Every sentence on the confirm ends with a period, and there is no em dash
+// anywhere in it: this is copy he reads on a phone in a plant.
+test('summaryText: full stops, and no em dash', () => {
+  const t = P.summaryText({
+    matched: [{ part: { name: 'GFCI' }, newListCents: 400, oldListCents: 200, changePct: 100 }],
+    unmatched: [{ sku: 'x' }],
+    mismatched: [{ part: { name: 'Cord' }, reason: 'x' }],
+    duplicates: [{ sku: 'y' }],
+    creatable: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+  });
+  assert.match(t, /3 new parts/);
+  assert.strictEqual(t.indexOf('—'), -1, 'no em dash in the confirm');
+  t.split('. ').forEach((s) => assert.ok(s.trim() !== '', 'no empty sentence'));
+  assert.ok(t.endsWith('.'), 'the last sentence ends with a period');
+});

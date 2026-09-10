@@ -579,6 +579,24 @@
         // or generated file should not be able to hand a line a paragraph.
         if (p.supplierName !== undefined && p.supplierName !== null && !(isStr(p.supplierName) && p.supplierName.length <= 120)) return null;
         if (p.priceCheckedISO !== undefined && p.priceCheckedISO !== null && !isISO(p.priceCheckedISO)) return null;
+        // OPTIONAL, both new in v3.2. variantOf is the id of the generic part
+        // this one is an OPTION of: "60 A 3-pole breaker · B360" under "60 A
+        // 3-pole breaker". An id and not a name, so renaming either end leaves
+        // the link standing.
+        //
+        // A link pointing at nothing is NOT refused. A generic he deleted
+        // leaves its options behind rather than taking them with it, and every
+        // rule that reads the link treats a dangling one as no link at all;
+        // refusing the file would be a whole phone full of parts lost over a
+        // pointer. Only a shape that could never be an id is refused.
+        if (p.variantOf !== undefined && p.variantOf !== null && !(isStr(p.variantOf) && p.variantOf !== '')) return null;
+        // source says the import put this part here rather than his own thumb:
+        // { kind: 'qed', checkedISO }. Both halves are required when it is
+        // there at all, because a stamp with no date is not a stamp, and the
+        // Settings filter reads the kind.
+        if (p.source !== undefined && p.source !== null) {
+          if (!isObj(p.source) || !isStr(p.source.kind) || p.source.kind === '' || !isISO(p.source.checkedISO)) return null;
+        }
       }
 
       if (!isArr(d.customers)) return null;

@@ -324,6 +324,54 @@
     return out;
   }
 
+  // newParts(creatable, checkedISO, uid) -> the catalog parts to push.
+  //
+  // Shaped exactly like a part Store.emptyData seeds and a part + New part
+  // builds, because from the moment it lands it IS one of those: it is tapped
+  // on the walk, priced on a line, printed on the paper. Two optional fields
+  // on top of that shape, both new in v3.2:
+  //
+  //   variantOf — the generic part this one is an option of. An id, so a
+  //               rename of either end leaves the link standing.
+  //   source    — { kind: 'qed', checkedISO }: the import put this part here,
+  //               not his thumb. It is what Settings filters on, and it is
+  //               what lets him weed out the ones he never uses without
+  //               touching the ones he typed.
+  //
+  // A part with nothing to hang under carries no variantOf key at all rather
+  // than a null one: absent is how "stands on its own" is spelled everywhere
+  // the link is read.
+  //
+  // The price is converted into the unit the part is actually counted in. One
+  // QED sells by that cannot cross into his (a 500 ft spool quoted per
+  // thousand feet, on a part he counts by the roll) leaves the part with no
+  // bill-at price rather than a guess, and the walk's keypad is where a guess
+  // belongs. Cost is never written: that is his own number.
+  function newParts(creatable, checkedISO, uid) {
+    const list = Array.isArray(creatable) ? creatable : [];
+    return list.map((c) => {
+      const p = {
+        id: uid(),
+        category: c.category,
+        name: c.name,
+        unit: c.unit,
+        lastCostCents: null,
+        lastListCents: convertCents(c.row, c.unit),
+        uses: 0,
+        hidden: false,
+        sku: typeof c.row.sku === 'string' && c.row.sku !== '' ? c.row.sku : null,
+        // The same 120-character ceiling supplierName wears everywhere else
+        // it is stored, applied again here rather than trusted from parse:
+        // newParts is called with whatever plan() was called with.
+        supplierName: Catalog.straighten(c.row.name).slice(0, 120),
+        priceCheckedISO: checkedISO,
+      };
+      if (c.seedPart && typeof c.seedPart.id === 'string' && c.seedPart.id !== '') p.variantOf = c.seedPart.id;
+      p.source = { kind: 'qed', checkedISO };
+      return p;
+    });
+  }
+
   function n(count, one, many) { return count + ' ' + (count === 1 ? one : many); }
 
   // Names a list of movers or mismatches, at most SHOWN of them, with the
@@ -335,34 +383,41 @@
     return shown + (rest > 0 ? ', and ' + rest + ' more' : '');
   }
 
-  // The sentence the confirm shows before anything is written.
+  // The sentence the confirm shows before anything is written. Every clause is
+  // a full sentence ending in a period, and there is no em dash in any of it:
+  // this is copy read on a phone in a plant.
+  //
+  // One opening and one shared tail. The opening says what happened to the
+  // parts he already has; the tail says what was skipped and why, and it is
+  // the same three sentences however the summary opened.
   function summaryText(m) {
+    const creatable = Array.isArray(m.creatable) ? m.creatable : [];
     // The "put the part numbers on your parts first" sentence only belongs
-    // to a file that matched nothing at all: no matches, no mismatches, no
-    // duplicates. A file whose only row matched a part but was skipped for a
-    // unit mismatch (or landed on a repeat) is not that file, and telling him
-    // to add part numbers he already added is wrong. That case still opens
-    // with an empty-handed sentence, then falls through to the unmatched /
-    // mismatched / duplicates sentences below like any other summary.
-    if (!m.matched.length && !m.mismatched.length && !m.duplicates.length) {
+    // to a file that found NOTHING: no matches, no mismatches, no duplicates,
+    // and nothing to create either. A file whose only row matched a part but
+    // was skipped for a unit mismatch (or landed on a repeat) is not that
+    // file, and telling him to add part numbers he already added is wrong.
+    // Neither is a file that is about to put 320 parts on his phone: it is
+    // going to write those numbers itself.
+    if (!m.matched.length && !m.mismatched.length && !m.duplicates.length && !creatable.length) {
       return 'None of the rows in that file match a part with a QED part number. Put the part numbers on your parts first.';
     }
-    if (!m.matched.length) {
-      const parts = ['None of your parts got a new price.'];
-      if (m.unmatched.length) parts.push(n(m.unmatched.length, 'row is', 'rows are') + ' not in your catalog and ' + (m.unmatched.length === 1 ? 'is' : 'are') + ' skipped.');
-      if (m.mismatched.length) {
-        parts.push(n(m.mismatched.length, 'part is', 'parts are') + ' counted differently than QED sells '
-          + (m.mismatched.length === 1 ? 'it' : 'them') + ' and ' + (m.mismatched.length === 1 ? 'is' : 'are') + ' skipped: '
-          + namesList(m.mismatched, (x) => x.part.name) + '.');
+    const parts = [];
+    if (m.matched.length) {
+      parts.push(m.matched.length + ' of your parts matched.');
+      const big = m.matched.filter((x) => x.changePct !== null && Math.abs(x.changePct) > 10);
+      if (big.length) {
+        parts.push(big.length + ' moved more than 10%: '
+          + namesList(big, (x) => x.part.name + ' (' + BidMath.fmt(x.oldListCents) + ' to ' + BidMath.fmt(x.newListCents) + ')') + '.');
       }
-      if (m.duplicates.length) parts.push(n(m.duplicates.length, 'row repeats', 'rows repeat') + ' a part number and ' + (m.duplicates.length === 1 ? 'is' : 'are') + ' skipped.');
-      return parts.join(' ');
+    } else if (!creatable.length) {
+      // Said only when there is no better news. A file that repriced nothing
+      // because everything in it is NEW opens with the new parts instead.
+      parts.push('None of your parts got a new price.');
     }
-    const big = m.matched.filter((x) => x.changePct !== null && Math.abs(x.changePct) > 10);
-    const parts = [m.matched.length + ' of your parts matched.'];
-    if (big.length) {
-      parts.push(big.length + ' moved more than 10%: '
-        + namesList(big, (x) => x.part.name + ' (' + BidMath.fmt(x.oldListCents) + ' to ' + BidMath.fmt(x.newListCents) + ')') + '.');
+    if (creatable.length) {
+      parts.push(n(creatable.length, 'new part', 'new parts') + ' will be added: '
+        + namesList(creatable, (c) => c.name) + '.');
     }
     if (m.unmatched.length) parts.push(n(m.unmatched.length, 'row is', 'rows are') + ' not in your catalog and ' + (m.unmatched.length === 1 ? 'is' : 'are') + ' skipped.');
     if (m.mismatched.length) {
@@ -374,5 +429,5 @@
     return parts.join(' ');
   }
 
-  return { parse, convertCents, match, plan, guessCategory, apply, snapshot, restore, summaryText };
+  return { parse, convertCents, match, plan, guessCategory, newParts, apply, snapshot, restore, summaryText };
 });

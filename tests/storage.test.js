@@ -1386,3 +1386,45 @@ test('validateImport takes an entry with a To and a Ready on it, and one without
   assert.ok(!ok((f) => { f.log.toISO = null; }), 'null is not a date; absent is how a v3 entry says it');
   assert.ok(!ok((f) => { f.log.ready = 'yes'; }), 'ready is a boolean');
 });
+
+// v3.2. Two more optional fields on a part: which generic it is an option of,
+// and where it came from. Absent on every file before v3.2, and absent forever
+// on the parts he typed himself, which is the whole point of the second one.
+//
+// A variantOf pointing at nothing is NOT refused here. A generic he deleted
+// leaves its options behind rather than taking them with it, and the rules
+// that read the link treat a dangling one as no link at all: refusing the file
+// would be the app losing a phone full of parts over a broken pointer.
+test('validateImport: variantOf and source on a part are optional', () => {
+  const ok = (mutate) => {
+    const { d } = buildFullData();
+    mutate(d);
+    return S.validateImport(JSON.stringify(d)) !== null;
+  };
+  const part = (d) => d.catalog[0];
+  const generic = (d) => d.catalog[1].id;
+  assert.ok(ok(() => {}), 'a file with neither of them loads');
+  assert.ok(ok((d) => { part(d).variantOf = generic(d); }));
+  assert.ok(ok((d) => { part(d).variantOf = null; }), 'null is as good as absent');
+  assert.ok(ok((d) => { part(d).variantOf = 'a part that is long gone'; }), 'a dangling link is tolerated');
+  assert.ok(!ok((d) => { part(d).variantOf = ''; }), 'an empty string is not an id');
+  assert.ok(!ok((d) => { part(d).variantOf = 42; }), 'a number is not an id');
+
+  assert.ok(ok((d) => { part(d).source = { kind: 'qed', checkedISO: '2026-09-09' }; }));
+  assert.ok(ok((d) => { part(d).source = null; }), 'null is as good as absent');
+  assert.ok(!ok((d) => { part(d).source = { kind: 'qed', checkedISO: '9/9/26' }; }), 'a date that is not YYYY-MM-DD');
+  assert.ok(!ok((d) => { part(d).source = { kind: 'qed' }; }), 'a source with no date');
+  assert.ok(!ok((d) => { part(d).source = { checkedISO: '2026-09-09' }; }), 'a source with no kind');
+  assert.ok(!ok((d) => { part(d).source = { kind: '', checkedISO: '2026-09-09' }; }), 'an empty kind');
+  assert.ok(!ok((d) => { part(d).source = 'qed'; }), 'a string is not a source');
+});
+
+// The parts he types and the parts the seed list puts there carry neither
+// field, so "Typed by hand" in Settings means exactly what it says.
+test('seeds and addCatalogItem carry no variantOf and no source', () => {
+  const d = S.emptyData();
+  assert.ok(d.catalog.every((p) => !('variantOf' in p) && !('source' in p)));
+  const p = S.addCatalogItem(d, { category: 'gear', name: 'Test part', unit: 'ea' });
+  assert.strictEqual('variantOf' in p, false);
+  assert.strictEqual('source' in p, false);
+});
