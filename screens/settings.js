@@ -100,6 +100,8 @@ let settingsCategory = null;        // which parts category the catalog screen i
 let settingsCatalogSearch = '';     // what he has typed into the parts search
 let settingsCatalogListEl = null;   // the part of the catalog screen the search redraws
 let settingsNewPart = null;         // { name, category } while + New part is being answered
+let settingsCatalogSource = 'all';  // 'all' | 'typed' | 'qed': which parts the list is showing
+let settingsBelongsWith = null;     // the id of the part whose "Belongs with" question is up
 let settingsGroupOpen = null;       // which clause group is expanded
 let settingsAddGroup = false;       // the + Clause group picker is up
 // The two plain-string lists, folded. See SETTINGS_LIST_FOLD.
@@ -1424,6 +1426,11 @@ function enterSettingsCatalog() {
   settingsCatalogListEl = null;
   settingsNewPart = null;
   settingsShowHidden.catalog = false;
+  // The filter is remembered while he is in here and forgotten on the way out.
+  // A phone he picks up tomorrow showing only the QED parts, with no memory of
+  // having asked for that, is a catalog that has lost half his parts.
+  settingsCatalogSource = 'all';
+  settingsBelongsWith = null;
 }
 
 // One step inside this screen before it gives up and goes back to Settings —
@@ -1432,6 +1439,12 @@ function enterSettingsCatalog() {
 function settingsCatalogBackStep(peek) {
   if (settingsNewPart) {
     if (!peek) { settingsNewPart = null; render(); }
+    return true;
+  }
+  // "Belongs with" is a question standing where the list was, so Back answers
+  // it with "never mind" before it answers anything else.
+  if (settingsBelongsWith) {
+    if (!peek) { settingsBelongsWith = null; render(); }
     return true;
   }
   // ONE BACK IS ONE STEP. Opening a drawer pushes a history entry and so does
@@ -1464,6 +1477,12 @@ function renderSettingsCatalog() {
   // One question at a time: while a new part is being named there is nothing
   // else on the glass to tap.
   if (settingsNewPart) { host.appendChild(buildSetNewPart()); return; }
+  // Same for "Belongs with": the search box above a list of parts he is being
+  // asked to pick ONE of would be two lists of parts on one screen. A part
+  // that went away under him (a restore, a delete elsewhere) takes its own
+  // question down with it rather than leaving a card about nothing.
+  if (settingsBelongsWith && !state.data.catalog.some((x) => x.id === settingsBelongsWith)) settingsBelongsWith = null;
+  if (settingsBelongsWith) { host.appendChild(buildSetBelongsWith()); return; }
 
   // Above the tiles and searching everything, for the reason it is above them
   // on the walk: he knows the name of the part, not which of six drawers this
@@ -1509,26 +1528,126 @@ function buildSetCatalogBody(host) {
   }
 
   const box = card(searching ? 'All parts' : catalogCategoryLabel(settingsCategory));
+  // Typed by hand, or From QED. Three hundred parts arrive in one tap, and
+  // this is how he tells them from the ones that are his: it is what lets him
+  // weed the imported ones he never reaches for without ever going near the
+  // rows he typed himself.
+  box.appendChild(buildSetCatalogFilter());
   // The visible parts come back in Catalog.matches's order, which is the order
   // the walk offers them in; the hidden ones are tacked on the end by name,
   // because a put-away part has no use count worth ranking on.
-  const shown = Catalog.matches(d.catalog, {
+  //
+  // includeVariants, unlike the walk: this is where he renames a part, puts one
+  // away or says which generic it belongs with, and a part he cannot see is a
+  // part he cannot do any of that to.
+  const shown = settingsCatalogSourceFilter(Catalog.matches(d.catalog, {
     category: settingsCategory,
     query: settingsCatalogSearch,
     includeRentals: true,
-  });
-  const hidden = settingsCatalogHidden(d.catalog, searching);
+    includeVariants: true,
+  }), settingsCatalogSource);
+  const hidden = settingsCatalogSourceFilter(settingsCatalogHidden(d.catalog, searching), settingsCatalogSource);
   const list = settingsShowHidden.catalog ? shown.concat(hidden) : shown;
+
+  // One pass for the whole list rather than one per row.
+  const counts = pickerVariantCounts(d.catalog);
 
   if (list.length === 0) {
     box.appendChild(emptyNote(searching
       ? 'Nothing matches that.'
       : 'Nothing in ' + catalogCategoryLabel(settingsCategory) + '.'));
   } else {
-    list.forEach((x) => buildSetCatalogRow(box, x, searching));
+    list.forEach((x) => buildSetCatalogRow(box, x, searching, counts.get(x.id) || 0));
   }
   host.appendChild(box);
   host.appendChild(buildSetCatalogTools(hidden.length));
+}
+
+// All / Typed by hand / From QED. Chips rather than a row that opens something:
+// there are three answers, they are short, and he switches between them.
+const SET_CATALOG_SOURCES = [['all', 'All'], ['typed', 'Typed by hand'], ['qed', 'From QED']];
+
+function buildSetCatalogFilter() {
+  const chips = document.createElement('div');
+  chips.className = 'set-chips';
+  SET_CATALOG_SOURCES.forEach(([key, label]) => {
+    chips.appendChild(chip(label, settingsCatalogSource === key, () => {
+      if (settingsCatalogSource === key) return;
+      settingsCatalogSource = key;
+      settingsMenu = null;
+      render();
+    }));
+  });
+  return chips;
+}
+
+// Pure, and the whole rule: a part he typed carries no source at all, which is
+// what makes "Typed by hand" mean something. Anything this does not understand
+// shows him everything rather than an empty screen.
+function settingsCatalogSourceFilter(list, mode) {
+  const rows = Array.isArray(list) ? list : [];
+  if (mode === 'typed') return rows.filter((p) => !p.source);
+  if (mode === 'qed') return rows.filter((p) => p.source && p.source.kind === 'qed');
+  return rows;
+}
+
+// WHICH PART IS THIS AN OPTION OF? The unhidden parts in the same drawer that
+// are not already options of something else, and never the part itself. A
+// two-deep chain would be a chooser that opens a chooser, and a man on a
+// ladder has one tap in him for this.
+function settingsBelongsWithOptions(catalog, p) {
+  const rows = Array.isArray(catalog) ? catalog : [];
+  if (!p) return [];
+  return rows.filter((q) => q && q !== p && q.id !== p.id && !q.hidden
+    && q.category === p.category
+    && !(typeof q.variantOf === 'string' && q.variantOf !== ''));
+}
+
+function buildSetBelongsWith() {
+  const p = state.data.catalog.find((x) => x.id === settingsBelongsWith);
+  const box = card('What is ' + (p.name || 'this part') + ' an option of?');
+  const list = settingsBelongsWithOptions(state.data.catalog, p);
+  const counts = pickerVariantCounts(state.data.catalog);
+  // "None" first, because it is the answer every part starts with and the one
+  // he comes back here to give.
+  box.appendChild(lineRow('None', 'It stands on its own', settingsBelongsWithNow(p, null),
+    () => settingsSetBelongsWith(p, null), { keypad: true }));
+  list.forEach((g) => {
+    // How many options each one already carries: they are all out of the same
+    // drawer, so naming the drawer on every row would say nothing, and what he
+    // wants to know is which of them is already the row that holds the others.
+    const has = counts.get(g.id) || 0;
+    box.appendChild(lineRow(g.name, has ? pickerOptionsTag(has) : '', settingsBelongsWithNow(p, g.id),
+      () => settingsSetBelongsWith(p, g.id), { keypad: true }));
+  });
+  if (!list.length) {
+    box.appendChild(emptyNote('Nothing else in ' + catalogCategoryLabel(p.category) + ' to put it under.'));
+  }
+  box.appendChild(textButton('Cancel', 'btn btn-block mt-3', () => { settingsBelongsWith = null; render(); }));
+  box.appendChild(caption('An option rides under the part it belongs with: the walk shows the one row, '
+    + 'and tapping it offers the options. Nothing is renamed and nothing is put away.'));
+  return box;
+}
+
+// The row he is already on says so, rather than the list looking like a set of
+// choices none of which has been made.
+function settingsBelongsWithNow(p, id) {
+  const now = typeof p.variantOf === 'string' && p.variantOf !== '' ? p.variantOf : null;
+  return now === id ? 'Now' : null;
+}
+
+function settingsSetBelongsWith(p, id) {
+  const had = Object.prototype.hasOwnProperty.call(p, 'variantOf');
+  const prev = p.variantOf;
+  if (id === null) delete p.variantOf; else p.variantOf = id;
+  settingsBelongsWith = null;
+  settingsMenu = null;
+  // An exact restore, and it DELETES the key when the key was not there: a
+  // refused save must leave the part exactly as it was, and an undefined
+  // variantOf sitting on it is not the same thing as no variantOf at all.
+  settingsSaveAndRender(() => {
+    if (had) p.variantOf = prev; else delete p.variantOf;
+  });
 }
 
 // The put-away parts that belong on THIS view, so "Show hidden (3)" counts the
@@ -1659,7 +1778,7 @@ function settingsImportPrices(file) {
 // searching: the row says which drawer it came out of. A search crosses all
 // six on purpose, and two identical-looking names out of two categories are
 // otherwise the same row written twice.
-function buildSetCatalogRow(box, p, searching) {
+function buildSetCatalogRow(box, p, searching, options) {
   const key = 'part:' + p.id;
   const unit = p.unit || '—';
   // The unit stays in the value slot, where every other row in this app puts
@@ -1669,7 +1788,7 @@ function buildSetCatalogRow(box, p, searching) {
   // counted — was the half at the end.
   const line = settingRow(box, p.name || 'Part', unit,
     () => settingsToggleMenu(key), null,
-    { strip: true, sub: settingsCatalogSub(p, searching) });
+    { strip: true, sub: settingsCatalogSub(p, searching, options) });
   if (p.hidden) line.classList.add('set-hidden');
 
   if (!settingsMenuOpen(key)) return;
@@ -1687,7 +1806,7 @@ function buildSetCatalogRow(box, p, searching) {
     }));
   });
 
-  settingsRemoveActions(box, line, [
+  const actions = [
     ['Rename', '', () => {
       settingsPromptText(p.name, 'Part name', '3/4" EMT', line, { required: true }, (text) => {
         const prev = p.name;
@@ -1714,23 +1833,43 @@ function buildSetCatalogRow(box, p, searching) {
           settingsSaveAndRender(() => { p.sku = prev; });
         });
     }],
-    // Neither an edit nor a delete, so neither a button in the grid nor the
-    // muted line at the bottom: a navy link of its own, which opens the search
-    // in another tab and leaves this screen exactly where it was.
-    ['Check price', 'link', () => openPriceSearch(setS(), p.sku || p.name)],
-  ], p, Store.catalogInUse(state.data, p.id), state.data.catalog, p.name || 'this part', units);
+  ];
+
+  // WHICH GENERIC THIS PART RIDES UNDER. Offered on every part except one that
+  // already has options of its own: a generic that became an option of
+  // something else would be a chooser inside a chooser. This is the door his
+  // own hand-typed part goes through to become one of the choices, and the
+  // door back out of it.
+  if (!(options > 0)) {
+    actions.push(['Belongs with', '', () => { navPush(); settingsBelongsWith = p.id; render(); }]);
+  }
+  // Neither an edit nor a delete, so neither a button in the grid nor the
+  // muted line at the bottom: a navy link of its own, which opens the search
+  // in another tab and leaves this screen exactly where it was.
+  actions.push(['Check price', 'link', () => openPriceSearch(setS(), p.sku || p.name)]);
+
+  settingsRemoveActions(box, line, actions, p, Store.catalogInUse(state.data, p.id),
+    state.data.catalog, p.name || 'this part', units);
 }
 
 // The muted line under a part's name: the drawer when he is searching across
 // all of them, and the supplier's handle when the part has one. "QED 3302434 ·
 // $39.08 list, Sep 8, 2026" says the import reached this part and when.
-function settingsCatalogSub(p, searching) {
+function settingsCatalogSub(p, searching, options) {
   const bits = [];
   if (searching) bits.push(catalogCategoryLabel(p.category));
   if (p.sku) bits.push('QED ' + p.sku);
   if (Number.isInteger(p.lastListCents) && p.priceCheckedISO) {
     bits.push(moneyText(p.lastListCents) + ' list, ' + fmtDate(p.priceCheckedISO));
   }
+  // Where the ROW came from, which is not the same fact as the part number
+  // above it: he can type a QED number onto a part of his own, and that part
+  // is still one he typed. This is what the filter chips are filtering on.
+  const from = Catalog.sourceLabel(p);
+  if (from) bits.push(from);
+  // Last, because it is about what is BEHIND the row rather than about the
+  // part on it.
+  if (options > 0) bits.push(pickerOptionsTag(options));
   return bits.length ? bits.join(' · ') : null;
 }
 

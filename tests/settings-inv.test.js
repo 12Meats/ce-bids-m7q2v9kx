@@ -67,7 +67,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'settings.js'), 'utf8
 const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
   settingsCustomerValue, settingsAddressValue, settingsBackupPdfName,
   settingsPriceSearchIsDefault, settingsPriceSearchValue,
-  settingsWageLabel, settingsRateLabel } = sandbox;
+  settingsWageLabel, settingsRateLabel,
+  settingsCatalogSourceFilter, settingsCatalogSub, settingsBelongsWithOptions } = sandbox;
 
 // ---------------------------------------------------------------------------
 // THE NEXT INVOICE NUMBER
@@ -308,4 +309,72 @@ test('the second ask keeps the label and adds the reason', () => {
 test('a customer keypad asks for their own rate the same way', () => {
   assert.strictEqual(settingsRateLabel('UDA'), "UDA's rate an hour");
   assert.strictEqual(settingsRateLabel(''), "This customer's rate an hour");
+});
+
+// ---------------------------------------------------------------------------
+// PARTS CATALOG: TYPED, OR IMPORTED, AND WHAT BELONGS WITH WHAT
+// ---------------------------------------------------------------------------
+// v3.2 puts three hundred parts on his phone in one tap, which is three
+// hundred rows he did not type sitting in among the ones he did. The filter is
+// how he tells them apart, and how he weeds the imported ones he never reaches
+// for without ever going near the ones that are his.
+function catPart(name, extra) {
+  return Object.assign({ id: name, category: 'gear', name, unit: 'ea', lastCostCents: null,
+    lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null },
+  extra || {});
+}
+
+const QED = { kind: 'qed', checkedISO: '2026-09-09' };
+
+test('settingsCatalogSourceFilter: all, the ones he typed, the ones QED sent', () => {
+  const list = [
+    catPart('60 A 3-pole breaker'),
+    catPart('60 A 3-pole breaker · B360', { source: QED }),
+    catPart('60 A 3-pole breaker · QO360', { source: QED }),
+  ];
+  assert.deepStrictEqual(settingsCatalogSourceFilter(list, 'all').map((p) => p.name), list.map((p) => p.name));
+  assert.deepStrictEqual(settingsCatalogSourceFilter(list, 'typed').map((p) => p.name), ['60 A 3-pole breaker']);
+  assert.deepStrictEqual(settingsCatalogSourceFilter(list, 'qed').map((p) => p.name),
+    ['60 A 3-pole breaker · B360', '60 A 3-pole breaker · QO360']);
+  // A mode nobody asked for shows him everything rather than an empty screen.
+  assert.deepStrictEqual(settingsCatalogSourceFilter(list, 'nonsense').length, 3);
+  assert.deepStrictEqual(settingsCatalogSourceFilter(null, 'qed').length, 0);
+});
+
+// The muted line under a part's name, in the order he reads it: which drawer,
+// then the supplier's handle on it, then where the row itself came from, then
+// how many options are behind it.
+test('settingsCatalogSub says where a part came from and how many options it has', () => {
+  const typed = catPart('60 A 3-pole breaker');
+  assert.strictEqual(settingsCatalogSub(typed, false, 0), null, 'a plain part still says nothing');
+  assert.strictEqual(settingsCatalogSub(typed, false, 3), '3 options');
+  assert.strictEqual(settingsCatalogSub(typed, true, 1), 'Gear & parts · 1 option');
+
+  const imported = catPart('60 A 3-pole breaker · B360',
+    { source: QED, sku: '22590', lastListCents: 9900, priceCheckedISO: '2026-09-09' });
+  assert.strictEqual(settingsCatalogSub(imported, false, 0),
+    'QED 22590 · $99.00 list, Sep 9, 2026 · From QED');
+});
+
+// Only the parts that could actually hold an option: same drawer, still on the
+// walk, and not already an option of something else. A two-deep chain would be
+// a chooser that opens a chooser, and nobody standing on a ladder wants that.
+test('settingsBelongsWithOptions: the generics in the same drawer, and nothing else', () => {
+  const p = catPart('Siemens 60 A breaker');
+  const sameDrawer = catPart('60 A 3-pole breaker');
+  const alreadyAnOption = catPart('60 A 3-pole breaker · B360', { variantOf: '60 A 3-pole breaker' });
+  const putAway = catPart('Old breaker', { hidden: true });
+  const otherDrawer = Object.assign(catPart('3/4" EMT'), { category: 'conduit' });
+  const list = [p, sameDrawer, alreadyAnOption, putAway, otherDrawer];
+  assert.deepStrictEqual(settingsBelongsWithOptions(list, p).map((x) => x.name), ['60 A 3-pole breaker']);
+});
+
+test('settingsBelongsWithOptions: a part is never offered itself, nor one of its own options', () => {
+  const p = catPart('60 A 3-pole breaker');
+  const mine = catPart('60 A 3-pole breaker · B360', { variantOf: '60 A 3-pole breaker' });
+  const list = [p, mine];
+  assert.deepStrictEqual(settingsBelongsWithOptions(list, p).map((x) => x.name), []);
+  assert.deepStrictEqual(settingsBelongsWithOptions(list, mine).map((x) => x.name), ['60 A 3-pole breaker']);
+  assert.deepStrictEqual(settingsBelongsWithOptions(null, p).length, 0);
+  assert.deepStrictEqual(settingsBelongsWithOptions([p], null).length, 0);
 });
