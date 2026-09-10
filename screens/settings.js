@@ -1578,6 +1578,12 @@ function buildSetImportPrices(box) {
   picker.hidden = true;
   picker.addEventListener('change', () => {
     const f = picker.files && picker.files[0];
+    // The value goes back to empty before the file is read, because a native
+    // file input fires change only when the value CHANGES. Adrian re-runs the
+    // script and sends the file again under the same name, and without this
+    // the second pick of it is silent: the button does nothing and he has no
+    // way to tell whether the prices moved.
+    picker.value = '';
     if (f) settingsImportPrices(f);
   });
   box.appendChild(picker);

@@ -178,9 +178,6 @@ const keypadCtx = { open: false, buffer: null, done: null, captionAction: null, 
 // and the close path work the same either way.
 const textCtx = { open: false, done: null, suggest: null, field: null, multiline: false };
 const confirmCtx = { open: false, resolve: null };
-// The calendar's own. Declared with the others so anyPanelOpen below can see
-// every panel there is in one line.
-
 
 function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open || dateCtx.open; }
 

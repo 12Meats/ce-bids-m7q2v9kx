@@ -4,7 +4,7 @@ Things that run on a PC, not on the phone.
 
 ## qed-prices.py
 
-Writes the price file CE Billing imports (Settings › Catalog › Import prices).
+Writes the price file CE Billing imports (Settings › Backup › Import parts and prices).
 
 1. On the phone: Settings › Catalog, tap a part, **QED part #**, type the number off the receipt. Do the parts he buys.
 2. On the phone: Settings › Backup › Send a backup, to Adrian.

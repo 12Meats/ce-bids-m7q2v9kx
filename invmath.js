@@ -401,7 +401,7 @@
   return {
     AMBER_AFTER_DAYS, entryFrom, entryTo, isReady,
     groupEach, combineAll, pileAge, thisWeek,
-    AMBER_AFTER_DAYS, group, canCombine, combine, split, pileHours, pileParts,
+    group, canCombine, combine, split, pileHours, pileParts,
     draftInvoice, draftProjectInvoice, projectRemainingCents,
     billedHours, laborCents, totals, paidCents, balanceCents, statusOf,
     ageDays, isStale, whoOwes, invoiceRows, rangeText,

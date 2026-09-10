@@ -132,6 +132,8 @@ const {
 // lexical scope rather than off the sandbox.
 const state = vm.runInContext('state', sandbox);
 const navDepth = () => vm.runInContext('navDepth', sandbox);
+// The calendar's refusal is a top-level const too, read the same way.
+const DATE_TYPE_REFUSAL = vm.runInContext('DATE_TYPE_REFUSAL', sandbox);
 
 // Four screens standing in for the real ones: a walk inside a bid inside the
 // list, and the other tab. Nothing renders; the assertions are about which
@@ -623,4 +625,44 @@ test('a date the keypad cannot read is refused, and Clear is never mind', () => 
   keypadClear();
   assert.strictEqual(picked, null, 'Clear is the way out, not a date');
   assert.strictEqual(anyPanelOpen(), false);
+});
+
+// The outline that says which day is today, and the sentence he gets when the
+// keypad behind "Type it" cannot read what he typed. Both are things a
+// screenshot of one month would never catch: the outline is only wrong on a
+// month he had to walk to, and the sentence only turns up on a bad day.
+
+test('the outline for today is on today, and on no day of any other month', () => {
+  standInTheWalk();
+  promptDate('2026-09-09', 'From', () => {});
+  // Store.todayISO() is 2026-09-05 in this file.
+  const outlined = () => nodes.get('dateGrid').children
+    .filter((c) => String(c.className).split(' ').indexOf('cal-today') !== -1);
+  assert.strictEqual(outlined().length, 1, 'one day of September is today');
+  assert.strictEqual(outlined()[0].dataset.iso, '2026-09-05');
+
+  // October has no today in it, and neither does August. A cell that carried
+  // the outline into a month he walked to would tell him the wrong day.
+  dateStep(1);
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'October 2026');
+  assert.strictEqual(outlined().length, 0);
+  dateStep(-2);
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'August 2026');
+  assert.strictEqual(outlined().length, 0);
+  closeAnyPanel();
+});
+
+test('the refusal names the two lengths a typed date can be', () => {
+  assert.strictEqual(DATE_TYPE_REFUSAL, 'That date needs 4 digits (MMDD) or 6 (MMDDYY)');
+
+  // And it is what he is actually told, rather than a string nothing reads.
+  standInTheWalk();
+  const area = nodes.get('banner');
+  area.textContent = '';
+  promptDate('2026-09-09', 'From', () => {});
+  dateTypeTapped();
+  keypadPress('9'); keypadPress('9'); keypadPress('9'); keypadPress('9');
+  keypadDone();
+  assert.strictEqual(area.children.length, 1);
+  assert.strictEqual(area.children[0].dataset.text, DATE_TYPE_REFUSAL);
 });

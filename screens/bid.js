@@ -9,8 +9,10 @@
 //   2. The bid itself: a summary of what it's worth, the five places the work
 //      happens, and — once it's been sent — the Won / Lost question.
 //
-// No native pickers anywhere: the date is typed on the number keypad as MMDD
-// or MMDDYY, and job type and detail level are toggle buttons.
+// No native pickers anywhere: the date opens the calendar panel, with the
+// number keypad one tap behind it under "Type it" for a day he knows the
+// number of (MMDD or MMDDYY), and job type and detail level are toggle
+// buttons.
 //
 // Every mutation here goes through persistOr(revert): if the save is refused,
 // the change is put back. A bid screen showing a number that isn't on disk is

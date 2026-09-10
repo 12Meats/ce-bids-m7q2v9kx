@@ -223,3 +223,59 @@ test('the row names the supply house rather than the URL', () => {
   assert.strictEqual(settingsPriceSearchValue({}), 'QED');
   assert.strictEqual(settingsPriceSearchValue({ priceSearchUrl: 'https://x.example/?q={q}' }), 'Your own link');
 });
+
+// ---------------------------------------------------------------------------
+// THE PRICE FILE PICKED TWICE
+// ---------------------------------------------------------------------------
+// The one place on this screen that needs a DOM, so it gets one: a stub small
+// enough to read, installed for the length of the test and taken back off, so
+// every function above still runs against no document at all.
+//
+// A native file input fires change only when its value CHANGES. Adrian re-runs
+// qed-prices.py, sends the same file name again, and the second pick of it is
+// silent unless the handler puts the value back to empty. Nothing throws, no
+// banner appears, and the button simply looks broken.
+
+function fakeSettingsElement(tag) {
+  return {
+    tagName: String(tag || 'div').toUpperCase(),
+    className: '', id: '', type: '', hidden: false, value: '', files: null,
+    children: [], handlers: {}, dataset: {}, attrs: {},
+    textContent: '',
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    appendChild(child) { this.children.push(child); return child; },
+    addEventListener(name, fn) { (this.handlers[name] = this.handlers[name] || []).push(fn); },
+    fire(name) { (this.handlers[name] || []).forEach((fn) => fn()); },
+    click() { this.fire('click'); },
+  };
+}
+
+function withDocument(t) {
+  const before = sandbox.document;
+  sandbox.document = { createElement: fakeSettingsElement };
+  t.after(() => { sandbox.document = before; });
+}
+
+test('the price file input is emptied on every read, so the same file picked twice is heard twice', (t) => {
+  withDocument(t);
+  const box = fakeSettingsElement('section');
+  sandbox.buildSetImportPrices(box);
+
+  const picker = box.children.find((c) => c.id === 'priceFile');
+  assert.ok(picker, 'the hidden input is on the card');
+  assert.strictEqual(picker.type, 'file');
+  assert.strictEqual(picker.hidden, true, 'hidden behind a button that looks like the others');
+
+  // A file with no text() of its own: the read rejects, the banner is a stub,
+  // and what this test is looking at happened before any of that.
+  const file = { name: 'qed-prices.json' };
+  picker.files = [file];
+  picker.value = 'C:\fakepath\qed-prices.json';
+  picker.fire('change');
+  assert.strictEqual(picker.value, '', 'the value is put back, so the next change is a change');
+
+  // And the same file again reaches the reader rather than being swallowed.
+  picker.files = [file];
+  picker.fire('change');
+  assert.strictEqual(picker.value, '');
+});
