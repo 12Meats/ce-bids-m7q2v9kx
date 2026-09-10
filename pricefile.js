@@ -297,7 +297,24 @@
     unplaced.forEach((row) => {
       const name = variantName(row);
       const key = Catalog.normalizeName(name);
-      const part = byName.get(key) || null;
+      // THE GENERIC THIS ROW WOULD HANG UNDER, worked out first because the
+      // lane below has to know what drawer the row belongs in before it can
+      // say whether the part it found is the right one.
+      //
+      // A generic that is ITSELF an option is refused: the file is asking for
+      // a chooser inside a chooser, which is not a thing the walk can draw. The
+      // row still becomes a part, standing on its own, and Settings is where he
+      // says otherwise.
+      let seedPart = (typeof row.forPart === 'string' && row.forPart !== '')
+        ? (byName.get(Catalog.normalizeName(row.forPart)) || null) : null;
+      if (seedPart && typeof seedPart.variantOf === 'string' && seedPart.variantOf !== '') seedPart = null;
+      // A part of that name in a DIFFERENT drawer is not this part. The name
+      // an option carries is its generic's name plus a catalog number, and two
+      // drawers can hold the same words: a 60 A 3-pole breaker in gear and a
+      // length of something QED named the same way in wire. Letting the wrong
+      // drawer take the row wrote a breaker's price onto a foot of wire.
+      const found = byName.get(key) || null;
+      const part = found && seedPart && found.category !== seedPart.category ? null : found;
       if (part) {
         if (taken.has(part.id)) { out.duplicates.push(row); return; }
         taken.add(part.id);
@@ -317,8 +334,6 @@
       if (claimedSkus.has(row.sku)) { out.duplicates.push(row); return; }
       claimed.add(key);
       claimedSkus.add(row.sku);
-      const seedPart = (typeof row.forPart === 'string' && row.forPart !== '')
-        ? (byName.get(Catalog.normalizeName(row.forPart)) || null) : null;
       out.creatable.push({
         row,
         name,

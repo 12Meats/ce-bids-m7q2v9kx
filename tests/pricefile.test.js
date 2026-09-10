@@ -620,3 +620,51 @@ test('plan: two rows with one QED number make one part, not two', () => {
   assert.strictEqual(m.creatable[0].name, '#8 THHN · B03673');
   assert.deepStrictEqual(m.duplicates, [rows[1]]);
 });
+
+// A forPart that is itself an option is the file asking for a chooser inside a
+// chooser. The row is still a part worth making — it is a real thing QED sells
+// and he may well want it on a bid — so it is created STANDING ON ITS OWN, and
+// he can put it under something himself in Settings if he wants it there.
+test('plan: a forPart that is itself an option makes a part of its own', () => {
+  const d = catalogWith([
+    { name: '60 A 3-pole breaker' },
+    { name: '60 A 3-pole breaker · B360', variantOf: 'p0' },
+  ]);
+  const rows = [{ sku: '77777', name: 'Siemens B360 60 Amp Breaker, 10 pack', listCents: 90000, per: 'ea',
+    forPart: '60 A 3-pole breaker · B360', catalogNo: 'B360X10' }];
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 1);
+  assert.strictEqual(m.creatable[0].name, '60 A 3-pole breaker · B360 · B360X10');
+  assert.strictEqual(m.creatable[0].seedPart, null, 'nothing to hang under');
+  // With no generic to inherit from, the drawer and the unit are read off the
+  // row's own words, the same as any part standing on its own.
+  assert.strictEqual(m.creatable[0].category, 'gear');
+  assert.strictEqual(m.creatable[0].unit, 'ea');
+});
+
+// The computed-name lane finds the part the row WOULD have created. A part of
+// that name in a different drawer is not that part: it is a name collision,
+// and letting it take the row repriced a length of wire off a breaker.
+test('plan: a same-named part in another drawer does not absorb the row', () => {
+  const d = catalogWith([
+    { name: '60 A 3-pole breaker', category: 'gear' },
+    { name: '60 A 3-pole breaker · B360', category: 'wire', unit: 'ft' },
+  ]);
+  const rows = [{ sku: '22590', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+    forPart: '60 A 3-pole breaker', catalogNo: 'B360' }];
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(m.matched, [], 'the wire part keeps its own price');
+  assert.strictEqual(m.creatable.length, 1);
+  assert.strictEqual(m.creatable[0].seedPart, d.catalog[0]);
+  assert.strictEqual(m.creatable[0].category, 'gear');
+  // Same name, same drawer, and the row is his own part being repriced: the
+  // lane still does the job it was built for.
+  const same = catalogWith([
+    { name: '60 A 3-pole breaker', category: 'gear' },
+    { name: '60 A 3-pole breaker · B360', category: 'gear' },
+  ]);
+  const again = P.plan(rows, same.catalog);
+  assert.deepStrictEqual(again.creatable, []);
+  assert.strictEqual(again.matched.length, 1);
+  assert.strictEqual(again.matched[0].part, same.catalog[1]);
+});
