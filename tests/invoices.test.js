@@ -91,7 +91,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
   invoicePinnedLabel, invoiceSentCaption,
   enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady, logSave,
-  logMarkDone, logMarkDoneText, logProjectsOffered, entryStatusPill } = sandbox;
+  logMarkDone, logMarkDoneText, logMarkDoneLabel, logProjectsOffered, entryStatusPill } = sandbox;
 // Three sentences on these screens are top-level consts, which are lexical
 // rather than properties of the context's global object, so they are read out
 // of the sandbox's own scope.
@@ -99,6 +99,8 @@ const LOG_NUMBER_CAPTION = vm.runInContext('LOG_NUMBER_CAPTION', sandbox);
 const LOG_SWAP_TEXT = vm.runInContext('LOG_SWAP_TEXT', sandbox);
 const BILL_THESE_WAITING = vm.runInContext('BILL_THESE_WAITING', sandbox);
 const REVIEW_NONE_READY = vm.runInContext('REVIEW_NONE_READY', sandbox);
+const REVIEW_LOOK_OVER = vm.runInContext('REVIEW_LOOK_OVER', sandbox);
+const INVOICES_BILLED = vm.runInContext('INVOICES_BILLED', sandbox);
 // The send queue is a module-level let inside invoice.js, which is not a
 // property of the context's global object either. Read the same way.
 const invoiceQueue = () => vm.runInContext('invoiceQueue', sandbox);
@@ -1171,9 +1173,13 @@ test('a refused save takes Ready back off, and leaves no key where there was non
 // halves of what happens, because "done" on a job with two unbilled visits on
 // it reads like it takes them with it.
 
-test('the confirm says what leaves and what stays', () => {
+test('the confirm says what leaves and what stays, with the job named in quotes', () => {
+  // A job called Test job left bare reads as three words of the instruction.
+  assert.strictEqual(logMarkDoneLabel('Test job'), 'Mark "Test job" done');
   assert.strictEqual(logMarkDoneText('UF Project'),
-    'Mark UF Project done? It leaves the chips. Its unbilled invoices stay in the list.');
+    'Mark "UF Project" done? It leaves the chips. Its unbilled invoices stay in the list.');
+  // The link and the confirm are one sentence and one pair of quotes.
+  assert.ok(logMarkDoneText('UF Project').startsWith(logMarkDoneLabel('UF Project')));
 });
 
 test('marking it done writes the flag and says so once', async (t) => {
@@ -1377,6 +1383,13 @@ test('Bill these waits until something is ready, and says what it is waiting for
   assert.strictEqual(invReadyCount(), 0);
 });
 
+// The card under the button holds the ones he has already numbered. The tab is
+// called Invoices and the pile above is Invoices in progress, so this one says
+// which of the three it is rather than saying Invoices a third time.
+test('the list of numbered invoices is headed Billed', () => {
+  assert.strictEqual(INVOICES_BILLED, 'Billed');
+});
+
 // ---------------------------------------------------------------------------
 // SENT MEANS HANDED TO THE OFFICE
 // ---------------------------------------------------------------------------
@@ -1435,6 +1448,14 @@ test('an entry that is not Ready is not on the review', () => {
   enterBillreview();
   assert.strictEqual(reviewDrafts.get().length, 0);
   assert.strictEqual(REVIEW_NONE_READY, 'Nothing is ready. Go back and check the ones you have finished.');
+});
+
+// The line above the cards. There is nothing to check on this screen: the
+// checking is done on the home, and what is left here is the reading and the
+// one button at the bottom, so the sentence names that button's own verb.
+test('the review tells him to look them over and use the button it actually has', () => {
+  assert.strictEqual(REVIEW_LOOK_OVER,
+    'Nothing is numbered yet. Look each one over, then number and send them.');
 });
 
 test('an invoice covers the entry own From and To', () => {
@@ -1545,11 +1566,12 @@ test('the caption under it says the office had it, and whether the phone kept a 
   const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   inv.sentAt = '2026-09-05';
+  // Both halves are one sentence, and it ends like every other caption does.
   assert.strictEqual(invoiceSentCaption(inv),
-    'Sent to the office Sep 5, 2026 · not saved on the phone yet');
+    'Sent to the office Sep 5, 2026 · not saved on the phone yet.');
   inv.savedToFilesAt = '2026-09-05';
   assert.strictEqual(invoiceSentCaption(inv),
-    'Sent to the office Sep 5, 2026 · saved on the phone Sep 5, 2026');
+    'Sent to the office Sep 5, 2026 · saved on the phone Sep 5, 2026.');
 });
 
 test('the two questions after the share sheet ask about the office', async (t) => {

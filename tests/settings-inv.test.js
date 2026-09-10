@@ -66,7 +66,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'settings.js'), 'utf8
 
 const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
   settingsCustomerValue, settingsAddressValue, settingsBackupPdfName,
-  settingsPriceSearchIsDefault, settingsPriceSearchValue } = sandbox;
+  settingsPriceSearchIsDefault, settingsPriceSearchValue,
+  settingsWageLabel, settingsRateLabel } = sandbox;
 
 // ---------------------------------------------------------------------------
 // THE NEXT INVOICE NUMBER
@@ -278,4 +279,33 @@ test('the price file input is emptied on every read, so the same file picked twi
   picker.files = [file];
   picker.fire('change');
   assert.strictEqual(picker.value, '');
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE KEYPAD IS ASKING FOR
+// ---------------------------------------------------------------------------
+// The one line above the digits, and the only feedback there is while the
+// panel is open: it sits over the banner area, so nothing else can speak. A
+// name and a comma reads as a note about the man with a number added after
+// it; what the digits are is his pay, so the name owns the number.
+
+test("a wage keypad asks for the man's own pay, and says how far a new one carries", () => {
+  assert.strictEqual(settingsWageLabel('Ruben', false, false), "Ruben's pay an hour");
+  assert.strictEqual(settingsWageLabel('Ruben', true, false), "Ruben's pay an hour on new bids");
+  // A man with no name on him yet still has a wage to name.
+  assert.strictEqual(settingsWageLabel('', false, false), "Worker's pay an hour");
+});
+
+// $0 is not a wage, and the reason the panel came back rides on the same line
+// because a banner raised behind it is a banner nobody sees.
+test('the second ask keeps the label and adds the reason', () => {
+  assert.strictEqual(settingsWageLabel('Ruben', false, true),
+    "Ruben's pay an hour. Enter more than $0");
+  assert.strictEqual(settingsWageLabel('Ruben', true, true),
+    "Ruben's pay an hour on new bids. Enter more than $0");
+});
+
+test('a customer keypad asks for their own rate the same way', () => {
+  assert.strictEqual(settingsRateLabel('UDA'), "UDA's rate an hour");
+  assert.strictEqual(settingsRateLabel(''), "This customer's rate an hour");
 });

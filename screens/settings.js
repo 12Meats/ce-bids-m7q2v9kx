@@ -618,6 +618,21 @@ function buildSetCrewRow(box, c) {
   ], c, Store.crewInUse(state.data, c.id), setS().crew, c.name || 'this worker');
 }
 
+// WHAT THE KEYPAD IS ASKING FOR, in the shape a name and a number go together
+// in. "Ruben, paid an hour" reads as a note about Ruben with the number added
+// afterwards; what the digits are is Ruben's pay, so the name owns it. The
+// same for a customer and the rate they are billed at.
+//
+// reach is the half that says how far a new wage carries, and again is the
+// reason the panel came back: a typed $0, which is not a wage.
+function settingsWageLabel(name, reach, again) {
+  return (name || 'Worker') + "'s pay an hour" + (reach ? ' on new bids' : '')
+    + (again ? '. Enter more than $0' : '');
+}
+function settingsRateLabel(name) {
+  return (name || 'This customer') + "'s rate an hour";
+}
+
 // Changing a wage, after the question about how far it reaches has been
 // answered. Its own function because a typed 0 asks again, and asking again
 // must not re-ask the confirm — he already said yes to changing the wage; what
@@ -638,7 +653,7 @@ function settingsEditWage(c, again) {
   // no prior, which is honest — $0 an hour is not a wage he set.
   const has = typeof c.wageCents === 'number' && c.wageCents > 0;
   promptMoney(has ? c.wageCents : null, {
-    label: (c.name || 'Worker') + ', paid an hour on new bids' + (again ? '. Enter more than $0' : ''),
+    label: settingsWageLabel(c.name, true, again),
     done: (cents) => {
       if (cents === null) return;
       if (!(cents > 0)) {
@@ -676,7 +691,7 @@ function settingsAddCrew() {
 // it is open is a banner nobody ever sees.
 function settingsAskWage(name, again) {
   promptMoney(null, {
-    label: name + ', paid an hour' + (again ? '. Enter more than $0' : ''),
+    label: settingsWageLabel(name, false, again),
     done: (cents) => {
       if (cents === null || !(cents > 0)) {
         settingsAskWage(name, true);
@@ -2008,7 +2023,7 @@ function buildSetCustomerCard(host, c) {
 
   const rate = settingRow(box, 'Hourly rate', settingsCustomerValue(c), () => {
     promptMoney(c.rateCents == null ? null : c.rateCents, {
-      label: (c.name || 'This customer') + ', billed an hour',
+      label: settingsRateLabel(c.name),
       done: (cents) => {
         const undo = settingsRestoreKey(c, 'rateCents');
         // Clear puts them back on the shop rate, which is what most of them

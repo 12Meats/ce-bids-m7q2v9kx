@@ -222,8 +222,15 @@ function logProjectsOffered(e) {
 // this is the same flag: the title comes off the chips and stops being offered
 // on the next visit. The sentence says both halves, because "done" on a job
 // with two unbilled visits on it reads like it takes them with it.
+// The title is quoted in both places it appears, because a job called Test job
+// left bare reads as three words of the instruction rather than as the name of
+// the thing being finished. Straight double quotes, the ones his keyboard
+// types, so the link and the confirm say it the same way.
+function logMarkDoneLabel(title) {
+  return 'Mark "' + title + '" done';
+}
 function logMarkDoneText(title) {
-  return 'Mark ' + title + ' done? It leaves the chips. Its unbilled invoices stay in the list.';
+  return logMarkDoneLabel(title) + '? It leaves the chips. Its unbilled invoices stay in the list.';
 }
 
 async function logMarkDone(p) {
@@ -271,7 +278,7 @@ function buildLogProject(host, e) {
   // under the chips, and only when there is a job to say it about.
   const picked = e.projectId ? logProjectsOffered(e).find((p) => p.id === e.projectId) : null;
   if (picked && !picked.done) {
-    box.appendChild(textButton('Mark ' + picked.title + ' done', 'link-btn link-btn-quiet',
+    box.appendChild(textButton(logMarkDoneLabel(picked.title), 'link-btn link-btn-quiet',
       () => logMarkDone(picked)));
   }
   host.appendChild(box);

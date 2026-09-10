@@ -163,7 +163,11 @@ function invoiceWrite(inv, restore) {
 // its own words.
 function invoiceSentCaption(inv) {
   return 'Sent to the office ' + fmtDate(inv.sentAt)
-    + (inv.savedToFilesAt ? ' · saved on the phone ' + fmtDate(inv.savedToFilesAt) : ' · not saved on the phone yet');
+    + (inv.savedToFilesAt ? ' · saved on the phone ' + fmtDate(inv.savedToFilesAt) : ' · not saved on the phone yet')
+    // Both halves are one sentence, and every other caption in the app ends
+    // in a full stop. This one stopped at the date and read as a line that
+    // had been cut off.
+    + '.';
 }
 
 function buildInvoiceSummary(host, inv) {

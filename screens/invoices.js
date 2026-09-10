@@ -183,7 +183,14 @@ function buildPile(host) {
   host.appendChild(bill);
   // The caption says what it is waiting for. A disabled button with nothing
   // under it is a button that looks broken.
-  if (!ready) host.appendChild(caption(BILL_THESE_WAITING));
+  let tail = bill;
+  if (!ready) { tail = caption(BILL_THESE_WAITING); host.appendChild(tail); }
+  // A card gap under whichever of the two is last, the same one the cards keep
+  // between themselves. The button belongs to the pile ABOVE it and it was
+  // sitting shoulder to shoulder with the Billed card below, which made it
+  // read as that card's own button. The gap goes under the pair rather than
+  // between the button and the line that explains it.
+  tail.classList.add('mb-2');
 }
 
 // The check IS the Ready flag on the entry, written straight to disk with an
@@ -197,9 +204,15 @@ function invoicesToggle(g) {
   render();
 }
 
+// The invoices he has already numbered. Billed rather than Invoices: the tab
+// is called Invoices and the pile above it is Invoices in progress, so a third
+// card saying Invoices was the screen naming itself three times instead of
+// saying which of the three this one is.
+const INVOICES_BILLED = 'Billed';
+
 function buildInvoiceList(host) {
   const list = (invData().invoices || []).slice().sort((a, b) => (b.createdAt - a.createdAt));
-  const box = card('Invoices');
+  const box = card(INVOICES_BILLED);
   if (!list.length) {
     box.appendChild(emptyNote('No invoices yet.'));
     host.appendChild(box);

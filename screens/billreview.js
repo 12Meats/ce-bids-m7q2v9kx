@@ -161,6 +161,12 @@ function reviewCanSend(drafts) {
 
 const REVIEW_NONE_READY = 'Nothing is ready. Go back and check the ones you have finished.';
 
+// The line above the cards. There is nothing to check on this screen any more
+// — the checking happened on the home, and what is left here is reading the
+// cards and pressing the one button at the bottom — so it names that button's
+// own verb rather than telling him to tick things that are not there.
+const REVIEW_LOOK_OVER = 'Nothing is numbered yet. Look each one over, then number and send them.';
+
 const REVIEW_ZERO_TEXT = 'One of these bills nothing. Put hours or a line on it, or uncheck it.';
 
 // ---------------------------------------------------------------------------
@@ -323,7 +329,7 @@ function renderBillreview() {
     host.appendChild(emptyNote(REVIEW_NONE_READY));
     return;
   }
-  host.appendChild(caption('Nothing is numbered yet. Check each one, then send.'));
+  host.appendChild(caption(REVIEW_LOOK_OVER));
   drafts.forEach((draft, i) => buildReviewCard(host, draft, i));
   const ok = reviewCanSend(drafts);
   // The caption sits with the card that is empty, up above; down here the
