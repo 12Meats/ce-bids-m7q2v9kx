@@ -156,6 +156,16 @@ function invoiceWrite(inv, restore) {
 // Who it is for, what it covers, what it comes to, and where it stands. The
 // one card he reads before deciding whether the rest of the screen needs him.
 
+// WHERE THE PDF WENT. To the office, which is Adrian's mother, who mails it:
+// nothing this app does puts a piece of paper in a customer's hand, and a
+// caption that said "Sent" on its own was telling him the customer had it.
+// The second half is about this phone, which is a different question and keeps
+// its own words.
+function invoiceSentCaption(inv) {
+  return 'Sent to the office ' + fmtDate(inv.sentAt)
+    + (inv.savedToFilesAt ? ' · saved on the phone ' + fmtDate(inv.savedToFilesAt) : ' · not saved on the phone yet');
+}
+
 function buildInvoiceSummary(host, inv) {
   const box = card();
   box.appendChild(row(invoiceCustomerName(inv.customerId), inv.projectTitle || 'Work', null));
@@ -164,10 +174,7 @@ function buildInvoiceSummary(host, inv) {
     // picker.js's pill, the same words the home list prints, and the terms
     // beside it because "Upon receipt" is the answer to "when do I get paid".
     invoiceStatusPill(inv) + ' · ' + (inv.terms || 'Upon receipt')));
-  if (inv.sentAt) {
-    box.appendChild(caption('Sent ' + fmtDate(inv.sentAt)
-      + (inv.savedToFilesAt ? ' · saved on the phone ' + fmtDate(inv.savedToFilesAt) : ' · not saved on the phone yet')));
-  }
+  if (inv.sentAt) box.appendChild(caption(invoiceSentCaption(inv)));
   host.appendChild(box);
 }
 
@@ -524,47 +531,32 @@ function buildInvoicePayments(host, inv) {
 // Date, then the money. Two panels rather than a form, because there are no
 // forms in this app.
 //
-// Today is already ON the keypad rather than being what an empty Done means:
-// this keypad refuses an empty Done and shakes (nothing typed and nothing to
-// keep is not an answer), and Clear is "never mind" here the way it is on
-// every other date in this app. So the default arrives as the prior, and one
-// tap on Done records a check that came in this morning, which is nearly all
-// of them.
-function invoiceTodayTyped(todayISO) {
-  return Number(todayISO.slice(5, 7) + todayISO.slice(8, 10));
-}
-
+// The calendar opens on TODAY, so a check that came in this morning is one
+// tap, which is nearly all of them; a check he is entering on Monday for the
+// Friday post is two. Cancel is "never mind" here the way it is everywhere,
+// and Type it is still under the grid for a date he knows the number of.
 function invoiceRecordPayment(inv) {
   const today = Store.todayISO();
-  promptNumber(invoiceTodayTyped(today), {
-    label: 'Date: type 915 for Sep 15, or 91526',
-    maxChars: 6,
-    wasText: 'today is ' + fmtDate(today),
-    done: (v) => {
-      // Clear means never mind, the same as Cancel, not a rejected date.
-      if (v === null) return;
-      const iso = Dates.parseTypedDate(v, today);
-      if (!iso) { showBanner('That date needs 4 digits (MMDD) or 6 (MMDDYY)'); render(); return; }
-      promptMoney(null, {
-        label: 'How much came in',
-        caption: moneyText(InvMath.balanceCents(inv)) + ' is outstanding.',
-        done: (cents) => {
-          if (cents === null || !(cents > 0)) { showBanner('A payment has to be more than nothing'); render(); return; }
-          const line = { dateISO: iso, cents };
-          if (!Array.isArray(inv.payments)) inv.payments = [];
-          inv.payments.push(line);
-          if (!invoiceWrite(inv, () => {
-            const i = inv.payments.indexOf(line);
-            if (i !== -1) inv.payments.splice(i, 1);
-          })) { render(); return; }
-          render();
-          showBanner(InvMath.statusOf(inv) === 'paid'
-            ? 'Paid in full.'
-            : moneyText(InvMath.balanceCents(inv)) + ' left on this one.', 'ok');
-        },
-      });
-    },
-  });
+  promptDate(today, 'Payment date', (iso) => {
+    promptMoney(null, {
+      label: 'How much came in',
+      caption: moneyText(InvMath.balanceCents(inv)) + ' is outstanding.',
+      done: (cents) => {
+        if (cents === null || !(cents > 0)) { showBanner('A payment has to be more than nothing'); render(); return; }
+        const line = { dateISO: iso, cents };
+        if (!Array.isArray(inv.payments)) inv.payments = [];
+        inv.payments.push(line);
+        if (!invoiceWrite(inv, () => {
+          const i = inv.payments.indexOf(line);
+          if (i !== -1) inv.payments.splice(i, 1);
+        })) { render(); return; }
+        render();
+        showBanner(InvMath.statusOf(inv) === 'paid'
+          ? 'Paid in full.'
+          : moneyText(InvMath.balanceCents(inv)) + ' left on this one.', 'ok');
+      },
+    });
+  }, { wasText: 'today is ' + fmtDate(today) });
 }
 
 async function invoiceDeletePayment(inv, p) {
@@ -835,7 +827,7 @@ async function invoiceShare(inv) {
 
   // The proposal's two questions, and the answers written in ONE save so a
   // refused write can never leave an invoice marked sent but not filed.
-  const markSent = await confirmPanel('Sent to the customer?', { ok: 'Yes', cancel: 'Not yet' });
+  const markSent = await confirmPanel('Sent it to the office?', { ok: 'Yes', cancel: 'Not yet' });
   const markFiled = await confirmPanel('Did you save a copy on the phone?', { ok: 'Yes', cancel: 'Not yet' });
   const prev = { sentAt: inv.sentAt, savedToFilesAt: inv.savedToFilesAt };
   const today = Store.todayISO();
@@ -878,10 +870,14 @@ function invoiceNext() {
 // What the pinned button says. A draft under review goes back to the review,
 // where the numbering happens; anything numbered is either going out for the
 // first time or going out again.
+//
+// "to the office" because that is where it goes: the share sheet puts the PDF
+// in front of Adrian's mother, who mails it. "Send invoice" read as sending it
+// to the customer, which is a thing this app has never done.
 function invoicePinnedLabel(inv) {
   if (invoiceIsReviewDraft()) return 'Back to the review';
   if (invoiceBusy) return 'Making the PDF…';
-  return inv.sentAt ? 'Share again' : 'Send invoice';
+  return inv.sentAt ? 'Share again' : 'Send to the office';
 }
 
 // The head's second line while a batch is going out: how many are still behind
@@ -907,11 +903,11 @@ function invoiceCanDelete(inv) {
 }
 
 async function invoiceDelete(inv) {
-  // The pile is only mentioned when there is something to put back in it: a
+  // The list is only mentioned when there is something to put back on it: a
   // project invoice bills a bid, carries no visits, and a sentence promising
   // him hours back is a sentence about nothing.
   const ok = await confirmPanel('Delete invoice #' + inv.number + '?'
-    + ((inv.logIds || []).length ? ' Its hours go back in the pile.' : ''),
+    + ((inv.logIds || []).length ? ' Its hours go back to the invoices in progress.' : ''),
     { ok: 'Delete', danger: true });
   if (!ok) { render(); return; }
   const d = invoiceData();

@@ -63,7 +63,10 @@ function reviewLineStamp(x) {
 function reviewEntryStamp(e) {
   const crew = (e.crew || []).map((m) => m.crewId + '=' + m.hours).join(',');
   const lines = (e.items || []).concat(e.rentals || [], e.equipment || []).map(reviewLineStamp).join(',');
-  return [e.id, e.customerId, e.projectId, e.dateISO, crew, lines].join('|');
+  // BOTH dates. The To is the half he moves while the job runs on, and it is
+  // the service range the paper prints: a draft carried across a change to it
+  // would bill a range the visit no longer says.
+  return [e.id, e.customerId, e.projectId, InvMath.entryFrom(e), InvMath.entryTo(e), crew, lines].join('|');
 }
 function reviewReady() {
   return (reviewData().logs || []).filter((e) => !e.invoiceId && InvMath.isReady(e));
@@ -80,7 +83,7 @@ let reviewBuiltKey = null;
 function enterBillreview() {
   const key = reviewPileKey();
   if (reviewGroups && reviewBuiltKey === key) return;
-  reviewGroups = InvMath.group(reviewReady(), reviewData(), Store.mondayOf);
+  reviewGroups = InvMath.groupEach(reviewReady(), reviewData());
   reviewBuildDrafts();
   reviewBuiltKey = key;
 }
@@ -156,6 +159,8 @@ function reviewCanSend(drafts) {
   return list.every((inv) => InvMath.totals(inv).total > 0);
 }
 
+const REVIEW_NONE_READY = 'Nothing is ready. Go back and check the ones you have finished.';
+
 const REVIEW_ZERO_TEXT = 'One of these bills nothing. Put hours or a line on it, or uncheck it.';
 
 // ---------------------------------------------------------------------------
@@ -187,6 +192,8 @@ function buildReviewCard(host, draft, i) {
     nav.className = 'bid-nav';
     if (canCombine) {
       nav.appendChild(textButton('Combine with the next one', 'btn btn-block', () => reviewCombine(i)));
+      const all = reviewCombineAllLabel(reviewGroups, i);
+      if (all) nav.appendChild(textButton(all, 'btn btn-block', () => reviewCombineAll(i)));
     }
     if (canSplit) {
       nav.appendChild(textButton('Split', 'btn btn-block', () => reviewSplit(i)));
@@ -206,6 +213,26 @@ function buildReviewCard(host, draft, i) {
 
 function reviewCombine(i) {
   reviewGroups = InvMath.combine(reviewGroups, i);
+  reviewBuildDrafts();
+  render();
+}
+
+// COMBINE ALL N. Two cards of one job is one tap; three is three taps and a
+// re-read of the list between each of them, and three is exactly the week he
+// fell behind on, which is the one he most wants in a single envelope. The
+// button only exists when there is more to fold than Combine would take.
+function reviewSameJobCount(groups, i) {
+  const a = (groups || [])[i];
+  if (!a) return 0;
+  return groups.filter((g) => g.customerId === a.customerId && g.projectId === a.projectId).length;
+}
+function reviewCombineAllLabel(groups, i) {
+  const n = reviewSameJobCount(groups, i);
+  return n >= 3 ? 'Combine all ' + n + ' of this job' : null;
+}
+
+function reviewCombineAll(i) {
+  reviewGroups = InvMath.combineAll(reviewGroups, i);
   reviewBuildDrafts();
   render();
 }
@@ -288,7 +315,7 @@ function renderBillreview() {
   const n = drafts.length;
   host.appendChild(screenHead(n + (n === 1 ? ' invoice' : ' invoices')));
   if (!n) {
-    host.appendChild(emptyNote('Nothing is ready. Go back and check the ones you have finished.'));
+    host.appendChild(emptyNote(REVIEW_NONE_READY));
     return;
   }
   host.appendChild(caption('Nothing is numbered yet. Check each one, then send.'));

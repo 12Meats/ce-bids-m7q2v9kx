@@ -53,6 +53,7 @@ const sandbox = {
   promptNumber: () => {},
   promptMoney: () => {},
   promptText: () => {},
+  promptDate: () => {},
   InvDoc: require('../invdoc.js'),
   DocGen: { blobInvoice: () => Promise.resolve(null), share: () => Promise.resolve('shared') },
   Photos: {
@@ -87,6 +88,8 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
   invoiceLineOpts, lineAskCost, moneyText,
   thisWeekText, invAllGroups, invReadyCount, invoicesToggle,
+  reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
+  invoicePinnedLabel, invoiceSentCaption,
   enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady,
   logMarkDone, logMarkDoneText, logProjectsOffered, entryStatusPill } = sandbox;
 // Three sentences on these screens are top-level consts, which are lexical
@@ -95,6 +98,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
 const LOG_NUMBER_CAPTION = vm.runInContext('LOG_NUMBER_CAPTION', sandbox);
 const LOG_SWAP_TEXT = vm.runInContext('LOG_SWAP_TEXT', sandbox);
 const BILL_THESE_WAITING = vm.runInContext('BILL_THESE_WAITING', sandbox);
+const REVIEW_NONE_READY = vm.runInContext('REVIEW_NONE_READY', sandbox);
 // The send queue is a module-level let inside invoice.js, which is not a
 // property of the context's global object either. Read the same way.
 const invoiceQueue = () => vm.runInContext('invoiceQueue', sandbox);
@@ -473,11 +477,11 @@ function enterWorld() {
   return w;
 }
 
-test('the same pile twice keeps the drafts, so a Combine survives a re-enter', () => {
+test('the same list twice keeps the drafts, so a Combine survives a re-enter', () => {
   const w = enterWorld();
   enterBillreview();
-  assert.strictEqual(reviewDrafts.get().length, 2, 'two weeks of the one job');
-  reviewCombine(0);
+  assert.strictEqual(reviewDrafts.get().length, 3, 'three visits on the one job');
+  reviewCombineAll(0);
   assert.strictEqual(reviewDrafts.get().length, 1, 'his old one-invoice habit');
   const kept = reviewDrafts.get()[0];
   kept.labor[0].billedHours = 3;
@@ -490,25 +494,26 @@ test('an hour corrected on a visit rebuilds the drafts', () => {
   const w = enterWorld();
   enterBillreview();
   const first = reviewDrafts.get()[0];
-  assert.strictEqual(I.billedHours(first), 21);
-  // He opened Monday from the pile and corrected eight hours to four.
+  assert.strictEqual(I.billedHours(first), 13);
+  // He opened Monday from the home and corrected eight hours to four.
   w.d.logs[0].crew[0].hours = 4;
   enterBillreview();
-  assert.notStrictEqual(reviewDrafts.get()[0], first, 'a different pile, different drafts');
-  assert.strictEqual(I.billedHours(reviewDrafts.get()[0]), 17, 'and it bills what the visit says now');
+  assert.notStrictEqual(reviewDrafts.get()[0], first, 'a different list, different drafts');
+  assert.strictEqual(I.billedHours(reviewDrafts.get()[0]), 9, 'and it bills what the visit says now');
 });
 
-test('a visit moved to another day rebuilds the drafts', () => {
+test('a visit moved to another day rebuilds the drafts, in the new order', () => {
   const w = enterWorld();
   enterBillreview();
-  assert.strictEqual(reviewDrafts.get().length, 2);
-  // Friday's visit was really the Friday after: a different week, a different
-  // invoice, and the same entry ids all the way through.
+  assert.deepStrictEqual(reviewDrafts.get().map((inv) => inv.serviceFrom),
+    ['2026-08-24', '2026-08-28', '2026-09-02']);
+  // Friday's visit was really the Friday after. Still its own invoice, and now
+  // the last of the three rather than the middle one.
   w.d.logs[1].dateISO = '2026-09-04';
   enterBillreview();
-  assert.strictEqual(reviewDrafts.get().length, 2);
-  assert.deepStrictEqual(reviewDrafts.get().map((inv) => inv.logIds.length), [1, 2],
-    'Monday alone, and the two visits that share the new week');
+  assert.deepStrictEqual(reviewDrafts.get().map((inv) => inv.serviceFrom),
+    ['2026-08-24', '2026-09-02', '2026-09-04']);
+  assert.deepStrictEqual(reviewDrafts.get().map((inv) => inv.logIds.length), [1, 1, 1]);
 });
 
 // ---------------------------------------------------------------------------
@@ -561,13 +566,17 @@ test('the pill says draft, sent, part paid and paid, in his words', (t) => {
   assert.strictEqual(invoiceStatusPill(inv), 'Paid');
 });
 
-// The two panels a payment comes through, driven by hand: a date on the number
-// keypad and then the money.
-function payWith(t, inv, dateTyped, cents, saved) {
+// The two panels a payment comes through, driven by hand: a day off the
+// calendar and then the money.
+function payWith(t, inv, dateISO, cents, saved) {
   const banners = [];
   stub(t, {
-    // 'today' is one tap on Done with what the keypad already holds.
-    promptNumber: (cur, opts) => opts.done(dateTyped === 'today' ? cur : dateTyped),
+    // 'today' is one tap on the day the calendar already has highlighted;
+    // null is Cancel, which calls nothing at all.
+    promptDate: (initial, label, onPick) => {
+      if (dateISO === null) return;
+      onPick(dateISO === 'today' ? initial : dateISO);
+    },
     promptMoney: (cur, opts) => opts.done(cents),
     persistOr: (revert) => { if (saved === false) { revert(); return false; } return true; },
     showBanner: (text) => banners.push(text),
@@ -585,7 +594,7 @@ test('a payment lands on the date he typed, and the status follows the money', (
   enterInvoice(inv.id);
   assert.strictEqual(invoiceTarget(), inv, 'the screen is looking at the invoice on the file');
 
-  const banners = payWith(t, inv, 915, 50000, true);
+  const banners = payWith(t, inv, '2026-09-15', 50000, true);
   assert.strictEqual(inv.payments.length, 1);
   assert.deepStrictEqual({ ...inv.payments[0] }, { dateISO: '2026-09-15', cents: 50000 });
   assert.strictEqual(inv.status, 'sent', 'half of it is not paid');
@@ -612,18 +621,18 @@ test('a refused save takes the payment back off and puts the status back', (t) =
   inv.sentAt = '2026-09-05';
   inv.status = 'sent';
   enterInvoice(inv.id);
-  payWith(t, inv, 915, 200100, false);
+  payWith(t, inv, '2026-09-15', 200100, false);
   assert.strictEqual(inv.payments.length, 0, 'nothing came in after all');
   assert.strictEqual(inv.status, 'sent', 'and it is not paid');
 });
 
-test('Clear on the date keypad is never mind, and records nothing', (t) => {
+test('Cancel on the calendar is never mind, and records nothing', (t) => {
   const w = invoiceWorld(t);
   const inv = w.d.invoices[0];
   inv.sentAt = '2026-09-05';
   enterInvoice(inv.id);
   const banners = payWith(t, inv, null, 50000, true);
-  assert.strictEqual(inv.payments.length, 0, 'Clear is the way out, not a payment dated today');
+  assert.strictEqual(inv.payments.length, 0, 'Cancel is the way out, not a payment dated today');
   assert.deepStrictEqual(banners, []);
 });
 
@@ -735,7 +744,7 @@ test('both answers yes: one save, both dates, and the status follows', async (t)
   const inv = w.d.invoices[0];
   const { saves, asked } = shareWith(t);
   await invoiceShare(inv);
-  assert.deepStrictEqual(asked, ['Sent to the customer?', 'Did you save a copy on the phone?']);
+  assert.deepStrictEqual(asked, ['Sent it to the office?', 'Did you save a copy on the phone?']);
   assert.strictEqual(saves.length, 1, 'sent and filed go to disk together or not at all');
   assert.strictEqual(inv.sentAt, S.todayISO());
   assert.strictEqual(inv.savedToFilesAt, S.todayISO());
@@ -1296,4 +1305,123 @@ test('draft, part paid and paid are unchanged: only the sent one moved', () => {
   assert.strictEqual(invoiceStatusPill(inv), 'Paid $500.00 of $2,001.00');
   inv.payments.push({ dateISO: '2026-09-04', cents: 150100 });
   assert.strictEqual(invoiceStatusPill(inv), 'Paid');
+});
+
+// ---------------------------------------------------------------------------
+// THE REVIEW BUILDS ONE INVOICE PER ENTRY
+// ---------------------------------------------------------------------------
+// Nothing merges on its own. Two Ready entries on one job are two invoices,
+// and combining them is a tap he makes on purpose.
+
+test('two Ready entries of one job give two invoices, and Combine makes one', () => {
+  const w = enterWorld();
+  enterBillreview();
+  const drafts = reviewDrafts.get();
+  assert.strictEqual(drafts.length, 3, 'three visits, three invoices');
+  assert.deepStrictEqual(drafts.map((inv) => inv.logIds.length), [1, 1, 1]);
+  reviewCombine(0);
+  assert.strictEqual(reviewDrafts.get().length, 2);
+  assert.strictEqual(reviewDrafts.get()[0].logIds.length, 2);
+});
+
+test('an entry that is not Ready is not on the review', () => {
+  const w = enterWorld();
+  w.d.logs[0].ready = false;
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get().length, 2);
+  // And when nothing is ready there is nothing to review, and it says so.
+  w.d.logs.forEach((e) => { e.ready = false; });
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get().length, 0);
+  assert.strictEqual(REVIEW_NONE_READY, 'Nothing is ready. Go back and check the ones you have finished.');
+});
+
+test('an invoice covers the entry own From and To', () => {
+  const w = enterWorld();
+  w.d.logs[0].toISO = '2026-08-30';
+  enterBillreview();
+  const first = reviewDrafts.get()[0];
+  assert.strictEqual(first.serviceFrom, '2026-08-24');
+  assert.strictEqual(first.serviceTo, '2026-08-30');
+  assert.strictEqual(reviewCardSub(first), 'Aug 24 to Aug 30 · 13 hrs at $85');
+});
+
+test('a To moved between opening the review and sending it rebuilds the drafts', () => {
+  const w = enterWorld();
+  enterBillreview();
+  const first = reviewDrafts.get()[0];
+  assert.strictEqual(first.serviceTo, '2026-08-24');
+  // He opened the visit from the home and moved the To out to the Friday. A
+  // draft carried across would bill a range the visit no longer says.
+  w.d.logs[0].toISO = '2026-08-28';
+  enterBillreview();
+  assert.notStrictEqual(reviewDrafts.get()[0], first, 'a different visit, different drafts');
+  assert.strictEqual(reviewDrafts.get()[0].serviceTo, '2026-08-28');
+});
+
+// ---------------------------------------------------------------------------
+// COMBINE ALL N
+// ---------------------------------------------------------------------------
+// Two is a tap. Three is three taps and a re-read of the list between each of
+// them, which is the week he fell behind on and the one he most wants in one
+// envelope.
+
+test('the second button turns up at three, and counts what it will fold', () => {
+  const w = enterWorld();
+  enterBillreview();
+  const groups = vm.runInContext('reviewGroups', sandbox);
+  assert.strictEqual(reviewSameJobCount(groups, 0), 3);
+  assert.strictEqual(reviewCombineAllLabel(groups, 0), 'Combine all 3 of this job');
+  // Two of a job is Combine's own business; the second button stays away.
+  assert.strictEqual(reviewCombineAllLabel(I.combineAll(groups, 1), 0), null);
+  // And a job with one card on the review has nothing to fold at all.
+  const lone = groups.filter((g) => g.title !== 'UF Project');
+  assert.strictEqual(reviewCombineAllLabel(lone, 0), null);
+});
+
+test('Combine all folds the whole job into one invoice', () => {
+  const w = enterWorld();
+  enterBillreview();
+  reviewCombineAll(0);
+  const drafts = reviewDrafts.get();
+  assert.strictEqual(drafts.length, 1);
+  assert.strictEqual(drafts[0].logIds.length, 3);
+  assert.strictEqual(drafts[0].serviceFrom, '2026-08-24');
+  assert.strictEqual(drafts[0].serviceTo, '2026-09-02');
+});
+
+// ---------------------------------------------------------------------------
+// THE PDF GOES TO THE OFFICE
+// ---------------------------------------------------------------------------
+// Adrian's mother mails the invoices. Nothing this app does puts a piece of
+// paper in a customer's hand, and every sentence on this screen that said
+// otherwise was telling him a job was further along than it is.
+
+test('the button says where the PDF is going, and says it again for a second copy', (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  enterInvoice(inv.id);
+  assert.strictEqual(invoicePinnedLabel(inv), 'Send to the office');
+  inv.sentAt = '2026-09-05';
+  assert.strictEqual(invoicePinnedLabel(inv), 'Share again');
+});
+
+test('the caption under it says the office had it, and whether the phone kept a copy', (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  inv.sentAt = '2026-09-05';
+  assert.strictEqual(invoiceSentCaption(inv),
+    'Sent to the office Sep 5, 2026 · not saved on the phone yet');
+  inv.savedToFilesAt = '2026-09-05';
+  assert.strictEqual(invoiceSentCaption(inv),
+    'Sent to the office Sep 5, 2026 · saved on the phone Sep 5, 2026');
+});
+
+test('the two questions after the share sheet ask about the office', async (t) => {
+  const w = invoiceWorld(t);
+  const inv = w.d.invoices[0];
+  const { asked } = shareWith(t);
+  await invoiceShare(inv);
+  assert.deepStrictEqual(asked, ['Sent it to the office?', 'Did you save a copy on the phone?']);
+  assert.strictEqual(inv.sentAt, S.todayISO());
 });
