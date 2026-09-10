@@ -68,7 +68,8 @@ const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
   settingsCustomerValue, settingsAddressValue, settingsBackupPdfName,
   settingsPriceSearchIsDefault, settingsPriceSearchValue,
   settingsWageLabel, settingsRateLabel,
-  settingsCatalogSourceFilter, settingsCatalogSub, settingsBelongsWithOptions } = sandbox;
+  settingsCatalogSourceFilter, settingsCatalogSub, settingsBelongsWithOptions,
+  settingsImportButton, settingsImportQuestion, settingsImportBanner } = sandbox;
 
 // ---------------------------------------------------------------------------
 // THE NEXT INVOICE NUMBER
@@ -377,4 +378,47 @@ test('settingsBelongsWithOptions: a part is never offered itself, nor one of its
   assert.deepStrictEqual(settingsBelongsWithOptions(list, mine).map((x) => x.name), ['60 A 3-pole breaker']);
   assert.deepStrictEqual(settingsBelongsWithOptions(null, p).length, 0);
   assert.deepStrictEqual(settingsBelongsWithOptions([p], null).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// IMPORT PARTS AND PRICES
+// ---------------------------------------------------------------------------
+// The button on the confirm is the last thing he reads before three hundred
+// parts land on his phone, so it says both halves of what is about to happen
+// rather than one of them.
+test('the import button says what it will do, in both halves', () => {
+  assert.strictEqual(settingsImportButton(12, 0), 'Update 12 prices');
+  assert.strictEqual(settingsImportButton(1, 0), 'Update 1 price');
+  assert.strictEqual(settingsImportButton(0, 320), 'Update 0 prices, add 320 parts');
+  assert.strictEqual(settingsImportButton(12, 40), 'Update 12 prices, add 40 parts');
+  assert.strictEqual(settingsImportButton(3, 1), 'Update 3 prices, add 1 part');
+});
+
+// And the banner afterwards says what DID happen. Each half only when there
+// is a half to say, and the prices that were already right are still counted,
+// because "nothing moved" is a real answer to an import and has to look like
+// one rather than like a button that did nothing.
+test('the import banner says what happened, and never trails off', () => {
+  assert.strictEqual(settingsImportBanner(12, 3, 40),
+    'Updated 12 prices and added 40 parts. 3 prices were already right.');
+  assert.strictEqual(settingsImportBanner(12, 0, 0), 'Updated 12 prices.');
+  assert.strictEqual(settingsImportBanner(0, 0, 40), 'Added 40 parts.');
+  assert.strictEqual(settingsImportBanner(1, 0, 1), 'Updated 1 price and added 1 part.');
+  assert.strictEqual(settingsImportBanner(0, 300, 0),
+    '300 prices were already right. Nothing changed.');
+  assert.strictEqual(settingsImportBanner(0, 1, 0), 'One price was already right. Nothing changed.');
+  assert.strictEqual(settingsImportBanner(0, 0, 0), 'Nothing changed.');
+});
+
+test('neither sentence carries an em dash', () => {
+  [settingsImportBanner(12, 3, 40), settingsImportBanner(0, 300, 0), settingsImportButton(0, 320)]
+    .forEach((s) => assert.strictEqual(s.indexOf('—'), -1));
+});
+
+// The question above the button. With nothing to create it is the sentence it
+// has always been; with parts about to appear, the button is what spells out
+// the deal and the question just asks.
+test('the import question suits what is about to happen', () => {
+  assert.strictEqual(settingsImportQuestion(0), 'Update the bill-at prices?');
+  assert.strictEqual(settingsImportQuestion(320), 'Go ahead?');
 });

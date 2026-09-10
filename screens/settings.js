@@ -1722,45 +1722,106 @@ function buildSetImportPrices(box) {
   });
   box.appendChild(picker);
   box.appendChild(textButton('Import parts and prices', 'btn btn-block mt-3', () => picker.click()));
-  box.appendChild(caption('Reads the price file Adrian makes and updates the parts it finds. '
-    + 'It says what it will change before it does.'));
+  box.appendChild(caption('Reads the price file Adrian makes. It updates the prices on the parts it '
+    + 'finds and adds the ones it cannot find, as options under the parts you already have. '
+    + 'It says what it will do before it does it.'));
 }
 
-// IMPORT PRICES. Read the file, match it to his parts, say what would change,
-// and only then write. The confirm carries the whole summary because it is
-// the one moment he can still say no: what moved a lot, what was skipped and
-// why. Cost is never written (his own number), and no bid is touched (bids
-// are history; the catalog is memory).
+// The primary button on the confirm: the last thing he reads before three
+// hundred parts land on his phone, so it says BOTH halves of what is about to
+// happen. Zero is a real number here and is said out loud ("Update 0 prices,
+// add 320 parts"): the first import of a fresh phone matches nothing and
+// creates everything, and a button that hid that half would be a button that
+// undersold the change.
+function settingsImportButton(matched, creatable) {
+  const prices = 'Update ' + matched + (matched === 1 ? ' price' : ' prices');
+  if (!creatable) return prices;
+  return prices + ', add ' + creatable + (creatable === 1 ? ' part' : ' parts');
+}
+
+// The question over that button. With nothing to create it is the sentence it
+// has always been; with parts about to appear the button spells out the deal
+// and the question only has to ask.
+function settingsImportQuestion(creatable) {
+  return creatable ? 'Go ahead?' : 'Update the bill-at prices?';
+}
+
+// And what the banner says afterwards. Each half only when there is a half to
+// say. The prices that were already right are still counted, because "nothing
+// moved" is a real answer to an import and has to read like one rather than
+// like a button that did nothing.
+function settingsImportBanner(changed, unchanged, added) {
+  const bits = [];
+  if (changed) bits.push('Updated ' + changed + (changed === 1 ? ' price' : ' prices'));
+  if (added) bits.push((bits.length ? 'added ' : 'Added ') + added + (added === 1 ? ' part' : ' parts'));
+  const done = bits.length ? bits.join(' and ') + '.' : '';
+  const right = unchanged
+    ? (unchanged === 1 ? 'One price was' : unchanged + ' prices were') + ' already right.'
+    : '';
+  if (done && right) return done + ' ' + right;
+  if (done) return done;
+  if (right) return right + ' Nothing changed.';
+  return 'Nothing changed.';
+}
+
+// IMPORT PARTS AND PRICES. Read the file, work out what it would do to his
+// catalog, say so, and only then write. The confirm carries the whole summary
+// because it is the one moment he can still say no: how many parts are about
+// to appear and what a handful of them are called, what moved a lot, what was
+// skipped and why. Cost is never written (his own number), and no bid is
+// touched (bids are history; the catalog is memory).
+//
+// NOTHING EXISTING IS EVER RENAMED, HIDDEN OR REMOVED HERE. The import only
+// ever writes a price onto a part it found and pushes parts it did not find;
+// a part he typed years ago is left exactly as it is, whatever the file says.
 function settingsImportPrices(file) {
   const read = file && typeof file.text === 'function' ? file.text() : Promise.reject(new Error('no text()'));
   read.then((text) => {
     const parsed = PriceFile.parse(text);
     if (parsed.error) { showBanner(parsed.error, 'danger'); render(); return; }
-    const m = PriceFile.match(parsed.rows, state.data.catalog);
+    const m = PriceFile.plan(parsed.rows, state.data.catalog);
     const summary = PriceFile.summaryText(m);
-    if (!m.matched.length) { showBanner(summary); render(); return; }
+    // Nothing to update AND nothing to create: there is no question to ask, so
+    // the summary is simply said and the screen stays where it is.
+    if (!m.matched.length && !m.creatable.length) { showBanner(summary); render(); return; }
     // confirmPanel refuses to open over another open panel; asking anyway
     // would look like the button did nothing, so say why instead.
     if (anyPanelOpen()) { showBanner('Finish what you were doing, then try the import again.'); render(); return; }
-    return confirmPanel(summary + ' Update the bill-at prices?', { ok: 'Update' }).then((ok) => {
+    return confirmPanel(summary + ' ' + settingsImportQuestion(m.creatable.length),
+      { ok: settingsImportButton(m.matched.length, m.creatable.length) }).then((ok) => {
       if (!ok) { render(); return; }
       // What apply is about to touch, remembered first by the module itself
       // (PriceFile.snapshot), so a refused save puts every part back exactly
-      // as it was.
+      // as it was. The parts that get PUSHED are undone the other way, by id,
+      // because splicing by index would be wrong the moment anything else on
+      // this phone touched the catalog in between.
       const snap = PriceFile.snapshot(m.matched);
+      let added = [];
+      const undo = () => {
+        PriceFile.restore(snap);
+        if (!added.length) return;
+        const ids = new Set(added.map((p) => p.id));
+        for (let i = state.data.catalog.length - 1; i >= 0; i -= 1) {
+          if (ids.has(state.data.catalog[i].id)) state.data.catalog.splice(i, 1);
+        }
+      };
       // This leg has its own try/catch, separate from the outer .catch below:
       // the outer one means "the file would not read", which is never true
-      // here (parse and match already ran clean). A throw in apply or the
+      // here (parse and plan already ran clean). A throw in apply or the
       // write is a WRITE failure on a file that read fine, so it gets its
       // own banner and its own restore, rather than being told to Adrian as
       // if his file were the problem.
       try {
         const out = PriceFile.apply(m.matched, parsed.checkedISO);
-        if (!persistOr(() => PriceFile.restore(snap))) { render(); return; }
-        showBanner(out.changed + (out.changed === 1 ? ' price' : ' prices') + ' updated, '
-          + out.unchanged + ' already right.', 'ok');
+        added = PriceFile.newParts(m.creatable, parsed.checkedISO, Store.uid);
+        added.forEach((p) => state.data.catalog.push(p));
+        // ONE save for both halves. Two saves would leave a phone that took
+        // the prices and refused the parts, which is a catalog nobody asked
+        // for and no screen would explain.
+        if (!persistOr(undo)) { render(); return; }
+        showBanner(settingsImportBanner(out.changed, out.unchanged, added.length), 'ok');
       } catch (e) {
-        PriceFile.restore(snap);
+        undo();
         showBanner('Nothing was changed. Try the import again.', 'danger');
       }
       render();

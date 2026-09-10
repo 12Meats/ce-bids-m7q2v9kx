@@ -600,3 +600,23 @@ test('summaryText: full stops, and no em dash', () => {
   t.split('. ').forEach((s) => assert.ok(s.trim() !== '', 'no empty sentence'));
   assert.ok(t.endsWith('.'), 'the last sentence ends with a period');
 });
+
+// TWO PARTS WITH ONE QED NUMBER IS A TYPO, and match() has always said so
+// about the catalog. The real 9/09 file carries five products twice under two
+// different generic names, and creating both would put two parts on his phone
+// that the very next import cannot tell apart: the second one would never be
+// found again, because a part is looked up by its number and the first one
+// wins. The first row makes the part and the second repeats it.
+test('plan: two rows with one QED number make one part, not two', () => {
+  const d = catalogWith([]);
+  const rows = [
+    { sku: '165', name: 'THHN #8 Stranded BLACK Wire', listCents: 40000, per: 'm',
+      forPart: '#8 THHN', catalogNo: 'B03673' },
+    { sku: '165', name: 'THHN #8 Stranded BLACK Wire', listCents: 40000, per: 'm',
+      forPart: 'WIC. THHN 8 STR BLK', catalogNo: 'B03673' },
+  ];
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 1);
+  assert.strictEqual(m.creatable[0].name, '#8 THHN · B03673');
+  assert.deepStrictEqual(m.duplicates, [rows[1]]);
+});

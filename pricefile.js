@@ -280,6 +280,13 @@
     // And a name one row already claimed for a NEW part cannot be claimed
     // twice: the second row would create a second part of the same name.
     const claimed = new Set();
+    // Nor a NUMBER. Two parts with one QED number is a typo, which is what
+    // match() has always said about the catalog, and it is worse when the
+    // import writes it: the second part could never be found again, because
+    // the next file looks a part up by its number and the first one wins. The
+    // real 9/09 file carries five products twice, under two different names
+    // for the same generic.
+    const claimedSkus = new Set();
 
     // A row that becomes a part is not a row he was told was skipped, so the
     // list is emptied and only a row this pass still cannot place goes back on
@@ -307,7 +314,9 @@
         return;
       }
       if (claimed.has(key)) { out.duplicates.push(row); return; }
+      if (claimedSkus.has(row.sku)) { out.duplicates.push(row); return; }
       claimed.add(key);
+      claimedSkus.add(row.sku);
       const seedPart = (typeof row.forPart === 'string' && row.forPart !== '')
         ? (byName.get(Catalog.normalizeName(row.forPart)) || null) : null;
       out.creatable.push({
