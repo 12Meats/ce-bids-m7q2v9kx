@@ -232,3 +232,68 @@ test('addDays refuses anything that is not a real date and a whole number of day
   assert.strictEqual(D.addDays('2026-09-14', NaN), null);
   assert.strictEqual(D.addDays('2026-09-14', '7'), null);
 });
+
+// ---------------------------------------------------------------------------
+// THE CALENDAR
+// ---------------------------------------------------------------------------
+// The month as a phone draws it: seven columns, Sunday first, and a null
+// wherever a cell belongs to no day of this month. Pure, so the grid can be
+// checked without a browser and so the panel that draws it owns no calendar
+// arithmetic of its own.
+
+test('monthGrid lays September 2026 out Sunday first, with nulls either end', () => {
+  const weeks = D.monthGrid(2026, 9);
+  assert.strictEqual(weeks.length, 5, 'five rows hold it');
+  weeks.forEach((w) => assert.strictEqual(w.length, 7, 'seven columns, always'));
+  // Sep 1 2026 is a Tuesday, which is index 2 in a Sunday-first row.
+  assert.deepStrictEqual(weeks[0], [null, null, '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05']);
+  assert.strictEqual(weeks[1][0], '2026-09-06');
+  // September has 30 days, so the last row trails off after it.
+  assert.deepStrictEqual(weeks[4], ['2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30', null, null, null]);
+  // Every day of the month, once, in order.
+  const days = weeks.flat().filter(Boolean);
+  assert.strictEqual(days.length, 30);
+  assert.strictEqual(days[0], '2026-09-01');
+  assert.strictEqual(days[29], '2026-09-30');
+});
+
+test('monthGrid gives a leap February its 29th', () => {
+  const weeks = D.monthGrid(2028, 2);
+  const days = weeks.flat().filter(Boolean);
+  assert.strictEqual(days.length, 29);
+  assert.strictEqual(days[28], '2028-02-29');
+  // And an ordinary one stops at the 28th.
+  assert.strictEqual(D.monthGrid(2026, 2).flat().filter(Boolean).length, 28);
+});
+
+test('monthGrid refuses a month that is not one', () => {
+  assert.deepStrictEqual(D.monthGrid(2026, 0), []);
+  assert.deepStrictEqual(D.monthGrid(2026, 13), []);
+  assert.deepStrictEqual(D.monthGrid('2026', 9), []);
+  assert.deepStrictEqual(D.monthGrid(2026, 9.5), []);
+});
+
+test('addMonths keeps the day where it fits and clamps where it does not', () => {
+  assert.strictEqual(D.addMonths('2026-09-09', 1), '2026-10-09');
+  assert.strictEqual(D.addMonths('2026-09-09', -1), '2026-08-09');
+  // The 31st of January has no 31st of February to land on, so it takes the
+  // last day there is. A month step that skipped to March 3 would put him a
+  // month and a bit away from where he tapped.
+  assert.strictEqual(D.addMonths('2026-01-31', 1), '2026-02-28');
+  assert.strictEqual(D.addMonths('2028-01-31', 1), '2028-02-29', 'and a leap year has one more');
+  assert.strictEqual(D.addMonths('2026-03-31', -1), '2026-02-28');
+  // Across the turn of the year, both ways.
+  assert.strictEqual(D.addMonths('2026-12-15', 1), '2027-01-15');
+  assert.strictEqual(D.addMonths('2026-01-15', -1), '2025-12-15');
+  assert.strictEqual(D.addMonths('2026-09-09', 0), '2026-09-09');
+  assert.strictEqual(D.addMonths('9/9/26', 1), null);
+  assert.strictEqual(D.addMonths('2026-09-09', 1.5), null);
+});
+
+test('monthTitle names the month the way a calendar does', () => {
+  assert.strictEqual(D.monthTitle('2026-09-09'), 'September 2026');
+  assert.strictEqual(D.monthTitle('2026-01-01'), 'January 2026');
+  assert.strictEqual(D.monthTitle('2026-12-31'), 'December 2026');
+  assert.strictEqual(D.monthTitle('9/9/26'), '');
+  assert.strictEqual(D.monthTitle('2026-13-01'), '');
+});

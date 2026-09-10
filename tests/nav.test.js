@@ -34,8 +34,19 @@ function fakeElement(id) {
     hidden: false,
     disabled: false,
     tabIndex: 0,
-    textContent: '',
     placeholder: '',
+    // textContent behaves the way the real one does: reading it gives the
+    // text, and WRITING it replaces every child. The app clears a list that
+    // way (the banner area, the suggestion chips, the calendar grid), and a
+    // stub that only remembered the string let one month of days pile up on
+    // top of the last.
+    _text: '',
+    get textContent() { return this._text; },
+    set textContent(v) {
+      this._text = v == null ? '' : String(v);
+      this.children.forEach((c) => { c.parent = null; });
+      this.children = [];
+    },
     // The banner area is a real parent in this stub: showBanner appends,
     // counts and removes, and clearBanner walks the same list.
     dataset: {},
@@ -113,6 +124,7 @@ const {
   registerScreen, show, goBack, onPopState, anyPanelOpen,
   promptNumber, promptMoney, promptText, confirmPanel, keypadPress, keypadDone, keypadClear,
   textDone, closeAnyPanel, attachedStrip, closeAnyStrip, keypadCaptionTapped,
+  promptDate, datePick, dateStep, dateTypeTapped,
 } = sandbox;
 
 // A function declaration lands on the context's global object; a top-level
@@ -498,4 +510,117 @@ test('a plain caption link leaves the keypad standing with what he typed', () =>
   assert.strictEqual(anyPanelOpen(), true, 'the keypad is still up');
   assert.strictEqual(keypadCtx().buffer.text(), '4', 'and so is the 4 he typed');
   keypadClear();
+});
+
+// ---------------------------------------------------------------------------
+// THE CALENDAR PANEL
+// ---------------------------------------------------------------------------
+// The fourth panel, and the first one that is not a keypad. What is pinned
+// here is that it behaves like the other three — a back gesture cancels it and
+// commits nothing — and that "Type it" is a HAND-OFF rather than a second date
+// parser: the keypad it opens is the same one every other date in this app has
+// always used, and its answer reaches the same caller.
+
+test('the calendar opens on the day it was handed, and a tapped day is the answer', () => {
+  standInTheWalk();
+  let picked = null;
+  promptDate('2026-09-09', 'From', (iso) => { picked = iso; });
+  assert.strictEqual(anyPanelOpen(), true);
+  assert.strictEqual(nodes.get('dateLabel').textContent, 'From');
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'September 2026');
+  // Five rows of seven, blanks and all, so the columns cannot shift.
+  assert.strictEqual(nodes.get('dateGrid').children.length, 35);
+  const days = nodes.get('dateGrid').children.filter((c) => c.dataset.iso);
+  assert.strictEqual(days.length, 30);
+  assert.strictEqual(days[0].dataset.iso, '2026-09-01');
+  assert.strictEqual(days[0].textContent, '1');
+  // The chosen day is pressed; nothing else is.
+  assert.strictEqual(days.filter((c) => c.getAttribute('aria-pressed') === 'true').length, 1);
+  assert.strictEqual(days[8].dataset.iso, '2026-09-09');
+  assert.strictEqual(days[8].getAttribute('aria-pressed'), 'true');
+  // The whole date is said out loud: "12" on its own is not one.
+  assert.strictEqual(days[8].getAttribute('aria-label'), 'Sep 9, 2026');
+
+  datePick('2026-09-11');
+  assert.strictEqual(picked, '2026-09-11');
+  assert.strictEqual(anyPanelOpen(), false, 'a day picked is the end of the question');
+});
+
+test('a row with no date on it opens on today', () => {
+  standInTheWalk();
+  promptDate(null, 'Date', () => {});
+  // Store.todayISO() is 2026-09-05 in this file.
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'September 2026');
+  const today = nodes.get('dateGrid').children.find((c) => c.dataset.iso === '2026-09-05');
+  assert.strictEqual(today.getAttribute('aria-pressed'), 'true');
+  closeAnyPanel();
+});
+
+test('the arrows move the month and pick nothing', () => {
+  standInTheWalk();
+  let picked = null;
+  promptDate('2026-01-31', 'From', (iso) => { picked = iso; });
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'January 2026');
+  dateStep(1);
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'February 2026');
+  // The chosen day came with it, clamped to a day February has.
+  assert.strictEqual(nodes.get('dateGrid').children.filter((c) => c.dataset.iso).length, 28);
+  dateStep(-1);
+  assert.strictEqual(nodes.get('dateTitle').textContent, 'January 2026');
+  assert.strictEqual(anyPanelOpen(), true, 'an arrow is not an answer');
+  assert.strictEqual(picked, null);
+  closeAnyPanel();
+});
+
+test('the back gesture cancels the calendar and picks nothing', () => {
+  const before = standInTheWalk();
+  let picked = null;
+  promptDate('2026-09-09', 'To', (iso) => { picked = iso; });
+
+  onPopState({ state: { ceb: 2 } });
+
+  assert.strictEqual(anyPanelOpen(), false, 'the calendar is gone');
+  assert.strictEqual(state.screen, before.screen, 'the screen underneath did not move');
+  assert.strictEqual(picked, null, 'a cancel commits nothing');
+  // And what it was wired to is dead: a stray tap on a day that is no longer
+  // on the glass cannot post a date into the screen he is now looking at.
+  datePick('2026-09-11');
+  assert.strictEqual(picked, null);
+  assert.strictEqual(history.pushes, before.pushes + 1, 'the entry the swipe spent is put back');
+});
+
+test('Type it takes the calendar down and hands the same question to the keypad', () => {
+  standInTheWalk();
+  let picked = null;
+  promptDate('2026-09-09', 'From', (iso) => { picked = iso; });
+  dateTypeTapped();
+
+  // ONE panel is open, and it is the keypad: promptNumber refuses to open over
+  // an open panel, so the calendar has to be down before it is asked.
+  assert.strictEqual(anyPanelOpen(), true);
+  assert.strictEqual(nodes.get('panel-date').hidden, true);
+  assert.strictEqual(nodes.get('panel-keypad').hidden, false);
+  assert.strictEqual(nodes.get('keypadLabel').textContent, 'Date: type 915 for Sep 15, or 91526');
+  assert.strictEqual(nodes.get('keypadWas').textContent, 'was Sep 9, 2026');
+
+  keypadPress('9'); keypadPress('1'); keypadPress('5');
+  keypadDone();
+  assert.strictEqual(picked, '2026-09-15', 'the keypad answer reaches the same caller');
+  assert.strictEqual(anyPanelOpen(), false);
+});
+
+test('a date the keypad cannot read is refused, and Clear is never mind', () => {
+  standInTheWalk();
+  let picked = null;
+  promptDate('2026-09-09', 'From', (iso) => { picked = iso; });
+  dateTypeTapped();
+  keypadPress('9'); keypadPress('9'); keypadPress('9'); keypadPress('9');
+  keypadDone();
+  assert.strictEqual(picked, null, 'the 99th of September is not a date');
+
+  promptDate('2026-09-09', 'From', (iso) => { picked = iso; });
+  dateTypeTapped();
+  keypadClear();
+  assert.strictEqual(picked, null, 'Clear is the way out, not a date');
+  assert.strictEqual(anyPanelOpen(), false);
 });

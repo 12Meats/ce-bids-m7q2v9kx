@@ -178,8 +178,11 @@ const keypadCtx = { open: false, buffer: null, done: null, captionAction: null, 
 // and the close path work the same either way.
 const textCtx = { open: false, done: null, suggest: null, field: null, multiline: false };
 const confirmCtx = { open: false, resolve: null };
+// The calendar's own. Declared with the others so anyPanelOpen below can see
+// every panel there is in one line.
 
-function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open; }
+
+function anyPanelOpen() { return keypadCtx.open || textCtx.open || confirmCtx.open || dateCtx.open; }
 
 // A panel is a full-screen question, and the pinned action bar under it belongs
 // to the screen he is no longer looking at. The overlay already covers it, but
@@ -199,6 +202,7 @@ function closeAnyPanel() {
   if (keypadCtx.open) { closeKeypad(); return true; }
   if (textCtx.open) { closeText(); return true; }
   if (confirmCtx.open) { closeConfirm(false); return true; }
+  if (dateCtx.open) { closeDate(); return true; }
   // An attached strip is a question too — smaller, drawn in the flow rather
   // than over it, and just as much a thing a back gesture should answer before
   // it answers "leave this screen". See currentStrip in ui.js.
@@ -489,6 +493,145 @@ function textDone() {
   const done = textCtx.done;
   closeText();
   if (done) done(value);
+}
+
+// --- Calendar --------------------------------------------------------------
+
+// promptDate(initialISO, label, onPick, opts) — the first thing he sees for any
+// date in this app: log From and To, a bid's date, a payment.
+//
+// Four digits on the keypad was the whole vocabulary until the Invoices tab
+// asked him for two dates on one screen. It is still the fastest way to write
+// a day he knows the number of, and it is still here — "Type it" under the
+// grid hands straight off to that same keypad, so there is one date parser and
+// one panel of digits, not a second copy of either. What the keypad could not
+// answer is "the Friday", which is a thing a man finds by looking.
+//
+// onPick(iso) fires with an ISO date, from a tapped day or from the keypad.
+// Cancel and the back gesture call nothing, exactly like the other panels; the
+// arithmetic underneath is Dates', so this draws a month and decides nothing
+// about what one is.
+const dateCtx = { open: false, done: null, iso: null, month: null, today: null, typeLabel: '' };
+
+// The one question this panel asks of a string, and it asks it through Dates
+// rather than a regex of its own: fmtDate refuses anything that is not a real
+// YYYY-MM-DD, which is the same gate every other date in this app passes.
+function dateIsReal(iso) { return Dates.fmtDate(iso) !== ''; }
+
+const DATE_TYPE_LABEL = 'Date: type 915 for Sep 15, or 91526';
+const DATE_TYPE_REFUSAL = 'That date needs 4 digits (MMDD) or 6 (MMDDYY)';
+
+function promptDate(initialISO, label, onPick, opts) {
+  opts = opts || {};
+  if (anyPanelOpen()) return;
+
+  const today = Store.todayISO();
+  dateCtx.open = true;
+  dateCtx.done = typeof onPick === 'function' ? onPick : null;
+  // A row with no date on it yet opens on today rather than on nothing: the
+  // month he is standing in is the month he means nine times in ten.
+  dateCtx.iso = dateIsReal(initialISO) ? initialISO : today;
+  dateCtx.month = dateCtx.iso;
+  dateCtx.today = today;
+  dateCtx.typeLabel = opts.typeLabel || DATE_TYPE_LABEL;
+
+  el('dateLabel').textContent = label || '';
+  // The same line the keypad panel wears, and hidden rather than blank when a
+  // caller has nothing to put in it, so the spacing does not move.
+  const was = el('dateWas');
+  was.textContent = opts.wasText || '';
+  was.hidden = !opts.wasText;
+
+  renderDate();
+  el('panel-date').hidden = false;
+  syncPanelClass();
+}
+
+// The month on the glass. Redrawn whole on every arrow: five rows of seven is
+// a cheap rebuild and diffing them would be more code than it saves.
+function renderDate() {
+  el('dateTitle').textContent = Dates.monthTitle(dateCtx.month);
+  const grid = el('dateGrid');
+  grid.textContent = '';
+  const year = Number(dateCtx.month.slice(0, 4));
+  const month = Number(dateCtx.month.slice(5, 7));
+  Dates.monthGrid(year, month).forEach((week) => {
+    week.forEach((iso) => {
+      if (!iso) {
+        // A blank cell rather than no cell: the columns may not shift under
+        // his thumb between one month and the next.
+        const gap = document.createElement('div');
+        gap.className = 'cal-day cal-blank';
+        gap.setAttribute('aria-hidden', 'true');
+        grid.appendChild(gap);
+        return;
+      }
+      const day = document.createElement('button');
+      day.type = 'button';
+      day.className = 'cal-day'
+        + (iso === dateCtx.iso ? ' cal-on' : '')
+        + (iso === dateCtx.today ? ' cal-today' : '');
+      day.textContent = String(Number(iso.slice(8, 10)));
+      // The whole date, said out loud, because "12" on its own is not one.
+      day.setAttribute('aria-label', Dates.fmtDate(iso));
+      day.setAttribute('aria-pressed', iso === dateCtx.iso ? 'true' : 'false');
+      day.dataset.iso = iso;
+      grid.appendChild(day);
+    });
+  });
+}
+
+// The arrows. A month that will not compose leaves him where he is rather
+// than navigating to nothing.
+function dateStep(n) {
+  if (!dateCtx.open) return;
+  const next = Dates.addMonths(dateCtx.month, n);
+  if (!next) return;
+  dateCtx.month = next;
+  renderDate();
+}
+
+function datePick(iso) {
+  if (!dateCtx.open || !dateIsReal(iso)) return;
+  const done = dateCtx.done;
+  closeDate();
+  if (done) done(iso);
+}
+
+// "Type it" — the hand-off to the keypad, on the captionCloses pattern the
+// cost keypad already uses: this panel goes down FIRST, because promptNumber
+// refuses to open over an open panel. The result feeds the SAME onPick, so a
+// caller never learns which of the two he used.
+function dateTypeTapped() {
+  if (!dateCtx.open) return;
+  const done = dateCtx.done;
+  const was = dateCtx.iso;
+  const label = dateCtx.typeLabel;
+  closeDate();                       // read off the context before it is cleared
+  promptNumber(null, {
+    label,
+    maxChars: 6,
+    wasText: 'was ' + Dates.fmtDate(was),
+    done: (v) => {
+      // Clear is never mind, the way it is on every other date in this app.
+      if (v === null) return;
+      const iso = Dates.parseTypedDate(v, Store.todayISO());
+      if (!iso) { showBanner(DATE_TYPE_REFUSAL); render(); return; }
+      if (done) done(iso);
+    },
+  });
+}
+
+function closeDate() {
+  el('panel-date').hidden = true;
+  el('dateGrid').textContent = '';
+  dateCtx.open = false;
+  dateCtx.done = null;
+  dateCtx.iso = null;
+  dateCtx.month = null;
+  dateCtx.today = null;
+  dateCtx.typeLabel = '';
+  syncPanelClass();
 }
 
 // --- Confirm ---------------------------------------------------------------
@@ -990,6 +1133,19 @@ function wirePanels() {
   el('textArea').addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); closeText(); }
   });
+
+  // The calendar. The grid is rebuilt on every arrow, so the days are read
+  // through one delegated listener the way the keypad's keys are, rather than
+  // wiring thirty buttons a month.
+  el('dateGrid').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn || btn.disabled || !btn.dataset.iso) return;
+    datePick(btn.dataset.iso);
+  });
+  el('datePrev').addEventListener('click', () => dateStep(-1));
+  el('dateNext').addEventListener('click', () => dateStep(1));
+  el('dateType').addEventListener('click', dateTypeTapped);
+  el('dateCancel').addEventListener('click', closeDate);
 
   el('confirmOk').addEventListener('click', () => closeConfirm(true));
   el('confirmCancel').addEventListener('click', () => closeConfirm(false));

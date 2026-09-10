@@ -1880,6 +1880,89 @@
     #panel-text .panel-actions { margin: var(--space-3) auto 0; }
     .panel-actions .btn { width: 100%; }
 
+    /* ---------- The calendar panel ---------- */
+    /* A month, drawn by hand. There is no native date input in this app and
+       none is added: what iOS shows is a spinning wheel of three columns, and
+       a man looking for "the Friday" needs to see the week it sits in. Seven
+       columns however narrow the phone, every day a 44px target, and the
+       keypad he already knows one tap away under it. */
+    .cal {
+      width: 100%;
+      max-width: 340px;
+      margin-top: var(--space-3);
+    }
+    .cal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-1);
+    }
+    .cal-title {
+      flex: 1 1 auto;
+      text-align: center;
+      font-size: var(--font-body);
+      font-weight: 700;
+    }
+    /* The two arrows are the only way to leave the month, so they are full
+       targets rather than the little chevrons they look like. */
+    .cal-arrow {
+      flex: 0 0 auto;
+      width: 44px;
+      height: 44px;
+      font-size: 1.5rem;
+      line-height: 1;
+      font-family: inherit;
+      color: var(--color-text);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+    }
+    .cal-arrow:active { background: #e2e8f0; }
+
+    .cal-week,
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .cal-week {
+      margin-top: var(--space-2);
+      color: var(--color-text-muted);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .cal-grid { margin-top: 4px; }
+
+    .cal-day {
+      min-height: 44px;
+      font-family: inherit;
+      font-size: var(--font-body);
+      font-weight: 600;
+      color: var(--color-text);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+    }
+    .cal-day:active { background: #e2e8f0; }
+    /* Today is outlined and the day he has chosen is filled: two different
+       facts, so they never wear the same paint. Both at once is a filled cell
+       with the heavier border, which is what it should look like. */
+    .cal-day.cal-today { border: 2px solid var(--color-accent); }
+    .cal-day.cal-on {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: #ffffff;
+    }
+    /* The cells before the 1st and after the last. Present so the columns
+       cannot shift, and untouchable. */
+    .cal-blank {
+      visibility: hidden;
+      pointer-events: none;
+    }
+    /* Type it sits under the grid, quiet, the way the keypad's own caption
+       link does. */
+    .cal-type { margin-top: var(--space-3); }
+
     /* ---------- Short phones (iPhone SE, 375x667) ---------- */
     /* The keypad panel has to fit without scrolling: the whole point is that
        the thumb can reach every key without moving the phone. */
@@ -2131,6 +2214,32 @@
     <div class="panel-actions">
       <button type="button" id="textDone" class="btn btn-confirm">Done</button>
       <button type="button" id="textCancel" class="btn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ---------- Calendar panel ---------- -->
+  <!-- The first thing he sees for any date. The keypad is still here, one tap
+       away under the grid, for the days he already knows the number of. There
+       is no native date input anywhere in this app. -->
+  <div id="panel-date" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="dateLabel" aria-describedby="dateWas" hidden>
+    <h2 id="dateLabel" class="panel-title"></h2>
+    <p id="dateWas" class="panel-was" hidden></p>
+    <div class="cal">
+      <div class="cal-head">
+        <button type="button" id="datePrev" class="cal-arrow" aria-label="Previous month">&#8249;</button>
+        <div id="dateTitle" class="cal-title" aria-live="polite"></div>
+        <button type="button" id="dateNext" class="cal-arrow" aria-label="Next month">&#8250;</button>
+      </div>
+      <!-- Fixed, and hidden from a screen reader: every cell below already
+           says its own whole date out loud. -->
+      <div class="cal-week" aria-hidden="true">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div id="dateGrid" class="cal-grid"></div>
+    </div>
+    <button type="button" id="dateType" class="link-btn cal-type">Type it</button>
+    <div class="panel-actions">
+      <button type="button" id="dateCancel" class="btn">Cancel</button>
     </div>
   </div>
 

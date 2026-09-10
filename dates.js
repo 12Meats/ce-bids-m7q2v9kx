@@ -14,6 +14,10 @@
 
   const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // Spelled out, for the one place with room for it: the heading over a month
+  // of the calendar.
+  const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+    'August', 'September', 'October', 'November', 'December'];
 
   // How long a proposal may sit unanswered before the home screen says so.
   const DEFAULT_NUDGE_DAYS = 14;
@@ -162,6 +166,77 @@
     return best;
   }
 
+  // -------------------------------------------------------------------------
+  // THE CALENDAR
+  // -------------------------------------------------------------------------
+  // Four digits on the keypad is how a man who knows the date writes it down,
+  // and it was the whole vocabulary until the Invoices tab asked him for two
+  // dates on one screen. "The Friday" is not four digits, it is a thing he
+  // finds by looking, so the first thing he sees now is a month.
+  //
+  // The arithmetic is here, pure, and the panel only draws what comes back:
+  // a month is seven columns wide however small the phone is, and which day
+  // sits in which column is not a decision a screen should be making.
+
+  // monthGrid(2026, 9) -> the weeks of September 2026, Sunday first, as ISO
+  // strings with null in every cell that belongs to no day of this month. A
+  // month that is not a month comes back as [] rather than as a grid of
+  // "Invalid Date", so a panel handed a bad argument draws nothing instead of
+  // drawing nonsense.
+  function monthGrid(year, month) {
+    if (!Number.isInteger(year) || !Number.isInteger(month)) return [];
+    if (month < 1 || month > 12) return [];
+    const first = composeDate(year, month, 1);
+    if (!first) return [];
+    const lead = noon(first).getDay();          // Sunday is 0, which is column 0
+    const weeks = [];
+    let row = new Array(lead).fill(null);
+    for (let day = 1; ; day += 1) {
+      const iso = composeDate(year, month, day);
+      if (!iso) break;                          // the 31st of a 30-day month
+      row.push(iso);
+      if (row.length === 7) { weeks.push(row); row = []; }
+    }
+    if (row.length) {
+      while (row.length < 7) row.push(null);
+      weeks.push(row);
+    }
+    return weeks;
+  }
+
+  // addMonths('2026-01-31', 1) -> '2026-02-28'. The arrows on the calendar,
+  // and the one rule they need: a day the next month does not have takes the
+  // last day it does. Rolling forward to March 3 instead would put the arrow a
+  // month and three days away from where he was standing, and he would not see
+  // it happen because the grid he is looking at is the next month either way.
+  function addMonths(iso, n) {
+    if (!isISO(iso) || typeof n !== 'number' || !isFinite(n) || Math.round(n) !== n) return null;
+    const y = Number(iso.slice(0, 4));
+    const m = Number(iso.slice(5, 7));
+    const d = Number(iso.slice(8, 10));
+    if (m < 1 || m > 12) return null;
+    const total = (y * 12) + (m - 1) + n;
+    const year = Math.floor(total / 12);
+    const month = (total % 12) + 1;
+    // Walk the day down rather than doing month-length arithmetic: composeDate
+    // already owns what a real day is, and this way leap years need no rule.
+    for (let day = d; day >= 28; day -= 1) {
+      const hit = composeDate(year, month, day);
+      if (hit) return hit;
+    }
+    return composeDate(year, month, d);
+  }
+
+  // monthTitle('2026-09-09') -> 'September 2026'. The heading over the grid.
+  // Spelled out, not abbreviated: it is the only place in the app with room
+  // for the whole word, and it is what a calendar says.
+  function monthTitle(iso) {
+    if (!isISO(iso)) return '';
+    const m = Number(iso.slice(5, 7));
+    if (m < 1 || m > 12) return '';
+    return MONTH_FULL[m - 1] + ' ' + iso.slice(0, 4);
+  }
+
   // The bids that went out and never came back: sent, still sitting at 'sent',
   // and older than the nudge window. This is the whole reason the app exists —
   // a proposal nobody followed up on is money left on a table in a dairy plant.
@@ -182,5 +257,6 @@
     return b.number - a.number;
   }
 
-  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateShort, fmtDateTime, addDays, daysSince, composeDate, parseTypedDate, sentNoAnswer, bidsSortCompare };
+  return { DEFAULT_NUDGE_DAYS, fmtDate, fmtDateShort, fmtDateTime, addDays, daysSince, composeDate, parseTypedDate,
+    monthGrid, addMonths, monthTitle, sentNoAnswer, bidsSortCompare };
 });
