@@ -11,7 +11,13 @@
 // nothing in here changes, because this only ever read a file.
 //
 //   { source, checkedISO: 'YYYY-MM-DD',
-//     rows: [{ sku, name, listCents, per }] }     per: 'ea' | 'ft' | 'c' | 'm' | anything else the page said
+//     rows: [{ sku, name, listCents, per,
+//             forPart?, catalogNo?, brand? }] }  per: 'ea' | 'ft' | 'c' | 'm' | anything else the page said
+//
+// forPart, catalogNo and brand are optional and were added in v3.1: forPart
+// names the generic part in HIS catalog this row is a variant of, catalogNo is
+// the number printed on the shelf, brand is who made it. They are what lets an
+// import CREATE the part it cannot find, named the way he would name it.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./catalog.js'), require('./bidmath.js'));
   else root.PriceFile = factory(root.Catalog, root.BidMath);
@@ -46,7 +52,20 @@
       // it in Settings ever could. sku strips ALL whitespace, not just the
       // ends, the same as the typed path in Settings, so "330 2434" off a
       // scanned receipt matches the part he typed "3302434" onto.
-      rows.push({ sku: x.sku.replace(/\s+/g, ''), name: Catalog.straighten(x.name).slice(0, 120), listCents: x.listCents, per: x.per.trim().toLowerCase() });
+      const row = { sku: x.sku.replace(/\s+/g, ''), name: Catalog.straighten(x.name).slice(0, 120), listCents: x.listCents, per: x.per.trim().toLowerCase() };
+      // OPTIONAL, and only ever additive: the generic part this row is a
+      // variant of, the manufacturer's catalog number, and the brand. A file
+      // written before v3.1 carries none of them and parses exactly as it
+      // always did. Anything that is not a non-empty string is left OFF the
+      // row rather than refused: a hole a scraper left is not a bad price.
+      // Straightened and capped at 120, the same as the name, so a generated
+      // file cannot put a longer string on a part than typing it ever could.
+      ['forPart', 'catalogNo', 'brand'].forEach((k) => {
+        if (typeof x[k] !== 'string') return;
+        const v = Catalog.straighten(x[k]).slice(0, 120);
+        if (v !== '') row[k] = v;
+      });
+      rows.push(row);
     }
     return { error: null, checkedISO: obj.checkedISO, rows };
   }

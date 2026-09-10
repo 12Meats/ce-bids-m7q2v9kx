@@ -247,3 +247,38 @@ test('summaryText: the confirm names at most five movers', () => {
   const t2 = P.summaryText({ matched: two, unmatched: [], mismatched: [], duplicates: [] });
   assert.doesNotMatch(t2, /, and \d+ more/);
 });
+
+// ---------------------------------------------------------------------------
+// v3.1: the three optional fields a row may carry
+// ---------------------------------------------------------------------------
+// The QED price file Adrian builds names, per row, the generic part the row is
+// a variant OF (forPart), the manufacturer's catalog number (catalogNo) and
+// the brand. All three are optional: a file written before v3.1 has none of
+// them and parses exactly as it always did. A field that is not a string is
+// absent, never an error, because a price file is still a price file when a
+// scraper leaves a hole in it.
+test('parse: forPart, catalogNo and brand are kept when they are strings', () => {
+  const ok = P.parse(file([{ sku: '1', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+    forPart: '  60 A 3-pole breaker  ', catalogNo: ' B360 ', brand: ' Siemens ' }]));
+  assert.strictEqual(ok.error, null);
+  assert.strictEqual(ok.rows[0].forPart, '60 A 3-pole breaker');
+  assert.strictEqual(ok.rows[0].catalogNo, 'B360');
+  assert.strictEqual(ok.rows[0].brand, 'Siemens');
+});
+
+test('parse: a field that is not a string is absent, not an error', () => {
+  const ok = P.parse(file([{ sku: '1', name: 'x', listCents: 100, per: 'ea', forPart: 42, catalogNo: null, brand: '   ' }]));
+  assert.strictEqual(ok.error, null);
+  assert.strictEqual('forPart' in ok.rows[0], false);
+  assert.strictEqual('catalogNo' in ok.rows[0], false);
+  assert.strictEqual('brand' in ok.rows[0], false);
+});
+
+test('parse: each of the three is capped at 120, the same ceiling as the name', () => {
+  const long = 'y'.repeat(200);
+  const ok = P.parse(file([{ sku: '1', name: 'x', listCents: 100, per: 'ea', forPart: long, catalogNo: long, brand: long }]));
+  assert.strictEqual(ok.error, null);
+  assert.strictEqual(ok.rows[0].forPart.length, 120);
+  assert.strictEqual(ok.rows[0].catalogNo.length, 120);
+  assert.strictEqual(ok.rows[0].brand.length, 120);
+});
