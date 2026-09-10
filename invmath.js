@@ -114,8 +114,95 @@
   function split(groups, i) {
     const g = groups[i];
     if (!g || g.entries.length < 2) return groups;
-    const parts = g.entries.map((e) => ({ ...g, key: g.key + '#' + e.id, entries: [e], from: e.dateISO, to: e.dateISO }));
+    const parts = g.entries.map((e) => ({ ...g, key: g.key + '#' + e.id, entries: [e], from: entryFrom(e), to: entryTo(e) }));
     return groups.slice(0, i).concat(parts, groups.slice(i + 1)).sort(byFrom);
+  }
+
+  // ONE GROUP PER ENTRY, which is what the pile is now.
+  //
+  // group() above put a week of one job on one card and billed it as one
+  // invoice. The first week on v3 said no: he opens an entry when the job
+  // starts, keeps adding to it, and marks it Ready when the work is done. So
+  // the entry IS the invoice, two entries on one job only ever exist because
+  // he tapped Start invoice twice, and nothing merges on its own. group()
+  // stays for the tests that pin what it used to do; no screen calls it.
+  //
+  // Same shape group() hands back, so draftInvoice, Combine and Split all read
+  // it without knowing which of the two made it.
+  function groupEach(entries, data, opts) {
+    const o = opts || {};
+    const exclude = o.exclude || new Set();
+    const groups = [];
+    (entries || []).forEach((e) => {
+      if (!e || e.invoiceId) return;
+      if (exclude.has(e.id)) return;
+      const proj = ((data && data.projects) || []).find((p) => p.id === e.projectId);
+      groups.push({
+        key: e.id, customerId: e.customerId, projectId: e.projectId,
+        title: proj ? proj.title : '', entries: [e], from: entryFrom(e), to: entryTo(e),
+      });
+    });
+    // Array#sort is stable, so two entries that start the same day keep the
+    // order they were logged in.
+    groups.sort(byFrom);
+    return groups;
+  }
+
+  // Every later group of the same job, folded into this one at once. Combine
+  // does the pair; this is the three-visit week he used to write as one paper,
+  // without three taps and a re-read of the list between each of them.
+  //
+  // Written as repeated combine() rather than as a second merge rule of its
+  // own: one definition of what merging two cards means, so the pair and the
+  // whole can never come apart. The same array comes back when there is
+  // nothing later of this job, exactly as combine's does.
+  function combineAll(groups, i) {
+    if (!groups || !groups[i]) return groups;
+    let out = groups;
+    // combine() closes one slot up each time and leaves the merged card at i,
+    // so i does not move: the next fold is the next later group of the job.
+    for (;;) {
+      const next = combine(out, i);
+      if (next === out) return out;
+      out = next;
+    }
+  }
+
+  // How long an entry has been waiting, in the only sense that means anything:
+  // since he said it was finished. An entry he is still working is not late
+  // however long it has been open, so it has no age at all — the job is not
+  // done. Once it is Ready the clock runs from the LAST day worked, because
+  // that is the day the customer stopped seeing his trucks.
+  function pileAge(e, todayISO) {
+    if (!isReady(e)) return null;
+    return Dates.daysSince(entryTo(e), todayISO);
+  }
+
+  // THE WEEK AT A GLANCE — the one line at the top of the Invoices home.
+  //
+  // Monday to Sunday of the day he is standing in (mondayOf is handed in, the
+  // way group() takes it, so this file owns no calendar rule of its own), and
+  // only what is still unbilled. An entry counts when either end of it falls
+  // in the week: an open tab started last Thursday is this week's work too.
+  //
+  // The money is what those entries would bill if he sent them today, and it
+  // is figured by drafting them through draftInvoice and totalling the drafts
+  // — the same two functions the Bill these review uses. Nothing is re-derived
+  // here, so the sentence at the top of the screen and the invoices at the
+  // bottom of it can never say two different numbers.
+  function thisWeek(data, todayISO, mondayOf) {
+    const from = mondayOf(todayISO);
+    const to = from ? Dates.addDays(from, 6) : null;
+    const inWeek = (e) => {
+      const a = entryFrom(e), b = entryTo(e);
+      return (a >= from && a <= to) || (b >= from && b <= to);
+    };
+    const mine = ((data && data.logs) || []).filter((e) => e && !e.invoiceId && from && inWeek(e));
+    const hours = mine.reduce((s, e) => s + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
+    const ready = mine.filter(isReady).length;
+    const unbilledCents = groupEach(mine, data)
+      .reduce((s, g) => s + totals(draftInvoice(g, data, 0)).total, 0);
+    return { hours, inProgress: mine.length - ready, ready, unbilledCents, from, to };
   }
 
   // What is IN a group, before anything is priced: the hours everybody put in
@@ -313,6 +400,7 @@
 
   return {
     AMBER_AFTER_DAYS, entryFrom, entryTo, isReady,
+    groupEach, combineAll, pileAge, thisWeek,
     AMBER_AFTER_DAYS, group, canCombine, combine, split, pileHours, pileParts,
     draftInvoice, draftProjectInvoice, projectRemainingCents,
     billedHours, laborCents, totals, paidCents, balanceCents, statusOf,

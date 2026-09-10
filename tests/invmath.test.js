@@ -336,3 +336,165 @@ test('isReady is true only when he said so', () => {
   assert.strictEqual(I.isReady({ ready: 1 }), false);
   assert.strictEqual(I.isReady(null), false);
 });
+
+// ---------------------------------------------------------------------------
+// ONE GROUP PER ENTRY
+// ---------------------------------------------------------------------------
+// Nothing merges on its own any more. An entry IS the invoice, and two entries
+// on the one job only ever exist because he tapped Start invoice twice; the
+// week no longer decides anything. group() is kept for the tests that pin what
+// it used to do, and no screen calls it.
+
+test('groupEach: one group per unbilled entry, oldest first, From and To off the entry', () => {
+  const w = world();
+  w.entries[1].toISO = '2026-08-30';        // Friday visit ran into the Sunday
+  const groups = I.groupEach(w.entries, w.d);
+  assert.strictEqual(groups.length, 7, 'seven visits, seven invoices in progress');
+  assert.deepStrictEqual(groups.map((g) => [g.title, g.from, g.to, g.entries.length]), [
+    ['UF Project', '2026-08-24', '2026-08-24', 1],
+    ['UF Project', '2026-08-28', '2026-08-30', 1],
+    ['UF Project', '2026-08-31', '2026-08-31', 1],
+    ['UF Project', '2026-09-01', '2026-09-01', 1],
+    ['R2 condensate pump', '2026-09-02', '2026-09-02', 1],
+    ['Freezer lights', '2026-09-03', '2026-09-03', 1],
+    ['UF Project', '2026-09-04', '2026-09-04', 1],
+  ]);
+  // Billed entries are not in progress: the invoice is the record now.
+  w.entries[0].invoiceId = 'already';
+  assert.strictEqual(I.groupEach(w.entries, w.d).length, 6);
+  // And a phone with nothing logged is not a crash.
+  assert.deepStrictEqual(I.groupEach([], w.d), []);
+});
+
+test('groupEach hands draftInvoice a shape it already knows, To and all', () => {
+  const w = world();
+  w.entries[1].toISO = '2026-08-30';
+  const g = I.groupEach(w.entries, w.d)[1];
+  const inv = I.draftInvoice(g, w.d, 1);
+  assert.strictEqual(inv.serviceFrom, '2026-08-28');
+  assert.strictEqual(inv.serviceTo, '2026-08-30', 'the service range is the entry From and To');
+  assert.strictEqual(inv.projectTitle, 'UF Project');
+  assert.deepStrictEqual(inv.logIds, [w.entries[1].id]);
+});
+
+// ---------------------------------------------------------------------------
+// COMBINE ALL
+// ---------------------------------------------------------------------------
+// Three visits on one job on the review is three invoices, and combining them
+// two at a time is two taps and a re-read of the list each time.
+
+test('combineAll folds every later group of the same job into one, in date order', () => {
+  const w = world();
+  const groups = I.groupEach(w.entries, w.d);
+  const all = I.combineAll(groups, 0);
+  assert.strictEqual(all.length, 3, 'UF folded into one; the pump and the lights left alone');
+  assert.deepStrictEqual(all.map((g) => [g.title, g.from, g.to, g.entries.length]), [
+    ['UF Project', '2026-08-24', '2026-09-04', 5],
+    ['R2 condensate pump', '2026-09-02', '2026-09-02', 1],
+    ['Freezer lights', '2026-09-03', '2026-09-03', 1],
+  ]);
+  // The entries inside it run with the work, not with the order they were
+  // folded in.
+  assert.deepStrictEqual(all[0].entries.map((e) => e.dateISO),
+    ['2026-08-24', '2026-08-28', '2026-08-31', '2026-09-01', '2026-09-04']);
+  // A new array: the list it was handed is untouched, the way combine and
+  // split leave theirs.
+  assert.strictEqual(groups.length, 7);
+  // Nothing later of this job is nothing to fold, and the same array comes
+  // back, so a caller can test identity rather than re-deriving the rule.
+  assert.strictEqual(I.combineAll(groups, 5), groups);
+  assert.strictEqual(I.combineAll(groups, 99), groups);
+});
+
+test('combineAll leaves the groups that sat between where they were', () => {
+  const w = world();
+  const groups = I.groupEach(w.entries, w.d);
+  const all = I.combineAll(groups, 4);   // the pump, which has nothing later of its own
+  assert.strictEqual(all, groups);
+  // And folding the UF job does not disturb the cards around it.
+  const folded = I.combineAll(groups, 0);
+  assert.deepStrictEqual(folded.map((g) => g.title), ['UF Project', 'R2 condensate pump', 'Freezer lights']);
+});
+
+// ---------------------------------------------------------------------------
+// HOW LONG IT HAS BEEN READY
+// ---------------------------------------------------------------------------
+// An entry he is still working is not late, however long it has been open: the
+// job is not finished. The clock starts when he says Ready, and it counts from
+// the last day worked.
+
+test('pileAge counts from the To, and only once he has said Ready', () => {
+  const e = { dateISO: '2026-08-24', toISO: '2026-08-28' };
+  assert.strictEqual(I.pileAge(e, '2026-09-08'), null, 'still in progress, so no age');
+  e.ready = true;
+  assert.strictEqual(I.pileAge(e, '2026-09-08'), 11, 'eleven days since the last day worked');
+  // An entry with no To of its own counts from the day it started.
+  assert.strictEqual(I.pileAge({ dateISO: '2026-09-07', ready: true }, '2026-09-08'), 1);
+  assert.strictEqual(I.pileAge(null, '2026-09-08'), null);
+});
+
+// ---------------------------------------------------------------------------
+// THE WEEK AT A GLANCE
+// ---------------------------------------------------------------------------
+// The one line at the top of the Invoices home. It counts the week he is
+// standing in, Monday to Sunday, and only what is still unbilled. The money is
+// what those entries would bill if he sent them today, priced by the same
+// draftInvoice the review uses, so the sentence and Friday can never disagree.
+
+test('thisWeek counts the hours, the states and the money of the week he is in', () => {
+  const w = world();
+  // Sep 8 2026 is a Tuesday, so the week is Sep 7 to Sep 13.
+  const only = I.thisWeek(w.d, '2026-09-08', S.mondayOf);
+  assert.strictEqual(only.from, '2026-09-07');
+  assert.strictEqual(only.to, '2026-09-13');
+  assert.strictEqual(only.hours, 0, 'nothing logged in that week');
+  assert.strictEqual(only.inProgress, 0);
+  assert.strictEqual(only.ready, 0);
+  assert.strictEqual(only.unbilledCents, 0);
+
+  // The week of Aug 31: Aug 31 (8 hrs), Sep 1 (12 hrs and a roll of wire),
+  // Sep 2 (4), Sep 3 (8 and two fixtures), Sep 4 (4). 36 hours.
+  const week = I.thisWeek(w.d, '2026-09-02', S.mondayOf);
+  assert.strictEqual(week.from, '2026-08-31');
+  assert.strictEqual(week.to, '2026-09-06');
+  assert.strictEqual(week.hours, 36);
+  assert.strictEqual(week.inProgress, 5, 'nothing marked ready yet');
+  assert.strictEqual(week.ready, 0);
+
+  // The money, by hand and by the same rule the invoice uses. UDA is on their
+  // own $85: (8 + 12 + 4 + 4) x 8500 = 238,000, plus the roll of wire at its
+  // lot price of $216.00. Schreiber has no rate of their own, so their 8 hours
+  // bill at the Settings rate of $85: 68,000, plus two LED fixtures at cost
+  // 4800 with the 15% markup.
+  const fixtures = B.itemPrice({ catalogId: null, name: 'LED fixture', unit: 'ea', qty: 2, costCents: 4800, priceCents: null }, 15).cents;
+  assert.strictEqual(week.unbilledCents, 238000 + 21600 + 68000 + fixtures);
+});
+
+test('thisWeek counts an entry whose From or To reaches into the week, and nothing billed', () => {
+  const w = world();
+  // The Aug 24 visit ran on into the Monday of the next week.
+  w.entries[0].toISO = '2026-08-31';
+  const week = I.thisWeek(w.d, '2026-09-02', S.mondayOf);
+  assert.strictEqual(week.inProgress, 6, 'the open tab reaches into this week');
+  assert.strictEqual(week.hours, 36 + 13);
+
+  // Ready is counted apart from in progress, because the button at the bottom
+  // of the screen only takes the ready ones.
+  w.entries[2].ready = true;
+  const marked = I.thisWeek(w.d, '2026-09-02', S.mondayOf);
+  assert.strictEqual(marked.ready, 1);
+  assert.strictEqual(marked.inProgress, 5);
+
+  // An entry already on an invoice is not unbilled and is not in the count.
+  w.entries[2].invoiceId = 'inv1';
+  const after = I.thisWeek(w.d, '2026-09-02', S.mondayOf);
+  assert.strictEqual(after.ready, 0);
+  assert.strictEqual(after.inProgress, 5);
+  assert.strictEqual(after.hours, 36 + 13 - 8);
+});
+
+test('thisWeek on a phone with nothing on it answers with zeros', () => {
+  const d = S.emptyData();
+  const w = I.thisWeek(d, '2026-09-09', S.mondayOf);
+  assert.deepStrictEqual({ ...w }, { hours: 0, inProgress: 0, ready: 0, unbilledCents: 0, from: '2026-09-07', to: '2026-09-13' });
+});
