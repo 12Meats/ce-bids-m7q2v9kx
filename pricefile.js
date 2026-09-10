@@ -173,6 +173,157 @@
     snap.forEach((b) => { b.p.lastListCents = b.lastListCents; b.p.supplierName = b.supplierName; b.p.sku = b.sku; b.p.priceCheckedISO = b.priceCheckedISO; });
   }
 
+  // -------------------------------------------------------------------------
+  // WHICH ROWS BECOME NEW PARTS
+  // -------------------------------------------------------------------------
+  // v3.2. Before this, a row that found no part of his was skipped and said
+  // out loud, and putting the part on the phone was three panels of typing per
+  // row. The file Adrian builds already knows what each row IS — the generic
+  // part of his it belongs under (forPart), the number printed on the shelf
+  // (catalogNo) — so the import can make the part itself and get the walk 320
+  // priced parts in one tap.
+  //
+  // Everything below is still pure and still decides nothing: plan() hands the
+  // screen a list of what it WOULD create, and the screen asks first.
+
+  // The drawer, read off the supplier's own title, for a row with no generic
+  // part of his to inherit one from. A keyword table and nothing cleverer:
+  // case-insensitive, FIRST HIT WINS, and everything it has no opinion about
+  // is gear, which is the drawer this app already keeps for exactly that.
+  //
+  // The order of the lanes is the whole rule. Wire is read first because a
+  // spool of THHN says nothing else about itself; conduit second, and it wants
+  // a LENGTH of pipe (the ten-foot stick in the title) rather than the word
+  // EMT, which is on every fitting that goes on it; fittings third, so the
+  // connector, the coupling and the strap land together whatever pipe they
+  // fit; lighting last, before gear takes the rest.
+  const CATEGORY_RULES = [
+    ['wire', /THHN|XHHW|cable|cord|wire|SOOW|Cat ?6|MC-/i],
+    ['conduit', /x 10'|x 10ft|EMT Conduit|Rigid Conduit|PVC .*Conduit(?!.*(connector|coupling|body|hub|strap|fitting))/i],
+    ['boxes', /connector|coupling|strap|clamp|\bbox\b|\bhub\b|conduit body|\bLB\b|fitting|bushing|enclosure|wireway|strut|grip|tape|lug/i],
+    ['lighting', /LED|lamp|light|fixture|exit|sensor|photocell|wall pack|high bay|strip/i],
+  ];
+  function guessCategory(name) {
+    const s = String(name == null ? '' : name);
+    for (const rule of CATEGORY_RULES) if (rule[1].test(s)) return rule[0];
+    return 'gear';
+  }
+
+  // WHAT THE TILE SAYS. His short name for the thing, then the number on the
+  // shelf: "60 A 3-pole breaker · B360". The middle dot is U+00B7, the same
+  // separator every sub-line in this app uses, and never a dash.
+  //
+  // A row with no forPart has no short name of his to lead with, so it leads
+  // with QED's own title and is a part standing on its own. Either way the
+  // catalog number half is only added when the row carries one.
+  function variantName(row) {
+    const base = typeof row.forPart === 'string' && row.forPart !== '' ? row.forPart : row.name;
+    const no = typeof row.catalogNo === 'string' && row.catalogNo !== '' ? row.catalogNo : '';
+    return no === '' ? base : base + ' \u00b7 ' + no;
+  }
+
+  // HOW A NEW PART IS COUNTED. THE GENERIC DECIDES, the same way it decides
+  // the drawer: an option under "1/2" EMT connector (setscrew)" is counted the
+  // way he counts connectors, and QED's "per hundred" on the price sheet is a
+  // way of quoting a bag of a hundred, not a way of counting them. Read off
+  // the row instead, the real file put 91 of its 323 rows on a different
+  // footing from the part they hang under, and the chooser would have asked
+  // him how many FEET of connector he wanted.
+  //
+  // Only a row with no generic behind it is read off QED's own unit: each
+  // stays each, and the foot, the hundred and the thousand are all feet.
+  // Anything else is read as a counted thing, which is what convertCents
+  // already assumes.
+  //
+  // A price that cannot cross into the generic's unit simply does not come:
+  // a 500 ft spool of #12 quoted per thousand feet says nothing about what one
+  // SPOOL costs, and the part is created with no bill-at price rather than a
+  // guess. Guessing is what the walk's cost keypad is for.
+  function unitFor(row, seedPart) {
+    if (seedPart && typeof seedPart.unit === 'string' && seedPart.unit !== '') return seedPart.unit;
+    if (row.per === 'ft' || row.per === 'c' || row.per === 'm') return 'ft';
+    return 'ea';
+  }
+
+  // plan(rows, catalog) -> everything match() returns, plus:
+  //   creatable: [{ row, name, unit, category, seedPart }]
+  //
+  // Two passes, and the second one is the new half. match() finds the rows
+  // that land on a part he already has, by number and by remembered supplier
+  // name. Every row it could not place is then asked a second question: what
+  // would this part be CALLED? A part of that name already in the catalog
+  // takes the row (which is what makes a second import of the same file add
+  // nothing, and what lets a file three weeks newer reprice what the first one
+  // created); a name nothing answers to becomes a creatable; a name an earlier
+  // row in this same file already claimed is a duplicate, exactly as two rows
+  // on one part number are.
+  //
+  // Nothing here touches the catalog. The screen shows the counts and asks.
+  function plan(rows, catalog) {
+    const parts = Array.isArray(catalog) ? catalog : [];
+    const out = match(rows, parts);
+    out.creatable = [];
+
+    // His OWN names this time, not the supplier's: match() deliberately never
+    // compares the two, and this lane is comparing a name the file asked for
+    // against a name the catalog already holds. First one wins, the way every
+    // other index in this file resolves a duplicate.
+    const byName = new Map();
+    parts.forEach((p) => {
+      const k = Catalog.normalizeName(typeof p.name === 'string' ? p.name : '');
+      if (k !== '' && !byName.has(k)) byName.set(k, p);
+    });
+    // A part one row already took cannot be taken by a second one.
+    const taken = new Set();
+    out.matched.forEach((x) => taken.add(x.part.id));
+    out.mismatched.forEach((x) => taken.add(x.part.id));
+    // And a name one row already claimed for a NEW part cannot be claimed
+    // twice: the second row would create a second part of the same name.
+    const claimed = new Set();
+
+    // A row that becomes a part is not a row he was told was skipped, so the
+    // list is emptied and only a row this pass still cannot place goes back on
+    // it. Today nothing does; the key stays because it is match()'s contract
+    // and the screen's sentence reads off it.
+    const unplaced = out.unmatched;
+    out.unmatched = [];
+    unplaced.forEach((row) => {
+      const name = variantName(row);
+      const key = Catalog.normalizeName(name);
+      const part = byName.get(key) || null;
+      if (part) {
+        if (taken.has(part.id)) { out.duplicates.push(row); return; }
+        taken.add(part.id);
+        const cents = convertCents(row, part.unit);
+        if (cents === null) {
+          out.mismatched.push({ part, row, reason: 'QED sells it per ' + row.per + ' and it is counted by the ' + part.unit });
+          return;
+        }
+        const old = Number.isInteger(part.lastListCents) ? part.lastListCents : null;
+        out.matched.push({
+          part, row, newListCents: cents, oldListCents: old,
+          changePct: old > 0 ? (cents - old) / old * 100 : null,
+        });
+        return;
+      }
+      if (claimed.has(key)) { out.duplicates.push(row); return; }
+      claimed.add(key);
+      const seedPart = (typeof row.forPart === 'string' && row.forPart !== '')
+        ? (byName.get(Catalog.normalizeName(row.forPart)) || null) : null;
+      out.creatable.push({
+        row,
+        name,
+        unit: unitFor(row, seedPart),
+        // The drawer the generic sits in, so a variant is filed beside the part
+        // it is a variant of. Only a row with nothing to inherit from is read
+        // off its own words.
+        category: seedPart && typeof seedPart.category === 'string' ? seedPart.category : guessCategory(row.name),
+        seedPart,
+      });
+    });
+    return out;
+  }
+
   function n(count, one, many) { return count + ' ' + (count === 1 ? one : many); }
 
   // Names a list of movers or mismatches, at most SHOWN of them, with the
@@ -223,5 +374,5 @@
     return parts.join(' ');
   }
 
-  return { parse, convertCents, match, apply, snapshot, restore, summaryText };
+  return { parse, convertCents, match, plan, guessCategory, apply, snapshot, restore, summaryText };
 });

@@ -282,3 +282,181 @@ test('parse: each of the three is capped at 120, the same ceiling as the name', 
   assert.strictEqual(ok.rows[0].catalogNo.length, 120);
   assert.strictEqual(ok.rows[0].brand.length, 120);
 });
+
+// ---------------------------------------------------------------------------
+// v3.2: which rows become NEW parts
+// ---------------------------------------------------------------------------
+// guessCategory reads the drawer off the supplier's own title, for the row
+// that has no generic part of his to inherit one from. It is a keyword table
+// and nothing cleverer: first hit wins, and everything it has no opinion
+// about is gear, which is the drawer this app keeps for exactly that.
+test('guessCategory reads the drawer off the words in the title', () => {
+  assert.strictEqual(P.guessCategory('THHN #8 Stranded BLACK Wire'), 'wire');
+  assert.strictEqual(P.guessCategory('12/2 MC cable'), 'wire');
+  assert.strictEqual(P.guessCategory('3/4" EMT Set Screw Connector'), 'boxes');
+  assert.strictEqual(P.guessCategory('1" x 10\' Steel EMT Conduit'), 'conduit');
+  assert.strictEqual(P.guessCategory('Lithonia LED Wall Pack'), 'lighting');
+  assert.strictEqual(P.guessCategory('Siemens B360 3-Pole 60 Amp Circuit Breaker'), 'gear');
+  assert.strictEqual(P.guessCategory('Something nobody has a word for'), 'gear');
+  assert.strictEqual(P.guessCategory(''), 'gear', 'a nameless row still lands in a real drawer');
+});
+
+// A fitting is not the pipe. The conduit lane wants a LENGTH of pipe, which is
+// what the ten-foot stick in the title says; a coupling with the word PVC in
+// it belongs in the fittings drawer with the rest of the fittings.
+test('guessCategory: a PVC fitting is a fitting, a stick of PVC is conduit', () => {
+  assert.strictEqual(P.guessCategory('1/2" PVC Schedule 40 Conduit Coupling'), 'boxes');
+  assert.strictEqual(P.guessCategory('1/2" x 10ft PVC Schedule 40 Conduit'), 'conduit');
+});
+
+// plan() is match() plus the one question v3.2 asks: of the rows that found no
+// part of his, which ones should BECOME parts, and what would each be called?
+// Nothing is written here and nothing in the catalog is touched — the screen
+// shows the count and asks first.
+test('plan: an unmatched row with forPart becomes a variant of that part', () => {
+  const d = catalogWith([
+    { name: '60 A 3-pole breaker', category: 'gear', unit: 'ea' },
+  ]);
+  const rows = [{ sku: '22590', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+    forPart: '60 A 3-pole breaker', catalogNo: 'B360' }];
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 1);
+  const c = m.creatable[0];
+  assert.strictEqual(c.row, rows[0]);
+  assert.strictEqual(c.name, '60 A 3-pole breaker · B360');
+  assert.strictEqual(c.unit, 'ea');
+  assert.strictEqual(c.category, 'gear');
+  assert.strictEqual(c.seedPart, d.catalog[0]);
+});
+
+test('plan: returns everything match returns, plus creatable', () => {
+  const d = catalogWith([{ name: 'GFCI', sku: '3302434', lastListCents: 3500 }]);
+  const rows = [{ sku: '3302434', name: 'Pass & Seymour GFCI', listCents: 3908, per: 'ea' }];
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(Object.keys(m).sort(),
+    ['creatable', 'duplicates', 'matched', 'mismatched', 'unmatched']);
+  assert.strictEqual(m.matched.length, 1);
+  assert.deepStrictEqual(m.creatable, []);
+});
+
+// QED sells conduit by the hundred feet and wire by the thousand; he counts
+// both by the foot. The unit a new part is created with comes off the row, not
+// off the part it hangs under, because the row is the thing being priced.
+test('plan: per c and per m give a part counted by the foot', () => {
+  const d = catalogWith([]);
+  const rows = [
+    { sku: '1', name: '1" x 10\' Steel EMT Conduit', listCents: 7679, per: 'c', forPart: '1" EMT', catalogNo: '101543' },
+    { sku: '2', name: 'THHN #8 Stranded Black', listCents: 40000, per: 'm', forPart: '#8 THHN', catalogNo: 'X8' },
+    { sku: '3', name: 'Southwire 12/2 MC cable', listCents: 9000, per: 'ft', forPart: '12/2 MC', catalogNo: 'M122' },
+  ];
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(m.creatable.map((c) => c.unit), ['ft', 'ft', 'ft']);
+});
+
+// No forPart is a row with no generic of his behind it: it is its own part,
+// named the way QED named it, filed by what the words in the title say.
+test('plan: a row with no forPart uses its own name and the guessed drawer', () => {
+  const d = catalogWith([]);
+  const rows = [{ sku: '9', name: 'Lithonia LED Wall Pack', listCents: 12900, per: 'ea' }];
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 1);
+  assert.strictEqual(m.creatable[0].name, 'Lithonia LED Wall Pack');
+  assert.strictEqual(m.creatable[0].category, 'lighting');
+  assert.strictEqual(m.creatable[0].seedPart, null);
+});
+
+// THE SECOND IMPORT. The first one created '60 A 3-pole breaker · B360'; the
+// second file carries the same row again. The name it would create is already
+// a part, so the row lands on that part and updates its price instead of
+// making a second one beside it. This is what makes a reimport add nothing.
+test('plan: a row whose name is already a part matches that part and creates nothing', () => {
+  const d = catalogWith([
+    { name: '60 A 3-pole breaker', category: 'gear', unit: 'ea' },
+    { name: '60 A 3-pole breaker · B360', category: 'gear', unit: 'ea', lastListCents: 9000 },
+  ]);
+  const rows = [{ sku: '22590', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+    forPart: '60 A 3-pole breaker', catalogNo: 'B360' }];
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(m.creatable, []);
+  assert.strictEqual(m.matched.length, 1);
+  assert.strictEqual(m.matched[0].part, d.catalog[1]);
+  assert.strictEqual(m.matched[0].newListCents, 9900);
+  assert.strictEqual(m.matched[0].oldListCents, 9000);
+  assert.deepStrictEqual(m.unmatched, [], 'a row that found a part is not also a row he was told was skipped');
+});
+
+test('plan: a sku already on a part still matches by number, as it always did', () => {
+  const d = catalogWith([{ name: 'GFCI', sku: '22590', unit: 'ea', lastListCents: 3500 }]);
+  const rows = [{ sku: '22590', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+    forPart: '60 A 3-pole breaker', catalogNo: 'B360' }];
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(m.creatable, []);
+  assert.strictEqual(m.matched.length, 1);
+  assert.strictEqual(m.matched[0].part.name, 'GFCI');
+});
+
+// Two rows that would be called the same thing are one part, not two: the
+// first one creates it and the second repeats it, which is the same answer
+// match() gives two rows that land on one part number.
+test('plan: two rows with one name give one creatable and one duplicate', () => {
+  const d = catalogWith([]);
+  const rows = [
+    { sku: '1', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+      forPart: '60 A 3-pole breaker', catalogNo: 'B360' },
+    { sku: '2', name: 'Siemens B360 60 Amp Breaker, again', listCents: 8800, per: 'ea',
+      forPart: '60 A 3-pole breaker', catalogNo: 'B360' },
+  ];
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 1);
+  assert.strictEqual(m.creatable[0].row, rows[0]);
+  assert.deepStrictEqual(m.duplicates, [rows[1]]);
+});
+
+// A forPart naming a part he does not have is still a part worth making: the
+// name is the one Adrian's file asked for, and it simply stands on its own
+// until he attaches it to something in Settings.
+test('plan: a forPart naming nothing still creates, standing on its own', () => {
+  const d = catalogWith([]);
+  const rows = [{ sku: '1', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+    forPart: '60 A 3-pole breaker', catalogNo: 'B360' }];
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 1);
+  assert.strictEqual(m.creatable[0].name, '60 A 3-pole breaker · B360');
+  assert.strictEqual(m.creatable[0].seedPart, null);
+  assert.strictEqual(m.creatable[0].category, 'gear');
+});
+
+// Nothing is written until he says so, and plan() is what he is shown. A part
+// changed here would be a price on his phone he never agreed to.
+test('plan: the catalog comes back exactly as it went in', () => {
+  const d = catalogWith([
+    { name: '60 A 3-pole breaker', category: 'gear', unit: 'ea' },
+    { name: 'GFCI', sku: '3302434', lastListCents: 3500 },
+  ]);
+  const before = JSON.stringify(d.catalog);
+  P.plan([
+    { sku: '3302434', name: 'Pass & Seymour GFCI', listCents: 3908, per: 'ea' },
+    { sku: '22590', name: 'Siemens B360 3-Pole 60 Amp Circuit Breaker', listCents: 9900, per: 'ea',
+      forPart: '60 A 3-pole breaker', catalogNo: 'B360' },
+  ], d.catalog);
+  assert.strictEqual(JSON.stringify(d.catalog), before);
+});
+
+// A variant is counted the way the part it hangs under is counted, whatever
+// QED quotes it by. QED sells fittings "per hundred" — a bag of a hundred —
+// and reading that as a length put a connector on the walk asking him how many
+// FEET he wanted. The generic decides, exactly the way it decides the drawer.
+test('plan: an option is counted the way its generic is counted', () => {
+  const d = catalogWith([
+    { name: '1/2" EMT connector (setscrew)', category: 'boxes', unit: 'ea' },
+    { name: '#12 THHN', category: 'wire', unit: 'roll' },
+  ]);
+  const rows = [
+    { sku: '1', name: '1/2" EMT Set Screw Connector', listCents: 6900, per: 'c',
+      forPart: '1/2" EMT connector (setscrew)', catalogNo: '230' },
+    { sku: '2', name: 'THHN #12 Stranded BLACK Wire (500ft Spool)', listCents: 18000, per: 'm',
+      forPart: '#12 THHN', catalogNo: 'B07827' },
+  ];
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(m.creatable.map((c) => c.unit), ['ea', 'roll']);
+});
