@@ -364,12 +364,12 @@
           address: '15708 E Chandler Heights Rd, Gilbert, AZ 85298', roc: 'AZ ROC #276507', tagline: 'Licensed, bonded, and insured',
           signName: 'Andy Cantu', plainStyle: false,
           // Where "Check price" goes. A template with {q} in it, because his
-          // supply house's own search is the one that knows HIS price; Google
-          // Shopping is only the answer for a phone that has not been told
-          // anything better. OPTIONAL on the document: an older backup has no
-          // such field and ui.js falls back to the same default, so nothing
-          // has to be migrated.
-          priceSearchUrl: 'https://www.google.com/search?tbm=shop&q={q}' },
+          // supply house's own search is the one that knows HIS price, and
+          // that supply house is QED. OPTIONAL on the document: an older
+          // backup has no such field, and one carrying the Google Shopping
+          // string this was seeded with before v3.1 is read as a default by
+          // ui.js, so nothing has to be migrated.
+          priceSearchUrl: 'https://www.qedelectric.com/product/productSearch?searchString={q}' },
         // hidden supports soft delete: Settings can hide a crew member/piece of
         // equipment/clause instead of splicing it, so old bids that reference
         // its id by reference stay valid forever.

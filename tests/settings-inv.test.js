@@ -65,7 +65,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'settings.js'), 'utf8
   { filename: 'settings.js' });
 
 const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
-  settingsCustomerValue, settingsAddressValue, settingsBackupPdfName } = sandbox;
+  settingsCustomerValue, settingsAddressValue, settingsBackupPdfName,
+  settingsPriceSearchIsDefault, settingsPriceSearchValue } = sandbox;
 
 // ---------------------------------------------------------------------------
 // THE NEXT INVOICE NUMBER
@@ -192,4 +193,33 @@ test('a proposal in the same pile is still named by the bid', () => {
   assert.ok(name.indexOf('UDA') !== -1, name);
   assert.ok(name.endsWith('-7.pdf'), name);
   assert.strictEqual(settingsBackupPdfName({ id: 'x', bidId: 'gone', at: 7 }), 'proposal-7.pdf');
+});
+
+// ---------------------------------------------------------------------------
+// WHERE CHECK PRICE GOES
+// ---------------------------------------------------------------------------
+// QED is his supply house, and its own search is the one page that knows what
+// he pays. Google Shopping was the answer for a phone that had not been told
+// anything better, and it is on every phone in the field right now, so it
+// reads as "nothing set" rather than as a link he chose. The row would
+// otherwise say "Your own link" about a string he never typed, and the way
+// back to the default would never appear.
+
+test('QED is the default, the old Google string counts as one, and his own link does not', () => {
+  const QED = 'https://www.qedelectric.com/product/productSearch?searchString={q}';
+  const GOOGLE = 'https://www.google.com/search?tbm=shop&q={q}';
+  assert.strictEqual(settingsPriceSearchIsDefault({ priceSearchUrl: QED }), true);
+  assert.strictEqual(settingsPriceSearchIsDefault({ priceSearchUrl: GOOGLE }), true, 'never chosen, so not his');
+  assert.strictEqual(settingsPriceSearchIsDefault({ priceSearchUrl: '  ' + GOOGLE + ' ' }), true);
+  assert.strictEqual(settingsPriceSearchIsDefault({ priceSearchUrl: '' }), true, 'cleared is unset');
+  assert.strictEqual(settingsPriceSearchIsDefault({}), true, 'a backup from before the field existed');
+  assert.strictEqual(settingsPriceSearchIsDefault(undefined), true);
+  assert.strictEqual(settingsPriceSearchIsDefault({ priceSearchUrl: 'https://x.example/?q={q}' }), false);
+});
+
+test('the row names the supply house rather than the URL', () => {
+  const QED = 'https://www.qedelectric.com/product/productSearch?searchString={q}';
+  assert.strictEqual(settingsPriceSearchValue({ priceSearchUrl: QED }), 'QED');
+  assert.strictEqual(settingsPriceSearchValue({}), 'QED');
+  assert.strictEqual(settingsPriceSearchValue({ priceSearchUrl: 'https://x.example/?q={q}' }), 'Your own link');
 });

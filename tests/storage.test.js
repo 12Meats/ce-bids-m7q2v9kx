@@ -177,7 +177,10 @@ test('newBid: takes the next number, increments the counter, creates the custome
 // over it.
 test('validateImport: the supply house search is optional, and a string when present', () => {
   const d = S.emptyData();
-  assert.strictEqual(d.settings.company.priceSearchUrl, 'https://www.google.com/search?tbm=shop&q={q}');
+  // v3.1: QED is his supply house and its search is the one that knows his
+  // price. A fresh phone is seeded with it; the Google string a phone in the
+  // field is holding is handled as a default by ui.js rather than migrated.
+  assert.strictEqual(d.settings.company.priceSearchUrl, 'https://www.qedelectric.com/product/productSearch?searchString={q}');
   assert.ok(S.validateImport(JSON.stringify(d)));
 
   const gone = JSON.parse(JSON.stringify(d));

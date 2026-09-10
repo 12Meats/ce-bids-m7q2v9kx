@@ -479,15 +479,15 @@ function buildSetCompany() {
   // document (an older backup has no such field), so the row falls back to the
   // default rather than showing a blank.
   const priceRow = settingRow(box, 'Supply house search',
-    settingsPriceSearchIsDefault(co) ? 'Google Shopping' : 'Your own link',
+    settingsPriceSearchValue(co),
     () => settingsEditPriceSearch(priceRow),
     'Where "Check price" on a part sends you. It opens in another tab.');
 
   // THE WAY BACK. A link pasted wrong, or a supply house he stopped using,
-  // used to leave him retyping Google's own search URL out of memory to undo
-  // it. Quiet, and only on the card when there is something to undo.
+  // used to leave him retyping a search URL out of memory to undo it. Quiet,
+  // and only on the card when there is something to undo.
   if (!settingsPriceSearchIsDefault(co)) {
-    box.appendChild(textButton('Use Google Shopping', 'link-btn link-btn-quiet', () => {
+    box.appendChild(textButton('Use QED', 'link-btn link-btn-quiet', () => {
       const prev = co.priceSearchUrl;
       co.priceSearchUrl = PRICE_SEARCH_DEFAULT;
       settingsSaveAndRender(() => {
@@ -499,9 +499,18 @@ function buildSetCompany() {
   return box;
 }
 
+// Both of ui.js's answers, because a phone that has been running since v3 is
+// holding the Google Shopping string it was seeded with and never chose: the
+// row would say "Your own link" about it, and the way back to QED would never
+// appear. priceSearchIsDefault owns that rule; this only asks it.
 function settingsPriceSearchIsDefault(co) {
-  const raw = co && typeof co.priceSearchUrl === 'string' ? co.priceSearchUrl.trim() : '';
-  return raw === '' || raw === PRICE_SEARCH_DEFAULT;
+  return priceSearchIsDefault(co && co.priceSearchUrl);
+}
+
+// The row names the supply house rather than the URL: he knows where he buys,
+// and the whole link on a 375px row is a line of characters he cannot read.
+function settingsPriceSearchValue(co) {
+  return settingsPriceSearchIsDefault(co) ? 'QED' : 'Your own link';
 }
 
 // A TEMPLATE THAT IS NOT A LINK IS NOT SAVED.
@@ -1546,10 +1555,23 @@ function buildSetCatalogTools(hiddenCount) {
     (before) => { state.data.catalog = before; },
     () => settingsOfferNearDuplicates('parts', state.data.catalog, Store.standardCatalogNames()));
 
-  // The second native input in the app, for the same reason as the backup
-  // picker: there is no other way to hand the phone a file. No accept filter,
-  // for the same reason too (iOS Files calls a mailed JSON public.data).
-  // PriceFile.parse is the gate.
+  // Importing the price file used to live here, under the parts it changes.
+  // It moved to Settings > Backup in v3.1: it is a FILE Adrian sends him, and
+  // the one place on this phone he already knows to go for a file somebody
+  // sent him is the card that takes a backup.
+  settingHiddenToggle(box, 'catalog', hiddenCount);
+  box.appendChild(caption('New parts get added from the walk too. Hide takes one off the walk. '
+    + 'Delete is only offered when no bid uses it. "Add the standard parts" adds the ones you are '
+    + 'missing and leaves everything you have alone.'));
+  return box;
+}
+
+// The price file's own button, built here beside the code that reads the file
+// and appended by the Backup card. The second native input in the app, for the
+// same reason as the backup picker: there is no other way to hand the phone a
+// file. No accept filter, for the same reason too (iOS Files calls a mailed
+// JSON public.data). PriceFile.parse is the gate.
+function buildSetImportPrices(box) {
   const picker = document.createElement('input');
   picker.type = 'file';
   picker.id = 'priceFile';
@@ -1559,14 +1581,9 @@ function buildSetCatalogTools(hiddenCount) {
     if (f) settingsImportPrices(f);
   });
   box.appendChild(picker);
-  box.appendChild(textButton('Import prices', 'link-btn', () => picker.click()));
-
-  settingHiddenToggle(box, 'catalog', hiddenCount);
-  box.appendChild(caption('New parts get added from the walk too. Hide takes one off the walk. '
-    + 'Delete is only offered when no bid uses it. "Add the standard parts" adds the ones you are '
-    + 'missing and leaves everything you have alone. "Import prices" reads the price file Adrian makes '
-    + 'from QED and updates what each part bills at. Nothing on a bid you already wrote moves.'));
-  return box;
+  box.appendChild(textButton('Import parts and prices', 'btn btn-block mt-3', () => picker.click()));
+  box.appendChild(caption('Reads the price file Adrian makes and updates the parts it finds. '
+    + 'It says what it will change before it does.'));
 }
 
 // IMPORT PRICES. Read the file, match it to his parts, say what would change,
@@ -2922,12 +2939,20 @@ function buildSetBackup() {
   // like. The confirm it opens is what asks about the replacing.
   box.appendChild(textButton('Restore from backup', 'btn btn-block mt-3', () => picker.click()));
 
+  // --- The price file
+  // Under Restore because it is the same errand: a file Adrian sent him, off
+  // the phone and into the app. The plan called the row above it "Import
+  // backup"; the button has always said Restore from backup, and it keeps its
+  // own name.
+  buildSetImportPrices(box);
+
   // One caption on this card is the date at the top of it - the answer to the
   // only question he opens it with. The rest of the explaining folds.
   box.appendChild(whatsThis([
     'Send a backup: everything on this phone goes to whoever is named above. Do it every couple of weeks, or after a big bid.',
     'Send it to: whoever keeps the copy that is not on this phone.',
     'Restore from backup: pick a backup file. Everything on this phone is replaced by what is in it.',
+    'Import parts and prices: pick the price file Adrian makes. It updates what your parts bill at and leaves every bid you have written alone.',
   ], 'What this card does'));
 
   return box;

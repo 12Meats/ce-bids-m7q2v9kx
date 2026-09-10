@@ -23,7 +23,7 @@ let bidLostSheetOpen = false;
 // the answer to a tap he just made, never when he opens a lost bid later.
 let bidRevealUndo = false;
 let bidDraft = null;         // the not-yet-created bid, while state.bidId is null
-let bidShakeField = null;    // 'customer' | 'date' — shaken once after the next render
+let bidShakeField = null;    // 'customer' — shaken once after the next render
 let bidBillOpen = false;     // the Bill this job strip is hanging under its row
 
 // ---------------------------------------------------------------------------
@@ -217,35 +217,21 @@ function renderBidHeader(bid, host) {
   }
 
   // --- Date ---
+  // The calendar, like every other date in the app since v3.1. The keypad is
+  // still one tap under the grid on "Type it", and the four digits it takes
+  // are parsed by the same dates.js rule as before: a bare MMDD means the
+  // nearest such day, either side of today. Cancel is "never mind"; nothing
+  // comes back and nothing is written.
   const dateRow = rowKeypad('Date', fmtDate(cur.dateISO), () => {
-    promptNumber(null, {
-      label: 'Date: type 915 for Sep 15, or 91526',
-      // Six digits is the whole vocabulary; a seventh is a fat-fingered tap.
-      maxChars: 6,
-      // The panel would otherwise say "was not set" for a date that is always
-      // set; show the day it currently reads, in the form he reads it in.
-      wasText: 'was ' + fmtDate(cur.dateISO),
-      done: (v) => {
-        // Clear means "never mind", the same as Cancel — not a rejected date.
-        if (v === null) return;
-        // Which year "915" belongs to is decided in dates.js and tested
-        // there: a bare MMDD means the nearest such day, either side of today.
-        const iso = Dates.parseTypedDate(v, Store.todayISO());
-        if (!iso) {
-          bidShakeField = 'date';
-          showBanner('That date needs 4 digits (MMDD) or 6 (MMDDYY)');
-          render();
-          return;
-        }
-        if (isNew) bidDraft.dateISO = iso;
-        else {
-          const prev = bid.dateISO;
-          bid.dateISO = iso;
-          persistOr(() => { bid.dateISO = prev; });
-        }
-        render();
-      },
-    });
+    promptDate(cur.dateISO, 'Date', (iso) => {
+      if (isNew) bidDraft.dateISO = iso;
+      else {
+        const prev = bid.dateISO;
+        bid.dateISO = iso;
+        persistOr(() => { bid.dateISO = prev; });
+      }
+      render();
+    }, { wasText: 'was ' + fmtDate(cur.dateISO) });
   });
   box.appendChild(dateRow);
 
@@ -300,10 +286,11 @@ function renderBidHeader(bid, host) {
   }
   host.appendChild(actions);
 
-  // A rejected date or a missing customer name is answered where the mistake
-  // is, not only in a banner at the top of the screen.
+  // A missing customer name is answered where the mistake is, not only in a
+  // banner at the top of the screen. The date used to shake here too; since
+  // v3.1 it is picked off a calendar, and the one way to get it wrong is a
+  // number typed into the keypad behind "Type it", which answers there.
   if (bidShakeField === 'customer') shake(customerRow);
-  else if (bidShakeField === 'date') shake(dateRow);
   bidShakeField = null;
 }
 

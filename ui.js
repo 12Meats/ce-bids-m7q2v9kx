@@ -1056,18 +1056,33 @@ function deferredBanner() {
 // whatever search he already uses, opened in another tab so the keypad he was
 // typing into is still there when he comes back.
 //
-// The template is a string with {q} in it. Google Shopping is the default
-// because it needs no account, and Settings > Company can hold his supply
-// house's search link instead. A template with no {q} in it still works — the
-// name is appended — because a link pasted off his phone's address bar often
-// has the search on the end of it already.
+// The template is a string with {q} in it. QED is the default because QED is
+// where he buys: their own search is the one page in the world that knows what
+// he pays, and Settings > Company can hold a different supply house instead. A
+// template with no {q} in it still works — the name is appended — because a
+// link pasted off his phone's address bar often has the search on the end of
+// it already.
 
-const PRICE_SEARCH_DEFAULT = 'https://www.google.com/search?tbm=shop&q={q}';
+const PRICE_SEARCH_DEFAULT = 'https://www.qedelectric.com/product/productSearch?searchString={q}';
+
+// What the app seeded before it had been told where his prices come from, and
+// what every phone in the field is holding right now. He never chose it, and
+// it never knew his price, so it is read as "nothing set" rather than as a
+// link of his own — otherwise the QED default would never reach a phone that
+// has been running since v3 and the way back to it would never appear in
+// Settings. Nothing is migrated: the string on the file is left where it is
+// and answered here, which is the same rule every other optional key follows.
+const PRICE_SEARCH_LEGACY = 'https://www.google.com/search?tbm=shop&q={q}';
+
+function priceSearchIsDefault(raw) {
+  const t = typeof raw === 'string' ? raw.trim() : '';
+  return t === '' || t === PRICE_SEARCH_DEFAULT || t === PRICE_SEARCH_LEGACY;
+}
 
 function priceSearchUrl(settings, name) {
   const co = settings && settings.company;
   const raw = co && typeof co.priceSearchUrl === 'string' ? co.priceSearchUrl.trim() : '';
-  const template = raw || PRICE_SEARCH_DEFAULT;
+  const template = priceSearchIsDefault(raw) ? PRICE_SEARCH_DEFAULT : raw;
   const q = encodeURIComponent(String(name == null ? '' : name).trim());
   return template.indexOf('{q}') === -1 ? template + q : template.split('{q}').join(q);
 }

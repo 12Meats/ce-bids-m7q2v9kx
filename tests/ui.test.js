@@ -653,15 +653,31 @@ test('areaNoteLine cuts a long first line to 60 characters, ellipsis included', 
 // owner can type and a part name off his own catalog, and both halves are
 // hostile: the name has spaces, quotes and slashes in it ('3/4" EMT'), and the
 // template is whatever he pasted off his phone.
-const PRICE_DEFAULT = 'https://www.google.com/search?tbm=shop&q={q}';
+const PRICE_DEFAULT = 'https://www.qedelectric.com/product/productSearch?searchString={q}';
+// The string every phone in the field is holding right now. It is not his
+// supply house and it never knew his price, so it is treated as "nothing set"
+// rather than as a link he chose.
+const PRICE_LEGACY = 'https://www.google.com/search?tbm=shop&q={q}';
 
-test('priceSearchUrl falls back to Google Shopping when nothing is set', () => {
+test('priceSearchUrl falls back to QED when nothing is set', () => {
   const expected = PRICE_DEFAULT.replace('{q}', encodeURIComponent('3/4" EMT'));
   assert.equal(priceSearchUrl(undefined, '3/4" EMT'), expected);
   assert.equal(priceSearchUrl({}, '3/4" EMT'), expected);
   assert.equal(priceSearchUrl({ company: {} }, '3/4" EMT'), expected);
   // A blank one he cleared is the same answer as never having set one.
   assert.equal(priceSearchUrl({ company: { priceSearchUrl: '   ' } }, '3/4" EMT'), expected);
+});
+
+test('the Google Shopping string every phone is holding reads as the default too', () => {
+  const expected = PRICE_DEFAULT.replace('{q}', encodeURIComponent('3/4" EMT'));
+  // He never chose it: it is what the app seeded before it knew where his
+  // prices came from, and a phone restored from a v3 backup carries it. Left
+  // alone it would send him to a page that has never known his price.
+  assert.equal(priceSearchUrl({ company: { priceSearchUrl: PRICE_LEGACY } }, '3/4" EMT'), expected);
+  assert.equal(priceSearchUrl({ company: { priceSearchUrl: '  ' + PRICE_LEGACY + '  ' } }, '3/4" EMT'), expected);
+  // A link of his OWN is still his: only that one string is treated this way.
+  assert.equal(priceSearchUrl({ company: { priceSearchUrl: 'https://x.example/?q={q}' } }, 'lug'),
+    'https://x.example/?q=lug');
 });
 
 test('priceSearchUrl puts the encoded name wherever {q} is', () => {
