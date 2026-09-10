@@ -2,7 +2,7 @@
 
 // picker.js — the shared pieces the lists of counted lines are built from:
 // the add-a-part picker, the strip a line opens, the rental editor, the row
-// and the check in front of it, and the one answer two Invoices screens share.
+// and the check in front of it, and the words two Invoices screens both print.
 //
 // Loaded after ui.js and before app.js and screens/*.js. It was the last third
 // of ui.js until the truck log turned every one of these into a thing two
@@ -13,8 +13,8 @@
 // hands back elements or booleans, and a screen file never defines a helper
 // another screen calls.
 //
-// Sections: THE ROW · THE CHECK · THE PILE SELECTION · THE DRAFTS UNDER REVIEW ·
-// AN INVOICE IN WORDS · BILLING A WON JOB · THE LINE STRIP · THE RENTAL EDITOR ·
+// Sections: THE ROW · THE CHECK · THE DRAFTS UNDER REVIEW · AN INVOICE IN
+// WORDS · BILLING A WON JOB · THE LINE STRIP · THE RENTAL EDITOR ·
 // THE EQUIPMENT ADDER · THE PAPER · THE NOTE PHRASES · THE ITEM PICKER
 
 // ---------------------------------------------------------------------------
@@ -102,37 +102,17 @@ function checkRow(label, sub, on, onToggle, onOpen) {
 }
 
 // ---------------------------------------------------------------------------
-// THE PILE SELECTION
-// ---------------------------------------------------------------------------
-// Which log entries are checked to be billed. It is one answer read by two
-// screens — the Invoices home, where he checks and unchecks, and the Bill
-// these review, which bills exactly what was checked — and a screen may never
-// call another screen's file. So it lives here, with the other things both of
-// them use, rather than as a module variable on whichever of the two happened
-// to be written first.
-//
-// It remembers what he turned OFF, never what is on. An entry logged after the
-// last time he touched this list is ON, because he has never said otherwise:
-// a set of the checked ids would have been written before that entry existed,
-// and the visit he logged this morning would come back unchecked and be left
-// out of Friday's billing without anything on the glass saying so.
-const pileSelection = (function () {
-  let off = new Set();
-  return {
-    isOn(id) { return !off.has(id); },
-    setOn(id, on) { if (on) off.delete(id); else off.add(id); },
-    clear() { off = new Set(); },
-  };
-})();
-
-// ---------------------------------------------------------------------------
 // THE DRAFTS UNDER REVIEW
 // ---------------------------------------------------------------------------
-// The invoices the Bill these review has built and not numbered yet. The same
-// rule as pileSelection, and for the same reason: the review builds them, the
-// invoice screen opens one of them to be edited before anything is numbered,
-// and neither screen may call the other's file. Nothing here is on disk — a
-// draft becomes real on the review's own Number and send.
+// The invoices the Bill these review has built and not numbered yet. It lives
+// here for the reason everything in this file does: the review builds them,
+// the invoice screen opens one of them to be edited before anything is
+// numbered, and neither screen may call the other's file. Nothing here is on
+// disk — a draft becomes real on the review own Number and send.
+//
+// It is the LAST thing in the app that is held in memory rather than on the
+// record. The pile selection used to sit beside it, remembering which cards
+// were checked; v3.1 put that on the entry itself as ready, and the set went.
 const reviewDrafts = (function () {
   let drafts = [];
   return {
@@ -152,6 +132,17 @@ const reviewDrafts = (function () {
 // Two screens print it — the list on the Invoices home and the invoice's own
 // summary card — so it is written once, here, rather than once per screen.
 // InvMath decides what the status IS; this only chooses the words.
+// SENT MEANS HANDED TO THE OFFICE. The share sheet puts the PDF in front of
+// Adrian's mother, who mails it; nothing this app does puts a piece of paper in
+// a customer's hand. "Sent" on its own read as "the customer has it", which is
+// the app telling him a job is further along than it is.
+//
+// The mark beside it is the same tick the check on a card wears, because it is
+// the same kind of fact: a thing he did, ticked off. A plain character rather
+// than an emoji, which renders at a different size on every phone and reads as
+// decoration.
+const SENT_GLYPH = '✓';
+
 function invoiceStatusPill(inv) {
   const st = InvMath.statusOf(inv);
   if (st === 'paid') return 'Paid';
@@ -159,7 +150,7 @@ function invoiceStatusPill(inv) {
   const paid = InvMath.paidCents(inv);
   return paid > 0
     ? 'Paid ' + moneyText(paid) + ' of ' + moneyText(InvMath.totals(inv).total)
-    : 'Sent';
+    : 'Sent to office';
 }
 
 // WHAT AN ENTRY IS, in the two words the pile row and the entry itself both

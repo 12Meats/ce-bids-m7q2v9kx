@@ -770,6 +770,15 @@
       padding-right: var(--space-1);
     }
     .inv-stale .walk-row-sub { color: var(--color-warn-text); }
+    /* An invoice in progress is a whole card now, so the amber has to land on
+       one without eating the padding the card already has. Same warn colours,
+       the card's own shape. */
+    .card.inv-stale {
+      background: var(--color-warn-bg);
+      border-color: var(--color-warn-border);
+      border-radius: 12px;
+      padding: var(--space-3);
+    }
 
     /* ---------- The log entry ---------- */
     /* "not on this one" is an answer, not a value: muted, so a list of four men

@@ -4,10 +4,10 @@
 // This is the second of the three moments the Invoices tab is built around,
 // and it is the one that costs money to get wrong: an invoice number is spent
 // the moment it is taken and a numbered invoice is never deleted. So nothing
-// on this screen is on disk. The groups he checked on the home come in, one
-// draft invoice is built off each of them, and he can combine two weeks of the
-// same job into the one invoice he used to write by hand, split a week back
-// into its days, or open a draft and change what it bills. Only the pinned
+// on this screen is on disk. The entries he marked Ready come in, one draft
+// invoice is built off each group of them, and he can combine two of the same
+// job into the one invoice he used to write by hand, split one back into its
+// days, or open a draft and change what it bills. Only the pinned
 // button writes, and it writes every invoice in ONE save.
 //
 // Sections: STATE · THE SENTENCES · THE CARDS · COMBINE AND SPLIT · SEND
@@ -22,16 +22,11 @@ let reviewGroups = null;
 
 function reviewData() { return state.data; }
 
-// The pile as he left it on the home: pileSelection remembers what he turned
-// OFF, so everything else is in. It lives in picker.js because both screens
-// read it and a screen may never call another screen's file.
-function reviewExclude() {
-  const exclude = new Set();
-  (reviewData().logs || []).forEach((e) => {
-    if (!e.invoiceId && !pileSelection.isOn(e.id)) exclude.add(e.id);
-  });
-  return exclude;
-}
+// WHAT THIS SCREEN IS ALLOWED TO BILL: the entries he has marked Ready, and
+// nothing else. There is no screen-local selection any more. The check on the
+// home card and the switch on the entry are one field on the entry itself, so
+// both screens read the same answer off the file rather than sharing a set
+// that only exists while the app is running.
 
 // The drafts, one per group, in the same order. Rebuilt whenever the groups
 // change — a Combine or a Split makes different invoices out of the same
@@ -70,10 +65,11 @@ function reviewEntryStamp(e) {
   const lines = (e.items || []).concat(e.rentals || [], e.equipment || []).map(reviewLineStamp).join(',');
   return [e.id, e.customerId, e.projectId, e.dateISO, crew, lines].join('|');
 }
+function reviewReady() {
+  return (reviewData().logs || []).filter((e) => !e.invoiceId && InvMath.isReady(e));
+}
 function reviewPileKey() {
-  return (reviewData().logs || [])
-    .filter((e) => !e.invoiceId && pileSelection.isOn(e.id))
-    .map(reviewEntryStamp).sort().join('\n');
+  return reviewReady().map(reviewEntryStamp).sort().join('\n');
 }
 
 // The key the drafts on hand were built from. Combine and Split do not touch
@@ -84,8 +80,7 @@ let reviewBuiltKey = null;
 function enterBillreview() {
   const key = reviewPileKey();
   if (reviewGroups && reviewBuiltKey === key) return;
-  reviewGroups = InvMath.group(reviewData().logs || [], reviewData(), Store.mondayOf,
-    { exclude: reviewExclude() });
+  reviewGroups = InvMath.group(reviewReady(), reviewData(), Store.mondayOf);
   reviewBuildDrafts();
   reviewBuiltKey = key;
 }
@@ -263,10 +258,8 @@ function billreviewSend() {
     made.forEach((inv) => { inv.id = null; inv.number = null; inv.dateISO = null; });
   })) { render(); return; }
 
-  // The pile is empty now: every entry that was in it is locked to an invoice,
-  // and what he turned off is a decision about entries that are still waiting.
-  pileSelection.clear();
-  // And so is the review. These drafts are invoices on the file now; left
+  // Every entry that was on this review is locked to an invoice now, which is
+  // what takes it off the home. And the review is put away with them. These drafts are invoices on the file now; left
   // standing they would be a second, editable copy of a numbered invoice, and
   // the next Bill these would open holding last Friday's batch.
   reviewGroups = null;
@@ -295,7 +288,7 @@ function renderBillreview() {
   const n = drafts.length;
   host.appendChild(screenHead(n + (n === 1 ? ' invoice' : ' invoices')));
   if (!n) {
-    host.appendChild(emptyNote('Nothing is checked. Go back and tick what you want billed.'));
+    host.appendChild(emptyNote('Nothing is ready. Go back and check the ones you have finished.'));
     return;
   }
   host.appendChild(caption('Nothing is numbered yet. Check each one, then send.'));

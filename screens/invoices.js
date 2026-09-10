@@ -1,13 +1,16 @@
 'use strict';
-// screens/invoices.js — the Invoices tab home: who owes you, what is ready to
-// bill, the invoices themselves, and the way in (+ Log hours).
+// screens/invoices.js — the Invoices tab home: how the week is going, who owes
+// you, the invoices in progress, the invoices themselves, and the way in
+// (+ Start invoice).
 //
-// The pile is grouped BEFORE he taps Bill these (customer + project + week),
-// so the rows he checks are the invoices he will get. Everything counted here
-// is InvMath's; this file draws. The two sentences the rows are written in
-// (pileRowText, invoiceListText) are pure and pinned in tests/invoices.test.js,
-// because the words on this screen are the whole point of it: they are what
-// tells him a job has been sitting unbilled for two weeks.
+// NOTHING GROUPS ITSELF HERE any more. An entry is an invoice in progress and
+// each one gets its own card; two cards for one job only ever exist because he
+// tapped Start invoice twice, and the only thing that decides what Friday bills
+// is the check on the card, which is the entry's own Ready flag and the same
+// state the entry screen's switch shows. Everything counted here is InvMath's;
+// this file draws. The sentences the rows are written in (thisWeekText,
+// pileRowText, invoiceListText) are pure and pinned in tests/invoices.test.js,
+// because the words on this screen are the whole point of it.
 
 let invoicesShowAll = false;
 const INVOICES_FOLD = 10;
@@ -15,52 +18,65 @@ const INVOICES_FOLD = 10;
 function invData() { return state.data; }
 function invToday() { return Store.todayISO(); }
 
-// Every group in the pile, checked or not: this screen draws them all and the
-// tick on each row says which ones Friday will bill. pileSelection lives in
-// picker.js because the Bill these review reads the same answer and a screen
-// may not call another screen's file. It remembers what he turned OFF, so an
-// entry logged after the last time he touched this list is on by default.
-function invAllGroups() { return InvMath.group(invData().logs || [], invData(), Store.mondayOf); }
-// A group is checked when ANY entry in it is. The store holds entry ids, not
-// groups, because Combine and Split on the review change what a group is — and
-// the review bills every entry that is on, one at a time. Read with every(),
-// a group with one entry off drew an unchecked row on the home and was still
-// billed by the review, which is the one disagreement these two screens may
-// never have. Tapping the check sets every entry in the group, so the two
-// readings only come apart on a row nobody has touched since the pile changed.
-function invGroupOn(g) { return g.entries.some((e) => pileSelection.isOn(e.id)); }
+// One group per unbilled entry, oldest first. The check on each card is
+// InvMath.isReady of the one entry under it, so the card and the entry screen
+// read the same field rather than two ideas of what is going to be billed.
+function invAllGroups() { return InvMath.groupEach(invData().logs || [], invData()); }
+function invGroupOn(g) { return InvMath.isReady(g.entries[0]); }
+// What Bill these will take. Asked of the FILE rather than of the list on the
+// glass, so the button and the review can never disagree.
+function invReadyCount() {
+  return (invData().logs || []).filter((e) => !e.invoiceId && InvMath.isReady(e)).length;
+}
 function invCustomerName(id) {
   const c = (invData().customers || []).find((x) => x.id === id);
   return c ? c.name : 'Customer';
 }
 
-// What the pile says when there is nothing in it. Two different pieces of
-// news wearing one sentence: a phone with no visits on it yet is waiting to be
+// THE WEEK, IN ONE SENTENCE. Monday to Sunday, unbilled only, and the money is
+// what those invoices would come to if he sent them today. It is the only
+// thing on the screen that answers "how did this week go" without opening
+// anything, so it is a line of text rather than a card: a card would make it
+// the subject of the screen, and the subject of the screen is who owes him.
+//
+// A week with nothing in it says so. Four zeros in a row is a sentence he has
+// to read to find out it says nothing.
+function thisWeekText(w) {
+  if (!w || (w.inProgress + w.ready) === 0) return 'This week: nothing logged yet.';
+  const hrs = numText(w.hours) + (w.hours === 1 ? ' hour' : ' hours');
+  return 'This week: ' + hrs
+    + ', ' + w.inProgress + ' in progress'
+    + ', ' + w.ready + ' ready'
+    + ', ' + moneyText(w.unbilledCents) + ' unbilled.';
+}
+
+// What the list says when there is nothing in it. Two different pieces of news
+// wearing one sentence: a phone with no visits on it yet is waiting to be
 // used, and a phone whose every visit is already on an invoice is finished for
 // the week. "Nothing logged yet" said to a man who logged five visits and
 // billed them all on Friday is the app telling him his work is not there.
 function pileEmptyText(data) {
   return ((data.logs || []).length > 0)
     ? 'Nothing waiting to bill.'
-    : 'Nothing logged yet. Tap + Log hours after a visit.';
+    : 'Nothing logged yet. Tap + Start invoice after a visit.';
 }
 
-// The second line of a pile row: what it covers, how old it is, and how much
-// is in it. "Aug 24 to Aug 28 · 15 days · 2 entries · 21 hrs · $216.00 parts".
-// The age is the OLDEST entry's, because that is the one that has been waiting.
-// A single entry does not say "1 entries", and a visit with no parts on it does
-// not say "$0.00 parts".
+// The second line of a card: what it covers, where it stands, and the hours on
+// it. "Aug 24 to Aug 28 · Ready · 13 hrs · 11 days".
+//
+// The age is only on the ones he has finished with, and it counts from the To.
+// An entry he is still working is not late however long it has been open — the
+// job is not done — and a number of days on it would be the app nagging him
+// about work that is still going on.
 function pileRowText(g, today) {
-  // Both sums are InvMath's: a screen prints what comes back and counts
-  // nothing of its own.
+  const e = g.entries[0];
   const hours = InvMath.pileHours(g);
-  const parts = InvMath.pileParts(g);
   const span = g.from === g.to ? dayText(g.from) : dayText(g.from) + ' to ' + dayText(g.to);
+  const age = InvMath.pileAge(e, today);
   return span
-    + ' · ' + daysText(InvMath.ageDays(g.from, today))
-    + (g.entries.length > 1 ? ' · ' + g.entries.length + ' entries' : '')
+    + ' · ' + entryStatusPill(e)
     + ' · ' + numText(hours) + ' hrs'
-    + (parts > 0 ? ' · ' + moneyText(parts) + ' parts' : '');
+    + (age === null ? '' : ' · ' + daysText(age));
 }
 
 // One line of the invoice list, in four pieces so the row can put each one
@@ -77,13 +93,19 @@ function invoiceListText(inv, today) {
   // picker.js's, because the invoice's own summary card prints the same words
   // and the two must never disagree about what an invoice is.
   const pill = invoiceStatusPill(inv);
+  // The tick is the same mark the check on a card wears, and it rides with the
+  // words "Sent to office" because that is the one status on this list that is
+  // a thing he DID rather than a thing the invoice is. A part-paid invoice was
+  // also sent, but the news on that row is the money, and a tick beside
+  // "Paid $500.00 of $2,001.00" reads as a claim about the payment.
+  const mark = st === 'sent' && InvMath.paidCents(inv) === 0 ? ' ' + SENT_GLYPH : '';
   const when = st === 'sent' ? fmtDateShort(inv.sentAt) + ' · ' + daysText(InvMath.ageDays(inv.sentAt, today))
     : st === 'paid' ? (last ? fmtDateShort(last.dateISO) : '')
       : '';
   return {
     name: inv.number === null ? 'Draft' : '#' + inv.number,
     value: moneyText(t.total),
-    sub: [pill, when].filter(Boolean).join(' · '),
+    sub: [pill + mark, when].filter(Boolean).join(' · '),
     // Sent and old. Amber, like everything else in this app that is late.
     stale: st === 'sent' && !!inv.sentAt && InvMath.isStale(inv.sentAt, today),
   };
@@ -107,53 +129,60 @@ function buildWhoOwes(host) {
   host.appendChild(box);
 }
 
-// One row per group: the check, "UDA · UF Project", and the sentence above.
-// Age of 14 days or more takes the amber tint, never red.
+const BILL_THESE_WAITING = 'Check the ones that are ready first.';
+
+// One CARD per invoice in progress: the check, "UDA · UF Project", and the
+// sentence above. They were rows in a single card while a card was a week of
+// one job; an entry is the invoice now, and an invoice is a card.
+//
+// Ready and waiting fourteen days takes the amber, never red.
 function buildPile(host) {
-  // ONE list, read twice: the count in the heading and the tick on each row are
-  // the same question asked of the same groups. They were two different
-  // groupings once — the heading counted the groups the review would build and
-  // the rows drew the groups on file — and a row could say unchecked while the
-  // heading counted it.
   const all = invAllGroups();
-  const box = card();
-  const head = document.createElement('h3');
-  head.className = 'card-title';
-  const checkedCount = all.filter(invGroupOn).length;
-  head.textContent = 'Ready to bill' + (all.length ? '  ·  ' + checkedCount + ' checked' : '');
-  box.appendChild(head);
+  host.appendChild(groupHeading('Invoices in progress'));
   if (!all.length) {
+    const box = card();
     box.appendChild(emptyNote(pileEmptyText(invData())));
     host.appendChild(box);
     return;
   }
   all.forEach((g) => {
+    const box = card();
     const on = invGroupOn(g);
-    const line = checkRow(invCustomerName(g.customerId) + ' · ' + g.title, pileRowText(g, invToday()), on,
-      () => { invoicesToggle(g, on); render(); },
-      () => show('log', g.entries[0].id));
-    if (InvMath.isStale(g.from, invToday())) line.classList.add('inv-stale');
-    box.appendChild(line);
+    box.appendChild(checkRow(invCustomerName(g.customerId) + ' · ' + g.title,
+      pileRowText(g, invToday()), on,
+      () => invoicesToggle(g),
+      () => show('log', g.entries[0].id)));
+    const age = InvMath.pileAge(g.entries[0], invToday());
+    if (age !== null && age >= InvMath.AMBER_AFTER_DAYS) box.classList.add('inv-stale');
+    host.appendChild(box);
   });
-  const bill = textButton('Bill these', 'btn btn-block', () => {
-    // Nothing checked is nothing to bill. Belt to the disabled attribute's
+
+  // Air, and then the button. It bills every Ready entry on the file, so it is
+  // not part of any one card and does not sit inside one.
+  const ready = invReadyCount();
+  const bill = textButton('Bill these', 'btn btn-block mt-3', () => {
+    // Nothing ready is nothing to bill. Belt to the disabled attribute's
     // brace: the button cannot be pressed, and if it ever could it does
     // nothing rather than opening a review of no invoices.
-    if (!checkedCount) return;
+    if (!ready) return;
     show('billreview');
   });
-  // The real attribute, which is what .btn:disabled and every assistive
-  // technology already read, rather than a class of this screen's own.
-  bill.disabled = !checkedCount;
-  box.appendChild(bill);
-  host.appendChild(box);
+  bill.disabled = !ready;
+  host.appendChild(bill);
+  // The caption says what it is waiting for. A disabled button with nothing
+  // under it is a button that looks broken.
+  if (!ready) host.appendChild(caption(BILL_THESE_WAITING));
 }
 
-// Turning a row off is turning its entries off, one at a time: the store holds
-// entry ids, not groups, because Combine and Split on the review change what a
-// group is and the entries are the things that do not move.
-function invoicesToggle(g, wasOn) {
-  g.entries.forEach((e) => pileSelection.setOn(e.id, !wasOn));
+// The check IS the Ready flag on the entry, written straight to disk with an
+// exact restore. There is no second, screen-local idea of what is going to be
+// billed: the switch at the truck and this check are one field.
+function invoicesToggle(g) {
+  const e = g.entries[0];
+  const prev = e.ready;
+  e.ready = !InvMath.isReady(e);
+  if (!persistOr(() => { if (prev === undefined) delete e.ready; else e.ready = prev; })) { render(); return; }
+  render();
 }
 
 function buildInvoiceList(host) {
@@ -184,16 +213,17 @@ function buildInvoiceList(host) {
 function renderInvoices() {
   const host = el('invoicesContent');
   host.textContent = '';
+  host.appendChild(caption(thisWeekText(InvMath.thisWeek(invData(), invToday(), Store.mondayOf))));
   buildWhoOwes(host);
   buildPile(host);
   buildInvoiceList(host);
-  pinnedBar(host, '+ Log hours', () => show('log', null));
+  pinnedBar(host, '+ Start invoice', () => show('log', null));
 }
 
 registerScreen('invoices', {
   id: 'screen-invoices', title: 'Invoices', back: null, tab: 'invoices', render: renderInvoices,
-  // Nothing to reset. What is checked survives a trip into an entry and back,
-  // and it survives a tab tap: unchecking four rows and losing it because he
-  // looked at a bid is how a checkbox stops being worth using.
+  // Nothing to reset. What is checked lives on the entries themselves now, so
+  // it survives a trip into one and back, a tab tap, and the phone being put
+  // in a pocket.
   enter: () => {},
 });

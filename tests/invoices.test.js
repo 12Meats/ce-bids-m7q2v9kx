@@ -67,8 +67,8 @@ vm.createContext(sandbox);
 const root = path.join(__dirname, '..');
 // ui.js first: moneyText, numText and fmtDate are the vocabulary these
 // sentences are written in, and a stub of them would only test the stub. Then
-// picker.js, which holds pileSelection and the row builders, and which the log
-// screen calls at load time (its picker state object).
+// picker.js, which holds the row builders and the drafts under review, and
+// which the log screen calls at load time (its picker state object).
 vm.runInContext(fs.readFileSync(path.join(root, 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoices.js'), 'utf8'), sandbox,
@@ -86,17 +86,15 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
   invoiceLineOpts, lineAskCost, moneyText,
+  thisWeekText, invAllGroups, invReadyCount, invoicesToggle,
   enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady,
   logMarkDone, logMarkDoneText, logProjectsOffered, entryStatusPill } = sandbox;
-// Two of the log screen's sentences are top-level consts, which are lexical
-// rather than properties of the context's global object. Read the way
-// pileSelection is, just below.
+// Three sentences on these screens are top-level consts, which are lexical
+// rather than properties of the context's global object, so they are read out
+// of the sandbox's own scope.
 const LOG_NUMBER_CAPTION = vm.runInContext('LOG_NUMBER_CAPTION', sandbox);
 const LOG_SWAP_TEXT = vm.runInContext('LOG_SWAP_TEXT', sandbox);
-// pileSelection is a const inside picker.js, and a const declared at the top of
-// a script is not a property of the context's global object the way a function
-// declaration is. ui.test.js reads MISC_LABEL out of its sandbox the same way.
-const pileSelection = vm.runInContext('pileSelection', sandbox);
+const BILL_THESE_WAITING = vm.runInContext('BILL_THESE_WAITING', sandbox);
 // The send queue is a module-level let inside invoice.js, which is not a
 // property of the context's global object either. Read the same way.
 const invoiceQueue = () => vm.runInContext('invoiceQueue', sandbox);
@@ -124,92 +122,6 @@ function world() {
 }
 
 function groups(w) { return I.group(w.d.logs, w.d, S.mondayOf); }
-
-test('a pile row says what it covers, how old it is, and what is in it', () => {
-  const w = world();
-  // 500 ft at 38 cents is $190.00 of wire at COST. The lot price is what the
-  // customer pays and belongs on the invoice, not on the row that is telling
-  // him what is sitting there.
-  assert.strictEqual(pileRowText(groups(w)[0], TODAY),
-    'Aug 24 to Aug 28 · 15 days · 2 entries · 21 hrs · $190.00 parts');
-});
-
-test('one day, one entry, no parts: the row says none of those things', () => {
-  const w = world();
-  const one = S.newProject(w.d, w.uda.id, 'R2 condensate pump', '2026-09-01');
-  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: one.id, dateISO: '2026-09-02', createdAt: 2 });
-  e.crew = [{ crewId: w.c1, hours: 4 }];
-  const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'R2 condensate pump');
-  // No "to", no "1 entries", no "$0.00 parts", and the year is not on a row
-  // about last fortnight.
-  assert.strictEqual(pileRowText(g, TODAY), 'Sep 2 · 6 days · 4 hrs');
-});
-
-test('half hours read as half hours, not as 4.5000001', () => {
-  const w = world();
-  const p = S.newProject(w.d, w.uda.id, 'Boiler room', '2026-09-01');
-  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: p.id, dateISO: '2026-09-08', createdAt: 3 });
-  e.crew = [{ crewId: w.c1, hours: 2.5 }, { crewId: w.c2, hours: 1.25 }];
-  const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'Boiler room');
-  assert.strictEqual(pileRowText(g, TODAY), 'Sep 8 · 0 days · 3.75 hrs');
-});
-
-test('one day old reads singular: "1 day", not "1 days"', () => {
-  const w = world();
-  const p = S.newProject(w.d, w.uda.id, 'Chiller yard', '2026-09-01');
-  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: p.id, dateISO: '2026-09-07', createdAt: 4 });
-  e.crew = [{ crewId: w.c1, hours: 4 }];
-  const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'Chiller yard');
-  assert.strictEqual(pileRowText(g, TODAY), 'Sep 7 · 1 day · 4 hrs');
-});
-
-// ---------------------------------------------------------------------------
-// WHAT HE TURNED OFF
-// ---------------------------------------------------------------------------
-// The store remembers the OFF ones, never the on ones, and the difference only
-// shows up on the entry that did not exist yet when he last touched the list.
-
-test('unchecking a group leaves a brand-new entry checked', () => {
-  const w = world();
-  pileSelection.clear();
-  const g = groups(w)[0];
-  // He unchecks the UF week: both of its entries go off.
-  g.entries.forEach((e) => pileSelection.setOn(e.id, false));
-  assert.strictEqual(invGroupOn(g), false, 'the row he unchecked reads unchecked');
-  // Then Thursday happens and he logs another visit. It is on, because he has
-  // never said otherwise about an id that did not exist when he last looked.
-  const later = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-10', createdAt: 9 });
-  assert.strictEqual(pileSelection.isOn(later.id), true, 'an entry logged after his last tap is on');
-  pileSelection.clear();
-});
-
-test('a group he never touched is checked, and clear puts everything back on', () => {
-  const w = world();
-  pileSelection.clear();
-  const g = groups(w)[0];
-  assert.strictEqual(invGroupOn(g), true, 'nothing said means everything billed');
-  // ANY entry on reads as checked, because the review bills every entry that
-  // is on: a row drawn unchecked while one of its two visits was still going
-  // to be billed is the one lie these two screens may never tell.
-  pileSelection.setOn(g.entries[0].id, false);
-  assert.strictEqual(invGroupOn(g), true, 'one entry left on keeps the group checked');
-  pileSelection.setOn(g.entries[1].id, false);
-  assert.strictEqual(invGroupOn(g), false, 'every entry off is the row he unchecked');
-  pileSelection.clear();
-  assert.strictEqual(invGroupOn(g), true, 'the send clears the pile');
-});
-
-// The other half of the same rule: the tap sets EVERY entry, so the two
-// readings only ever come apart on a row he has not touched.
-test('the empty pile says whether there is nothing yet or nothing left', () => {
-  const d = S.emptyData();
-  assert.strictEqual(pileEmptyText(d), 'Nothing logged yet. Tap + Log hours after a visit.');
-  const w = world();
-  // Five visits logged and every one of them billed. "Nothing logged yet" here
-  // is the app telling him his week is not there.
-  w.d.logs.forEach((e) => { e.invoiceId = 'inv1'; });
-  assert.strictEqual(pileEmptyText(w.d), 'Nothing waiting to bill.');
-});
 
 // ---------------------------------------------------------------------------
 // THE INVOICE LIST
@@ -241,7 +153,7 @@ test('numbered but not shared is still a draft, and sent says how long ago', () 
   inv.sentAt = '2026-09-05';
   const sent = invoiceListText(inv, TODAY);
   assert.strictEqual(sent.name, '#166818');
-  assert.strictEqual(sent.sub, 'Sent · 9/5/26 · 3 days');
+  assert.strictEqual(sent.sub, 'Sent to office ✓ · 9/5/26 · 3 days');
   assert.strictEqual(sent.stale, false, 'three days is not old');
 });
 
@@ -252,7 +164,7 @@ test('sent one day ago reads "1 day", not "1 days"', () => {
   inv.dateISO = '2026-09-07';
   inv.sentAt = '2026-09-07';
   const sent = invoiceListText(inv, TODAY);
-  assert.strictEqual(sent.sub, 'Sent · 9/7/26 · 1 day');
+  assert.strictEqual(sent.sub, 'Sent to office ✓ · 9/7/26 · 1 day');
 });
 
 test('part paid says what came in and what is on it; a sent invoice goes amber at 14 days', () => {
@@ -420,6 +332,7 @@ function sendWorld() {
   const pump = S.newProject(w.d, w.uda.id, 'R2 condensate pump', '2026-09-01');
   const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: pump.id, dateISO: '2026-09-02', createdAt: 5 });
   e.crew = [{ crewId: w.c1, hours: 4 }];
+  w.d.logs.forEach((x) => { x.ready = true; });
   const gs = I.group(w.d.logs, w.d, S.mondayOf);
   reviewDrafts.set(gs.map((g) => I.draftInvoice(g, w.d, 1)));
   return { w, gs };
@@ -435,9 +348,8 @@ function stub(t, over) {
   t.after(() => { Object.keys(before).forEach((k) => { sandbox[k] = before[k]; }); });
 }
 
-test('the send numbers in date order, locks the entries, and clears the pile', (t) => {
+test('the send numbers in date order and locks the entries', (t) => {
   const { w, gs } = sendWorld();
-  pileSelection.setOn(w.d.logs[0].id, false);   // something for clear() to undo
   const saves = [];
   const banners = [];
   const shown = [];
@@ -470,8 +382,6 @@ test('the send numbers in date order, locks the entries, and clears the pile', (
     const owner = made.find((inv) => inv.logIds.indexOf(e.id) !== -1);
     assert.strictEqual(e.invoiceId, owner.id, 'the entry is locked to its invoice');
   });
-  // The pile is empty and everything he had turned off is forgotten with it.
-  assert.strictEqual(pileSelection.isOn(w.d.logs[0].id), true);
   // deepEqual, not deepStrictEqual: the argument object was built inside the VM
   // and carries that realm's Object prototype, which strict equality compares.
   assert.deepEqual(shown, [['invoice',
@@ -504,10 +414,6 @@ test('the send creates the invoices array on a restored pre-v3 file', (t) => {
 test('a refused save puts the numbers, the invoices and the locks back', (t) => {
   const { w } = sendWorld();
   const before = w.d.settings.nextInvoiceNumber;
-  // Something he turned off on the home, which a refused send may not forget:
-  // the entry he decided not to bill is still not billed.
-  pileSelection.setOn(w.d.logs[0].id, false);
-  t.after(() => pileSelection.clear());
   stub(t, {
     persistOr: (revert) => { revert(); return false; },
     showBanner: () => {},
@@ -516,8 +422,6 @@ test('a refused save puts the numbers, the invoices and the locks back', (t) => 
   });
 
   billreviewSend();
-
-  assert.strictEqual(pileSelection.isOn(w.d.logs[0].id), false, 'the entry he set off stays off');
 
   assert.deepStrictEqual(w.d.invoices, [], 'nothing was left on the file');
   assert.strictEqual(w.d.settings.nextInvoiceNumber, before, 'the number was not spent');
@@ -558,11 +462,12 @@ test('the send refuses a batch with a $0 invoice in it and writes nothing', (t) 
 
 function enterWorld() {
   const w = world();
-  pileSelection.clear();
   // A second week of the same job: the catch-up case, and the one place
   // Combine has somewhere to reach.
   const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-02', createdAt: 5 });
   e.crew = [{ crewId: w.c1, hours: 4 }];
+  // The review takes what he has said is finished, and nothing else.
+  w.d.logs.forEach((x) => { x.ready = true; });
   reviewDrafts.set([]);
   vm.runInContext('reviewGroups = null; reviewBuiltKey = null;', sandbox);
   return w;
@@ -649,7 +554,7 @@ test('the pill says draft, sent, part paid and paid, in his words', (t) => {
   const inv = w.d.invoices[0];
   assert.strictEqual(invoiceStatusPill(inv), 'Draft', 'numbered is not sent');
   inv.sentAt = '2026-09-08';
-  assert.strictEqual(invoiceStatusPill(inv), 'Sent');
+  assert.strictEqual(invoiceStatusPill(inv), 'Sent to office');
   inv.payments.push({ dateISO: '2026-09-15', cents: 50000 });
   assert.strictEqual(invoiceStatusPill(inv), 'Paid $500.00 of $2,001.00');
   inv.payments.push({ dateISO: '2026-09-20', cents: 150100 });
@@ -1245,4 +1150,150 @@ test('the job he is standing on is still offered after it is marked done', () =>
   assert.deepStrictEqual(logProjectsOffered(e).map((p) => p.title), ['UF Project']);
   w.uf.done = false;
   assert.deepStrictEqual(logProjectsOffered(e).map((p) => p.title), ['UF Project'], 'and only once');
+});
+
+// ---------------------------------------------------------------------------
+// THE WEEK AT A GLANCE
+// ---------------------------------------------------------------------------
+// One sentence at the top of the tab, and it is the only thing on the screen
+// that answers "how did this week go" without him opening anything.
+
+test('thisWeekText says the hours, the two states and the money', () => {
+  assert.strictEqual(thisWeekText({ hours: 31, inProgress: 3, ready: 1, unbilledCents: 241000 }),
+    'This week: 31 hours, 3 in progress, 1 ready, $2,410.00 unbilled.');
+  // One of each reads as one of each.
+  assert.strictEqual(thisWeekText({ hours: 1, inProgress: 1, ready: 0, unbilledCents: 8500 }),
+    'This week: 1 hour, 1 in progress, 0 ready, $85.00 unbilled.');
+  // Half hours read as half hours.
+  assert.strictEqual(thisWeekText({ hours: 4.5, inProgress: 1, ready: 0, unbilledCents: 0 }),
+    'This week: 4.5 hours, 1 in progress, 0 ready, $0.00 unbilled.');
+});
+
+test('a week with nothing in it says so instead of counting zeros at him', () => {
+  assert.strictEqual(thisWeekText({ hours: 0, inProgress: 0, ready: 0, unbilledCents: 0 }),
+    'This week: nothing logged yet.');
+  // An invoice opened this morning with no hours on it yet is not nothing.
+  assert.strictEqual(thisWeekText({ hours: 0, inProgress: 1, ready: 0, unbilledCents: 0 }),
+    'This week: 0 hours, 1 in progress, 0 ready, $0.00 unbilled.');
+});
+
+// ---------------------------------------------------------------------------
+// ONE CARD PER INVOICE IN PROGRESS
+// ---------------------------------------------------------------------------
+// The row says what it covers, where it stands and what is on it. The age is
+// only on the ones he has finished with: an open job is not late.
+
+test('a card in progress says its day, its state and its hours, and no age', () => {
+  const w = world();
+  const g = invAllGroups().find((x) => x.entries[0] === w.d.logs[0]);
+  assert.strictEqual(pileRowText(g, TODAY), 'Aug 24 · In progress · 13 hrs');
+});
+
+test('a card marked Ready says how long it has been waiting, counted from the To', () => {
+  const w = world();
+  const e = w.d.logs[0];
+  e.toISO = '2026-08-28';
+  e.ready = true;
+  const g = invAllGroups().find((x) => x.entries[0] === e);
+  assert.strictEqual(pileRowText(g, TODAY), 'Aug 24 to Aug 28 · Ready · 13 hrs · 11 days');
+  // One day is one day.
+  e.toISO = '2026-09-07';
+  const one = invAllGroups().find((x) => x.entries[0] === e);
+  assert.strictEqual(pileRowText(one, TODAY), 'Aug 24 to Sep 7 · Ready · 13 hrs · 1 day');
+});
+
+test('the pile is one card per entry, oldest first, and nothing groups itself', () => {
+  const w = world();
+  // Two visits on the one job in the one week. They used to be one card and
+  // one invoice; nothing merges on its own now.
+  assert.strictEqual(invAllGroups().length, 2);
+  assert.deepStrictEqual(invAllGroups().map((g) => g.from), ['2026-08-24', '2026-08-28']);
+  assert.ok(invAllGroups().every((g) => g.entries.length === 1));
+  // And a billed one is off the list.
+  w.d.logs[0].invoiceId = 'inv1';
+  assert.strictEqual(invAllGroups().length, 1);
+});
+
+test('the empty list says whether there is nothing yet or nothing left', () => {
+  const d = S.emptyData();
+  assert.strictEqual(pileEmptyText(d), 'Nothing logged yet. Tap + Start invoice after a visit.');
+  const w = world();
+  w.d.logs.forEach((e) => { e.invoiceId = 'inv1'; });
+  assert.strictEqual(pileEmptyText(w.d), 'Nothing waiting to bill.');
+});
+
+// ---------------------------------------------------------------------------
+// THE CHECK IS THE READY FLAG
+// ---------------------------------------------------------------------------
+// One state, two places to set it: the check on the card here and the switch
+// on the entry at the truck. There is no second, screen-local idea of what is
+// going to be billed any more.
+
+test('the check on a card flips Ready on the entry itself', (t) => {
+  const w = world();
+  const e = w.d.logs[0];
+  const g = invAllGroups().find((x) => x.entries[0] === e);
+  stub(t, { persistOr: () => true, render: () => {}, showBanner: () => {} });
+  assert.strictEqual(invGroupOn(g), false, 'nothing is ready until he says so');
+  invoicesToggle(g);
+  assert.strictEqual(e.ready, true);
+  assert.strictEqual(invGroupOn(g), true);
+  invoicesToggle(g);
+  assert.strictEqual(e.ready, false);
+});
+
+test('a refused save leaves the check where it was', (t) => {
+  const w = world();
+  const e = w.d.logs[0];
+  const g = invAllGroups().find((x) => x.entries[0] === e);
+  stub(t, { persistOr: (revert) => { revert(); return false; }, render: () => {}, showBanner: () => {} });
+  invoicesToggle(g);
+  assert.strictEqual(I.isReady(e), false, 'the disk said no, so he never said it');
+  assert.strictEqual(e.ready, undefined, 'and the key it never had is still not there');
+});
+
+// ---------------------------------------------------------------------------
+// BILL THESE
+// ---------------------------------------------------------------------------
+
+test('Bill these waits until something is ready, and says what it is waiting for', () => {
+  const w = world();
+  assert.strictEqual(invReadyCount(), 0);
+  assert.strictEqual(BILL_THESE_WAITING, 'Check the ones that are ready first.');
+  w.d.logs[0].ready = true;
+  assert.strictEqual(invReadyCount(), 1);
+  // A billed entry is nobody's ready: the invoice is the record now.
+  w.d.logs[0].invoiceId = 'inv1';
+  assert.strictEqual(invReadyCount(), 0);
+});
+
+// ---------------------------------------------------------------------------
+// SENT MEANS HANDED TO THE OFFICE
+// ---------------------------------------------------------------------------
+// The PDF goes to Adrian's mother, who mails it. Nothing this app does puts a
+// piece of paper in a customer's hand, and a row that says it did is the app
+// telling him a job is further along than it is.
+
+test('a sent invoice says it went to the office, with a mark and the date', () => {
+  const w = world();
+  const inv = draft(w);
+  inv.number = 166818;
+  inv.dateISO = '2026-09-05';
+  inv.sentAt = '2026-09-05';
+  const t = invoiceListText(inv, TODAY);
+  assert.strictEqual(t.sub, 'Sent to office ✓ · 9/5/26 · 3 days');
+  assert.strictEqual(invoiceStatusPill(inv), 'Sent to office');
+});
+
+test('draft, part paid and paid are unchanged: only the sent one moved', () => {
+  const w = world();
+  const inv = draft(w);
+  inv.number = 166818;
+  assert.strictEqual(invoiceStatusPill(inv), 'Draft');
+  inv.dateISO = '2026-08-24';
+  inv.sentAt = '2026-08-24';
+  inv.payments.push({ dateISO: '2026-09-01', cents: 50000 });
+  assert.strictEqual(invoiceStatusPill(inv), 'Paid $500.00 of $2,001.00');
+  inv.payments.push({ dateISO: '2026-09-04', cents: 150100 });
+  assert.strictEqual(invoiceStatusPill(inv), 'Paid');
 });
