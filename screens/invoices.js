@@ -33,21 +33,33 @@ function invCustomerName(id) {
   return c ? c.name : 'Customer';
 }
 
-// THE WEEK, IN ONE SENTENCE. Monday to Sunday, unbilled only, and the money is
-// what those invoices would come to if he sent them today. It is the only
-// thing on the screen that answers "how did this week go" without opening
-// anything, so it is a line of text rather than a card: a card would make it
-// the subject of the screen, and the subject of the screen is who owes him.
+// THE WEEK, IN ONE SENTENCE. Monday to Sunday: the hours are the whole week,
+// billed or not, and the rest is what is still to do — how many invoices are
+// open, how many are ready, and what they would come to if he sent them today.
+// It is the only thing on the screen that answers "how did this week go"
+// without opening anything, so it is a line of text rather than a card: a card
+// would make it the subject of the screen, and the subject of the screen is
+// who owes him.
 //
-// A week with nothing in it says so. Four zeros in a row is a sentence he has
-// to read to find out it says nothing.
+// NOTHING IS SAID TWICE AND NOTHING IS SAID ABOUT ZERO. "0 ready" is a clause
+// he has to read to find out it says nothing, and three of them in a row is
+// the sentence hiding the one number that changed. A clause is there when it
+// has something in it and gone when it does not.
+//
+// The two ends of that: a week whose every visit is billed has no clauses left
+// and says so in his own words, and a week with no visit in it at all is the
+// only one that says nothing was logged. They are different pieces of news —
+// one is a week finished, the other is a week not started — and the old
+// sentence called them both nothing.
 function thisWeekText(w) {
-  if (!w || (w.inProgress + w.ready) === 0) return 'This week: nothing logged yet.';
+  if (!w || !w.logged) return 'This week: nothing logged yet.';
   const hrs = numText(w.hours) + (w.hours === 1 ? ' hour' : ' hours');
-  return 'This week: ' + hrs
-    + ', ' + w.inProgress + ' in progress'
-    + ', ' + w.ready + ' ready'
-    + ', ' + moneyText(w.unbilledCents) + ' unbilled.';
+  const rest = [];
+  if (w.inProgress) rest.push(w.inProgress + ' in progress');
+  if (w.ready) rest.push(w.ready + ' ready');
+  if (w.unbilledCents) rest.push(moneyText(w.unbilledCents) + ' unbilled');
+  if (!rest.length) return 'This week: ' + hrs + ', all billed.';
+  return 'This week: ' + hrs + ', ' + rest.join(', ') + '.';
 }
 
 // What the list says when there is nothing in it. Two different pieces of news

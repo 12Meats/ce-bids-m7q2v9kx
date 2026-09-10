@@ -161,6 +161,15 @@ test('numbered but not shared is still a draft, and sent says how long ago', () 
   assert.strictEqual(sent.stale, false, 'three days is not old');
 });
 
+test('sent this morning reads "today", not "0 days"', () => {
+  const w = world();
+  const inv = draft(w);
+  inv.number = 166820;
+  inv.dateISO = TODAY;
+  inv.sentAt = TODAY;
+  assert.strictEqual(invoiceListText(inv, TODAY).sub, 'Sent to office ✓ · 9/8/26 · today');
+});
+
 test('sent one day ago reads "1 day", not "1 days"', () => {
   const w = world();
   const inv = draft(w);
@@ -1226,22 +1235,38 @@ test('the job he is standing on is still offered after it is marked done', () =>
 // that answers "how did this week go" without him opening anything.
 
 test('thisWeekText says the hours, the two states and the money', () => {
-  assert.strictEqual(thisWeekText({ hours: 31, inProgress: 3, ready: 1, unbilledCents: 241000 }),
+  assert.strictEqual(thisWeekText({ hours: 31, logged: 4, inProgress: 3, ready: 1, unbilledCents: 241000 }),
     'This week: 31 hours, 3 in progress, 1 ready, $2,410.00 unbilled.');
   // One of each reads as one of each.
-  assert.strictEqual(thisWeekText({ hours: 1, inProgress: 1, ready: 0, unbilledCents: 8500 }),
-    'This week: 1 hour, 1 in progress, 0 ready, $85.00 unbilled.');
+  assert.strictEqual(thisWeekText({ hours: 1, logged: 1, inProgress: 1, ready: 0, unbilledCents: 8500 }),
+    'This week: 1 hour, 1 in progress, $85.00 unbilled.');
   // Half hours read as half hours.
-  assert.strictEqual(thisWeekText({ hours: 4.5, inProgress: 1, ready: 0, unbilledCents: 0 }),
-    'This week: 4.5 hours, 1 in progress, 0 ready, $0.00 unbilled.');
+  assert.strictEqual(thisWeekText({ hours: 4.5, logged: 1, inProgress: 0, ready: 1, unbilledCents: 38250 }),
+    'This week: 4.5 hours, 1 ready, $382.50 unbilled.');
+});
+
+test('a clause with nothing in it is not said at all', () => {
+  // The three of them, one at a time. Nothing on the sentence stands for zero.
+  assert.strictEqual(thisWeekText({ hours: 8, logged: 1, inProgress: 1, ready: 0, unbilledCents: 76000 }),
+    'This week: 8 hours, 1 in progress, $760.00 unbilled.');
+  assert.strictEqual(thisWeekText({ hours: 8, logged: 2, inProgress: 1, ready: 1, unbilledCents: 0 }),
+    'This week: 8 hours, 1 in progress, 1 ready.');
+  assert.strictEqual(thisWeekText({ hours: 0, logged: 1, inProgress: 1, ready: 0, unbilledCents: 0 }),
+    'This week: 0 hours, 1 in progress.');
+});
+
+test('a week he has already billed says the hours stand and there is nothing left', () => {
+  assert.strictEqual(thisWeekText({ hours: 12, logged: 2, inProgress: 0, ready: 0, unbilledCents: 0 }),
+    'This week: 12 hours, all billed.');
 });
 
 test('a week with nothing in it says so instead of counting zeros at him', () => {
-  assert.strictEqual(thisWeekText({ hours: 0, inProgress: 0, ready: 0, unbilledCents: 0 }),
+  assert.strictEqual(thisWeekText({ hours: 0, logged: 0, inProgress: 0, ready: 0, unbilledCents: 0 }),
     'This week: nothing logged yet.');
-  // An invoice opened this morning with no hours on it yet is not nothing.
-  assert.strictEqual(thisWeekText({ hours: 0, inProgress: 1, ready: 0, unbilledCents: 0 }),
-    'This week: 0 hours, 1 in progress, 0 ready, $0.00 unbilled.');
+  // An invoice opened this morning with no hours on it yet is not nothing: it
+  // was logged, so the sentence counts it rather than calling the week empty.
+  assert.strictEqual(thisWeekText({ hours: 0, logged: 1, inProgress: 1, ready: 0, unbilledCents: 0 }),
+    'This week: 0 hours, 1 in progress.');
 });
 
 // ---------------------------------------------------------------------------
@@ -1267,6 +1292,24 @@ test('a card marked Ready says how long it has been waiting, counted from the To
   e.toISO = '2026-09-07';
   const one = invAllGroups().find((x) => x.entries[0] === e);
   assert.strictEqual(pileRowText(one, TODAY), 'Aug 24 to Sep 7 · Ready · 13 hrs · 1 day');
+});
+
+// Ready today, and Ready through a Friday that has not come yet. Neither has
+// been waiting, and the row used to say one of them was minus two days old.
+test('a card ready today says today, and one whose To is ahead says no age at all', () => {
+  const w = world();
+  const e = w.d.logs[0];
+  e.dateISO = TODAY;
+  e.toISO = TODAY;
+  e.ready = true;
+  const now = invAllGroups().find((x) => x.entries[0] === e);
+  assert.strictEqual(pileRowText(now, TODAY), 'Sep 8 · Ready · 13 hrs · today');
+
+  // Booked through Friday, finished early, marked Ready on the Tuesday. The
+  // range and the pill stay; the age is not a thing yet.
+  e.toISO = '2026-09-11';
+  const ahead = invAllGroups().find((x) => x.entries[0] === e);
+  assert.strictEqual(pileRowText(ahead, TODAY), 'Sep 8 to Sep 11 · Ready · 13 hrs');
 });
 
 test('the pile is one card per entry, oldest first, and nothing groups itself', () => {

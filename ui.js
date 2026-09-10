@@ -1139,10 +1139,19 @@ function fmtDate(iso) { return Dates.fmtDate(iso); }
 // sentence is how one of them ends up carrying the year and the other not.
 function dayText(iso) { return fmtDate(iso).replace(/,\s*\d{4}$/, ''); }
 
-// 'N days' old, except the one day it is not: an invoice sent yesterday says
-// "1 day", not "1 days". Every age on screen (the pile, the invoice list, the
-// who-owes card) reads through here so they agree.
-function daysText(n) { return n + ' ' + (n === 1 ? 'day' : 'days'); }
+// 'N days' old, except the two days it is not: an invoice sent yesterday says
+// "1 day", not "1 days", and one sent this morning says "today" rather than
+// "0 days", which is a number nobody says out loud. Every age on screen (the
+// pile, the invoice list, the who-owes card) reads through here so they agree.
+//
+// Nothing here is ever negative. An age counts back from a day that has
+// already happened, so a minus is a caller asking about a day that has not —
+// and "-2 days old" is the app arguing with him about his own calendar. It
+// reads as today, which is the soonest anything can start being old.
+function daysText(n) {
+  const days = Math.max(0, n);
+  return days === 0 ? 'today' : days + ' ' + (days === 1 ? 'day' : 'days');
+}
 
 // '9/4/26'. The home list's rows only — see dates.js for why they are the one
 // place that cannot afford the long form.

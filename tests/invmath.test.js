@@ -433,6 +433,18 @@ test('pileAge counts from the To, and only once he has said Ready', () => {
   assert.strictEqual(I.pileAge(null, '2026-09-08'), null);
 });
 
+// A To he has not reached yet. He books a visit through Friday, marks it Ready
+// on the Wednesday because the work is finished early, and the pile used to
+// print "-2 days": an age counted back from a day that has not happened.
+test('pileAge has no age at all while the To is still ahead of today', () => {
+  const e = { dateISO: '2026-09-07', toISO: '2026-09-11', ready: true };
+  assert.strictEqual(I.pileAge(e, '2026-09-09'), null, 'the week it covers is not over');
+  assert.strictEqual(I.pileAge(e, '2026-09-10'), null, 'still ahead, still no age');
+  // The day the To arrives it starts waiting, which is nothing waited so far.
+  assert.strictEqual(I.pileAge(e, '2026-09-11'), 0);
+  assert.strictEqual(I.pileAge(e, '2026-09-12'), 1);
+});
+
 // ---------------------------------------------------------------------------
 // THE WEEK AT A GLANCE
 // ---------------------------------------------------------------------------
@@ -458,6 +470,7 @@ test('thisWeek counts the hours, the states and the money of the week he is in',
   assert.strictEqual(week.from, '2026-08-31');
   assert.strictEqual(week.to, '2026-09-06');
   assert.strictEqual(week.hours, 36);
+  assert.strictEqual(week.logged, 5);
   assert.strictEqual(week.inProgress, 5, 'nothing marked ready yet');
   assert.strictEqual(week.ready, 0);
 
@@ -470,7 +483,7 @@ test('thisWeek counts the hours, the states and the money of the week he is in',
   assert.strictEqual(week.unbilledCents, 238000 + 21600 + 68000 + fixtures);
 });
 
-test('thisWeek counts an entry whose From or To reaches into the week, and nothing billed', () => {
+test('thisWeek counts an entry whose From or To reaches into the week, and what billing takes off it', () => {
   const w = world();
   // The Aug 24 visit ran on into the Monday of the next week.
   w.entries[0].toISO = '2026-08-31';
@@ -485,16 +498,32 @@ test('thisWeek counts an entry whose From or To reaches into the week, and nothi
   assert.strictEqual(marked.ready, 1);
   assert.strictEqual(marked.inProgress, 5);
 
-  // An entry already on an invoice is not unbilled and is not in the count.
+  // An entry already on an invoice is not unbilled and is off the two counts
+  // and the money. Its HOURS stay: the men worked them, and billing them on
+  // the Friday does not take Monday's work back out of the week.
   w.entries[2].invoiceId = 'inv1';
   const after = I.thisWeek(w.d, '2026-09-02', S.mondayOf);
   assert.strictEqual(after.ready, 0);
   assert.strictEqual(after.inProgress, 5);
-  assert.strictEqual(after.hours, 36 + 13 - 8);
+  assert.strictEqual(after.hours, 36 + 13, 'the eight billed hours were still worked this week');
+  assert.strictEqual(after.logged, 6, 'and the entry still belongs to the week');
+});
+
+// The whole week billed. The hours stand and there is nothing left to do with
+// them, which is a different answer from a week nobody logged anything in.
+test('thisWeek keeps the hours of a week whose every entry is billed', () => {
+  const w = world();
+  w.d.logs.forEach((e) => { e.invoiceId = 'inv1'; });
+  const week = I.thisWeek(w.d, '2026-09-02', S.mondayOf);
+  assert.strictEqual(week.hours, 36);
+  assert.strictEqual(week.logged, 5);
+  assert.strictEqual(week.inProgress, 0);
+  assert.strictEqual(week.ready, 0);
+  assert.strictEqual(week.unbilledCents, 0);
 });
 
 test('thisWeek on a phone with nothing on it answers with zeros', () => {
   const d = S.emptyData();
   const w = I.thisWeek(d, '2026-09-09', S.mondayOf);
-  assert.deepStrictEqual({ ...w }, { hours: 0, inProgress: 0, ready: 0, unbilledCents: 0, from: '2026-09-07', to: '2026-09-13' });
+  assert.deepStrictEqual({ ...w }, { hours: 0, logged: 0, inProgress: 0, ready: 0, unbilledCents: 0, from: '2026-09-07', to: '2026-09-13' });
 });

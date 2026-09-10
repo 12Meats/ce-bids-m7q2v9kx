@@ -173,23 +173,43 @@
   // however long it has been open, so it has no age at all — the job is not
   // done. Once it is Ready the clock runs from the LAST day worked, because
   // that is the day the customer stopped seeing his trucks.
+  //
+  // A To that has not arrived yet has no age either, and for the same reason:
+  // he can mark a visit Ready on the Monday and leave the To on the Friday it
+  // is booked through, and a week that has not happened cannot have been
+  // waiting. daysSince goes negative there — the pile printed "-2 days" — so
+  // anything ahead of today reads as no age at all, and the day the To
+  // arrives it reads 0, which is the day it started waiting.
   function pileAge(e, todayISO) {
     if (!isReady(e)) return null;
-    return Dates.daysSince(entryTo(e), todayISO);
+    const n = Dates.daysSince(entryTo(e), todayISO);
+    return n === null || n < 0 ? null : n;
   }
 
   // THE WEEK AT A GLANCE — the one line at the top of the Invoices home.
   //
   // Monday to Sunday of the day he is standing in (mondayOf is handed in, the
-  // way group() takes it, so this file owns no calendar rule of its own), and
-  // only what is still unbilled. An entry counts when either end of it falls
-  // in the week: an open tab started last Thursday is this week's work too.
+  // way group() takes it, so this file owns no calendar rule of its own). An
+  // entry counts when either end of it falls in the week: an open tab started
+  // last Thursday is this week's work too.
   //
-  // The money is what those entries would bill if he sent them today, and it
-  // is figured by drafting them through draftInvoice and totalling the drafts
-  // — the same two functions the Bill these review uses. Nothing is re-derived
-  // here, so the sentence at the top of the screen and the invoices at the
-  // bottom of it can never say two different numbers.
+  // THE HOURS ARE THE WHOLE WEEK, billed or not. "How many hours did we put in
+  // this week" is a question about the men and the trucks, and Friday's
+  // invoices do not undo Tuesday's work: the old sentence counted 36 hours all
+  // week and then dropped to nothing the moment he billed them, which read as
+  // a week that never happened.
+  //
+  // EVERYTHING ELSE IS THE UNBILLED ONES, because in progress, ready and the
+  // money are all about what is still to do. The money is what those entries
+  // would bill if he sent them today, figured by drafting them through
+  // draftInvoice and totalling the drafts — the same two functions the Bill
+  // these review uses. Nothing is re-derived here, so the sentence at the top
+  // of the screen and the invoices at the bottom of it can never say two
+  // different numbers.
+  //
+  // logged is every entry in the week, billed or not: it is how the sentence
+  // tells a week with nothing in it from a week that is finished, and neither
+  // the hours nor the three unbilled counts can answer that on their own.
   function thisWeek(data, todayISO, mondayOf) {
     const from = mondayOf(todayISO);
     const to = from ? Dates.addDays(from, 6) : null;
@@ -197,12 +217,13 @@
       const a = entryFrom(e), b = entryTo(e);
       return (a >= from && a <= to) || (b >= from && b <= to);
     };
-    const mine = ((data && data.logs) || []).filter((e) => e && !e.invoiceId && from && inWeek(e));
-    const hours = mine.reduce((s, e) => s + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
+    const week = ((data && data.logs) || []).filter((e) => e && from && inWeek(e));
+    const hours = week.reduce((s, e) => s + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
+    const mine = week.filter((e) => !e.invoiceId);
     const ready = mine.filter(isReady).length;
     const unbilledCents = groupEach(mine, data)
       .reduce((s, g) => s + totals(draftInvoice(g, data, 0)).total, 0);
-    return { hours, inProgress: mine.length - ready, ready, unbilledCents, from, to };
+    return { hours, logged: week.length, inProgress: mine.length - ready, ready, unbilledCents, from, to };
   }
 
   // What is IN a group, before anything is priced: the hours everybody put in

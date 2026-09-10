@@ -35,7 +35,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sa
 const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
   bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
-  crewDaysText, detailCaption, itemCountText,
+  crewDaysText, daysText, detailCaption, itemCountText,
   itemBillText, areaNoteLine, perUnitText,
   priceSearchUrl, deferredBanner } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
@@ -414,6 +414,27 @@ test('a line with no name still gives the banner something to say', () => {
   const { d, b } = pricedBid();
   b.rentals.push({ name: '', days: 1, cents: 0, markup: false });
   assert.equal(unpricedBlockText(unpricedLines(b, d.settings)), 'Put a price on "this rental" first.');
+});
+
+// ---------------------------------------------------------------------------
+// How old a thing is, in words
+// ---------------------------------------------------------------------------
+// Every age on screen goes through this one line: the pile row, the invoice
+// list, and the who-owes card. It is the reason they all say it the same way.
+
+test('daysText says today, one day, and the rest in days', () => {
+  assert.equal(daysText(0), 'today');
+  assert.equal(daysText(1), '1 day');
+  assert.equal(daysText(2), '2 days');
+  assert.equal(daysText(14), '14 days');
+});
+
+// An age counting back from a day that has not happened yet. "-2 days" is the
+// app arguing with him about his own calendar, so the soonest anything can be
+// is today.
+test('daysText never goes negative', () => {
+  assert.equal(daysText(-1), 'today');
+  assert.equal(daysText(-30), 'today');
 });
 
 // ---------------------------------------------------------------------------
