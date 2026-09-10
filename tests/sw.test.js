@@ -231,11 +231,13 @@ test('the cache name is namespaced to this app', () => {
   // same origin would have one wipe the other's cache on activate.
   //
   // A point release is a cache of its own: v2.1 ships changed JS, so it has to
-  // miss v2's cache rather than be served out of it.
+  // miss v2's cache rather than be served out of it. A fix release is the same
+  // thing one level down, so the dotted tail is as long as the version is:
+  // v3.2.1 is a name of its own and not a typo for v3.2.
   //
   // Two prefixes, because v3 renamed the app to CE Billing and the cache name
   // followed it. The old one stays legal here rather than being swapped out:
   // 'bids-*' is what every phone in the field is holding right now, and a test
   // that refuses to name it could not tell an upgrade from a mistake.
-  assert.match(CACHE, /^(bids|billing)-v\d+(\.\d+)?$/);
+  assert.match(CACHE, /^(bids|billing)-v\d+(\.\d+)*$/);
 });
