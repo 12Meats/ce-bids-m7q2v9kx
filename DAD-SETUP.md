@@ -147,7 +147,10 @@ twenty seconds:
 3. **From** and **To.** Both start on today, and both open a calendar: tap the
    day, or use the arrows for another month. **Type it** under the grid is the
    old keypad if you would rather punch **0903**.
-4. **Who and hours.** Tap a man, put his hours in. **Clear** takes him off.
+4. **Who and hours.** The hours can be **one total for the visit** on the top
+   row, or a row per man underneath it, whichever is easier: put a total in and
+   the men come off, put a man's hours in and the total comes off. **Clear**
+   takes him off.
 5. **Parts, rentals, equipment.** **+ Part** is the same picker as the walk,
    tiles and a search box. **+ Rental** for a lift. **+ Equipment** for your own.
    Nothing to add? Leave it empty.
