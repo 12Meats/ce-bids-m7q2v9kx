@@ -66,7 +66,13 @@ function reviewEntryStamp(e) {
   // BOTH dates. The To is the half he moves while the job runs on, and it is
   // the service range the paper prints: a draft carried across a change to it
   // would bill a range the visit no longer says.
-  return [e.id, e.customerId, e.projectId, InvMath.entryFrom(e), InvMath.entryTo(e), crew, lines].join('|');
+  //
+  // And the total, which is the other way of saying the same hours. A visit he
+  // opens from the pile and re-counts as one total of eight instead of two men
+  // at six is a different invoice, and a draft carried across it would bill
+  // the hours he has just taken off.
+  return [e.id, e.customerId, e.projectId, InvMath.entryFrom(e), InvMath.entryTo(e),
+    crew, e.hoursTotal, lines].join('|');
 }
 function reviewReady() {
   return (reviewData().logs || []).filter((e) => !e.invoiceId && InvMath.isReady(e));
@@ -137,11 +143,17 @@ function reviewCardSub(draft) {
 // One line per visit inside the card: "Mon Aug 24 · Shawn 8, George 5". The
 // card is one invoice and this is what is under it, so a week that looks wrong
 // can be told apart from a week that looks right without opening it.
+//
+// A visit logged as one total has no names to print, so it says the hours:
+// "Mon Aug 24 · 12 hrs". Not blank — the hours are the reason the card is
+// there, and a line with only a date on it reads as a visit with nothing on it.
 function reviewEntryText(e, data) {
-  const crew = (e.crew || []).map((m) => {
-    const c = ((data.settings.crew || []).find((x) => x.id === m.crewId));
-    return (c ? c.name : 'Crew') + ' ' + numText(m.hours);
-  }).join(', ');
+  const crew = (e.crew || []).length
+    ? (e.crew || []).map((m) => {
+      const c = ((data.settings.crew || []).find((x) => x.id === m.crewId));
+      return (c ? c.name : 'Crew') + ' ' + numText(m.hours);
+    }).join(', ')
+    : (InvMath.entryHours(e) > 0 ? numText(InvMath.entryHours(e)) + ' hrs' : '');
   const lines = (e.items || []).concat(e.rentals || [], e.equipment || []);
   // One line is worth naming; six are a list nobody reads on a card.
   const linesText = lines.length === 0 ? ''

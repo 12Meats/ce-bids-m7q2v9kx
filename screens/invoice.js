@@ -189,6 +189,19 @@ function buildInvoiceSummary(host, inv) {
 // start the same and the second one is Adrian's to change — the four hours of
 // a five-hour visit he is willing to charge for is a decision he makes here,
 // once, rather than by editing the visit and losing what really happened.
+//
+// A visit logged as ONE TOTAL has no man to hang its hours on, so it arrives
+// here as a row with no crew id, called what it is called on the paper. It is
+// a labor row like any other: it says what was logged and its billed hours are
+// his to change, and the only thing that knows the difference is the keypad's
+// own label, because "Labor hours, hours to bill" says hours twice.
+
+// What a labor row says, read as one line. The row prints the two halves in
+// its own two cells; this is the sentence they come to, and it is pinned in
+// tests/invoices.test.js.
+function invoiceLaborSub(l) { return 'logged ' + numText(l.loggedHours) + ' hrs'; }
+function invoiceLaborText(l) { return l.name + ' · ' + invoiceLaborSub(l); }
+function invoiceLaborPrompt(l) { return l.crewId === null ? 'Hours to bill' : l.name + ', hours to bill'; }
 
 function buildInvoiceLabor(host, inv) {
   const box = card('Labor');
@@ -198,11 +211,11 @@ function buildInvoiceLabor(host, inv) {
     return;
   }
   inv.labor.forEach((l) => {
-    box.appendChild(lineRow(l.name, 'logged ' + numText(l.loggedHours) + ' hrs',
+    box.appendChild(lineRow(l.name, invoiceLaborSub(l),
       numText(l.billedHours) + ' hrs',
       () => {
         promptNumber(l.billedHours, {
-          label: l.name + ', hours to bill',
+          label: invoiceLaborPrompt(l),
           allowDecimal: true,
           maxDecimals: 2,
           done: (v) => invoiceSetBilled(inv, l, v),
@@ -212,7 +225,9 @@ function buildInvoiceLabor(host, inv) {
   const hours = InvMath.billedHours(inv);
   box.appendChild(caption(numText(hours) + ' hrs at ' + moneyText(inv.rateCents)
     + ' · ' + moneyText(InvMath.laborCents(inv))));
-  box.appendChild(caption('Clear bills nothing for that man. The rate is the one this invoice was drafted at.'));
+  // "for those hours" rather than "for that man": one of these rows can be the
+  // whole visit's total, which belongs to no man in particular.
+  box.appendChild(caption('Clear bills nothing for those hours. The rate is the one this invoice was drafted at.'));
   host.appendChild(box);
 }
 

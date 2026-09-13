@@ -87,6 +87,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
   invoiceLineOpts, lineAskCost, moneyText,
+  invoiceLaborText, invoiceLaborPrompt,
   thisWeekText, invAllGroups, invReadyCount, invoicesToggle,
   reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
   invoicePinnedLabel, invoiceSentCaption,
@@ -319,6 +320,55 @@ test('an entry line names the day, the men and what was on it', () => {
   // More than one, and the card counts rather than lists.
   second.items.push({ catalogId: null, name: 'Strut', unit: 'ft', qty: 10, costCents: 400, priceCents: null });
   assert.strictEqual(reviewEntryText(second, w.d), 'Fri Aug 28 · Shawn 8 · 2 lines');
+});
+
+test('a visit logged as one total says the hours, since it has no names to say', () => {
+  const w = world();
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-08-24', createdAt: 3 });
+  e.hoursTotal = 12;
+  assert.strictEqual(reviewEntryText(e, w.d), 'Mon Aug 24 · 12 hrs');
+  // With a part on it, the line reads the same way a per-man one does.
+  e.items.push({ catalogId: null, name: 'Strut', unit: 'ft', qty: 10, costCents: 400, priceCents: null });
+  assert.strictEqual(reviewEntryText(e, w.d), 'Mon Aug 24 · 12 hrs · Strut');
+  // A visit with no hours counted either way says the day and what was on it.
+  const bare = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-08-25', createdAt: 4 });
+  bare.items.push({ catalogId: null, name: 'Strut', unit: 'ft', qty: 10, costCents: 400, priceCents: null });
+  assert.strictEqual(reviewEntryText(bare, w.d), 'Tue Aug 25 · Strut');
+});
+
+// The drafts on hand are kept across a trip into a visit and back, and they
+// may only be kept while they are still true. Re-counting a visit as one total
+// is exactly the change that would otherwise bill the hours he just took off.
+test('a visit re-counted as one total rebuilds the drafts', (t) => {
+  const w = world();
+  stub(t, { persistOr: () => true, render: () => {}, showBanner: () => {} });
+  w.d.logs.forEach((e) => { e.ready = true; });
+  enterBillreview();
+  const before = reviewDrafts.get();
+  enterBillreview();
+  assert.strictEqual(reviewDrafts.get(), before, 'nothing changed, so the drafts stand');
+
+  w.d.logs[0].crew = [];
+  w.d.logs[0].hoursTotal = 12;
+  enterBillreview();
+  assert.notStrictEqual(reviewDrafts.get(), before, 'the hours changed, so the drafts were rebuilt');
+  assert.deepStrictEqual(reviewDrafts.get()[0].labor,
+    [{ crewId: null, name: 'Labor hours', loggedHours: 12, billedHours: 12 }]);
+});
+
+// ---------------------------------------------------------------------------
+// THE LABOR ROWS ON THE INVOICE
+// ---------------------------------------------------------------------------
+
+test('a labor row says what it is and what was logged under it, man or total', () => {
+  assert.strictEqual(invoiceLaborText({ crewId: 'c1', name: 'Shawn', loggedHours: 8, billedHours: 8 }),
+    'Shawn · logged 8 hrs');
+  assert.strictEqual(invoiceLaborText({ crewId: null, name: 'Labor hours', loggedHours: 12.5, billedHours: 12.5 }),
+    'Labor hours · logged 12.5 hrs');
+  // The keypad's own label, which is the one place the two rows differ:
+  // "Labor hours, hours to bill" says hours twice.
+  assert.strictEqual(invoiceLaborPrompt({ crewId: 'c1', name: 'Shawn' }), 'Shawn, hours to bill');
+  assert.strictEqual(invoiceLaborPrompt({ crewId: null, name: 'Labor hours' }), 'Hours to bill');
 });
 
 test('reviewCanSend refuses a draft that bills nothing, and an empty review', () => {
