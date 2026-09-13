@@ -87,7 +87,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
   invoiceLineOpts, lineAskCost, moneyText,
-  invoiceLaborText, invoiceLaborPrompt,
+  invoiceLaborSub, invoiceLaborPrompt,
   thisWeekText, invAllGroups, invReadyCount, invoicesToggle,
   reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
   invoicePinnedLabel, invoiceSentCaption,
@@ -517,7 +517,7 @@ test('a visit re-counted as one total rebuilds the drafts', (t) => {
   enterBillreview();
   assert.notStrictEqual(reviewDrafts.get(), before, 'the hours changed, so the drafts were rebuilt');
   assert.deepStrictEqual(reviewDrafts.get()[0].labor,
-    [{ crewId: null, name: 'Labor hours', loggedHours: 12, billedHours: 12 }]);
+    [{ crewId: null, name: I.LABOR_TOTAL_NAME, loggedHours: 12, billedHours: 12 }]);
 });
 
 // ---------------------------------------------------------------------------
@@ -525,10 +525,14 @@ test('a visit re-counted as one total rebuilds the drafts', (t) => {
 // ---------------------------------------------------------------------------
 
 test('a labor row says what it is and what was logged under it, man or total', () => {
-  assert.strictEqual(invoiceLaborText({ crewId: 'c1', name: 'Shawn', loggedHours: 8, billedHours: 8 }),
-    'Shawn · logged 8 hrs');
-  assert.strictEqual(invoiceLaborText({ crewId: null, name: 'Labor hours', loggedHours: 12.5, billedHours: 12.5 }),
-    'Labor hours · logged 12.5 hrs');
+  // The row is two cells: the name as it stands on the labor row, and this
+  // under it. Neither half is dressed up for a total, which is why a total
+  // row reads on the invoice the way a man's row does.
+  assert.strictEqual(invoiceLaborSub({ crewId: 'c1', name: 'Shawn', loggedHours: 8, billedHours: 8 }),
+    'logged 8 hrs');
+  assert.strictEqual(invoiceLaborSub({ crewId: null, name: I.LABOR_TOTAL_NAME, loggedHours: 12.5, billedHours: 12.5 }),
+    'logged 12.5 hrs');
+  assert.strictEqual(I.LABOR_TOTAL_NAME, 'Labor hours', 'and the name on that row is the one invmath gave it');
   // The keypad's own label, which is the one place the two rows differ:
   // "Labor hours, hours to bill" says hours twice.
   assert.strictEqual(invoiceLaborPrompt({ crewId: 'c1', name: 'Shawn' }), 'Shawn, hours to bill');

@@ -196,11 +196,10 @@ function buildInvoiceSummary(host, inv) {
 // his to change, and the only thing that knows the difference is the keypad's
 // own label, because "Labor hours, hours to bill" says hours twice.
 
-// What a labor row says, read as one line. The row prints the two halves in
-// its own two cells; this is the sentence they come to, and it is pinned in
-// tests/invoices.test.js.
+// The under-line of a labor row: what was logged under the name in the cell
+// above it. The name itself goes on the row unformatted, man or total, which
+// is why the two read alike. Pinned in tests/invoices.test.js.
 function invoiceLaborSub(l) { return 'logged ' + numText(l.loggedHours) + ' hrs'; }
-function invoiceLaborText(l) { return l.name + ' · ' + invoiceLaborSub(l); }
 function invoiceLaborPrompt(l) { return l.crewId === null ? 'Hours to bill' : l.name + ', hours to bill'; }
 
 function buildInvoiceLabor(host, inv) {

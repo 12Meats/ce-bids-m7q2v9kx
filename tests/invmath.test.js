@@ -588,7 +588,7 @@ test('draftInvoice: per-man rows first, then the one row for the totals', () => 
     { crewId: w.c1, name: 'Shawn', loggedHours: 8, billedHours: 8 },
     { crewId: w.c2, name: 'George', loggedHours: 5, billedHours: 5 },
     // The two totals are ONE row, summed, and it comes after the men.
-    { crewId: null, name: 'Labor hours', loggedHours: 16.5, billedHours: 16.5 },
+    { crewId: null, name: I.LABOR_TOTAL_NAME, loggedHours: 16.5, billedHours: 16.5 },
   ]);
   assert.strictEqual(I.billedHours(inv), 29.5);
   assert.strictEqual(I.laborCents(inv), Math.round(29.5 * 8500));
