@@ -92,7 +92,8 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
   invoicePinnedLabel, invoiceSentCaption,
   enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady, logSave,
-  logMarkDone, logMarkDoneText, logMarkDoneLabel, logProjectsOffered, entryStatusPill } = sandbox;
+  logMarkDone, logMarkDoneText, logMarkDoneLabel, logProjectsOffered, entryStatusPill,
+  logTotalValue, logSetTotalHours, logSetHours, logDirty } = sandbox;
 // Three sentences on these screens are top-level consts, which are lexical
 // rather than properties of the context's global object, so they are read out
 // of the sandbox's own scope.
@@ -101,6 +102,9 @@ const LOG_SWAP_TEXT = vm.runInContext('LOG_SWAP_TEXT', sandbox);
 const BILL_THESE_WAITING = vm.runInContext('BILL_THESE_WAITING', sandbox);
 const REVIEW_NONE_READY = vm.runInContext('REVIEW_NONE_READY', sandbox);
 const REVIEW_LOOK_OVER = vm.runInContext('REVIEW_LOOK_OVER', sandbox);
+const LOG_HOURS_CAPTION = vm.runInContext('LOG_HOURS_CAPTION', sandbox);
+const LOG_CREW_CLEARED = vm.runInContext('LOG_CREW_CLEARED', sandbox);
+const LOG_TOTAL_REPLACED = vm.runInContext('LOG_TOTAL_REPLACED', sandbox);
 const INVOICES_BILLED = vm.runInContext('INVOICES_BILLED', sandbox);
 // The send queue is a module-level let inside invoice.js, which is not a
 // property of the context's global object either. Read the same way.
@@ -267,6 +271,138 @@ test('logCrewValue says the hours, or says he was not on this one', () => {
   // show, and this is an answer, not a gap.
   assert.strictEqual(logCrewValue(draft, 'c3'), 'not on this one');
   assert.strictEqual(logCrewValue(null, 'c1'), 'not on this one');
+});
+
+// ---------------------------------------------------------------------------
+// ONE TOTAL, OR HOURS PER WORKER
+// ---------------------------------------------------------------------------
+// His own paper counts a visit as one total. Hours per man is still there for
+// the jobs that need it, and the card holds one answer or the other: the two
+// together would be two answers to one question and only one of them billed.
+
+test('the caption says the choice the card is offering', () => {
+  assert.strictEqual(LOG_HOURS_CAPTION, 'One total, or hours per worker, whichever is easier.');
+});
+
+test('the Total hours row says the hours either way, or asks for them', () => {
+  assert.strictEqual(logTotalValue(draftEntry()), 'Add hours');
+  assert.strictEqual(logTotalValue(draftEntry({ hoursTotal: 12 })), '12 hrs');
+  assert.strictEqual(logTotalValue(draftEntry({ hoursTotal: 4.5 })), '4.5 hrs');
+  // The men add up to the total when it is counted that way.
+  assert.strictEqual(logTotalValue(draftEntry({ crew: [{ crewId: 'a', hours: 8 }, { crewId: 'b', hours: 5 }] })), '13 hrs');
+});
+
+test('a total takes the men off, and says so only when there were men', (t) => {
+  const w = world();
+  const banners = [];
+  stub(t, { persistOr: () => true, showBanner: (text) => banners.push(text), render: () => {} });
+
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  logSetTotalHours(e, 12);
+  assert.strictEqual(e.hoursTotal, 12);
+  assert.strictEqual(e.crew.length, 0, 'hours by worker are gone');
+  assert.deepStrictEqual(banners, [LOG_CREW_CLEARED]);
+  assert.strictEqual(LOG_CREW_CLEARED, 'Hours by worker cleared.');
+
+  // A second total over the first has nothing to clear, so it says nothing.
+  logSetTotalHours(e, 8);
+  assert.strictEqual(e.hoursTotal, 8);
+  assert.deepStrictEqual(banners, [LOG_CREW_CLEARED]);
+
+  // Clear takes the total off and leaves no key where there was none.
+  logSetTotalHours(e, null);
+  assert.strictEqual(e.hoursTotal, undefined, 'a key that was absent is absent again, not null');
+  assert.strictEqual(I.entryHours(e), 0);
+});
+
+test('a man hours takes the total off, and says so only when there was one', (t) => {
+  const w = world();
+  const banners = [];
+  stub(t, { persistOr: () => true, showBanner: (text) => banners.push(text), render: () => {} });
+
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  logSetTotalHours(e, 12);
+  banners.length = 0;
+
+  logSetHours(e, w.c1, 6);
+  assert.strictEqual(e.hoursTotal, undefined, 'the total is gone, not left beside the man');
+  // Read field by field: the array came out of the screen's own realm, and
+  // a deep compare against this file's objects fails on the prototype alone.
+  assert.strictEqual(e.crew.length, 1);
+  assert.strictEqual(e.crew[0].crewId, w.c1);
+  assert.strictEqual(e.crew[0].hours, 6);
+  assert.deepStrictEqual(banners, [LOG_TOTAL_REPLACED]);
+  assert.strictEqual(LOG_TOTAL_REPLACED, 'Total hours replaced by hours per worker.');
+
+  // A second man, with no total left to replace, says nothing.
+  logSetHours(e, w.c2, 4);
+  assert.deepStrictEqual(banners, [LOG_TOTAL_REPLACED]);
+  assert.strictEqual(I.entryHours(e), 10);
+});
+
+test('zero is refused on the total, the way it is on a man', (t) => {
+  const w = world();
+  const banners = [];
+  stub(t, { persistOr: () => true, showBanner: (text) => banners.push(text), render: () => {} });
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  const crew = e.crew.slice();
+  logSetTotalHours(e, 0);
+  assert.deepStrictEqual(banners, ['Hours have to be more than zero']);
+  assert.strictEqual(e.hoursTotal, undefined);
+  assert.deepStrictEqual([...e.crew], [...crew], 'nothing was taken off for a number he cannot have meant');
+});
+
+test('a refused save puts both halves of the hours back, exactly as they were', (t) => {
+  const w = world();
+  stub(t, { persistOr: (revert) => { revert(); return false; }, showBanner: () => {}, render: () => {} });
+
+  const e = w.d.logs[0];
+  const crew = e.crew.slice();
+  enterLog(e.id);
+  logSetTotalHours(e, 12);
+  assert.strictEqual(e.hoursTotal, undefined, 'no key where there was none');
+  assert.deepStrictEqual([...e.crew], [...crew], 'the men are back');
+
+  // And the other way: a total on the entry, a man typed over it, disk says no.
+  e.crew = [];
+  e.hoursTotal = 12;
+  logSetHours(e, w.c1, 6);
+  assert.strictEqual(e.hoursTotal, 12, 'the total is back');
+  assert.strictEqual(e.crew.length, 0);
+});
+
+test('a total is hours enough to save, and Save carries it onto the entry', (t) => {
+  const w = world();
+  stub(t, { persistOr: () => true, showBanner: () => {}, render: () => {}, show: () => {} });
+
+  enterLog(null);
+  const draft = logTarget();
+  assert.strictEqual(logDirty(), false, 'a screen he opened by accident is still nothing');
+  draft.customerId = w.uda.id;
+  draft.projectId = w.uf.id;
+  assert.strictEqual(logMissing(draft), 'hours or a line');
+  logSetTotalHours(draft, 12);
+  assert.strictEqual(logMissing(draft), null, 'a total is hours');
+  assert.strictEqual(logDirty(), true);
+  draft.dateISO = '2026-09-08';
+  logSave();
+
+  const saved = w.d.logs[w.d.logs.length - 1];
+  assert.strictEqual(saved.hoursTotal, 12);
+  assert.strictEqual(I.entryHours(saved), 12);
+
+  // And a visit counted per man lands without the key at all.
+  enterLog(null);
+  const men = logTarget();
+  men.customerId = w.uda.id;
+  men.projectId = w.uf.id;
+  men.dateISO = '2026-09-09';
+  logSetHours(men, w.c1, 8);
+  logSave();
+  assert.strictEqual(w.d.logs[w.d.logs.length - 1].hoursTotal, undefined, 'absent stays absent');
 });
 
 // ---------------------------------------------------------------------------

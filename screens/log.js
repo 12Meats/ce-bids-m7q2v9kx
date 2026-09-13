@@ -98,7 +98,7 @@ function logDirty() {
   const e = logDraft;
   if (!e) return false;
   return !!(e.customerId || e.projectId
-    || (e.crew || []).length || (e.items || []).length
+    || (e.crew || []).length || typeof e.hoursTotal === 'number' || (e.items || []).length
     || (e.rentals || []).length || (e.equipment || []).length
     || (e.notes || '').trim());
 }
@@ -131,7 +131,8 @@ function logMissing(draft) {
   if (!draft) return 'customer';
   if (!draft.customerId) return 'customer';
   if (!draft.projectId) return 'project';
-  const hours = (draft.crew || []).some((m) => m.hours > 0);
+  // Either way of counting them: one total for the visit, or a row per man.
+  const hours = InvMath.entryHours(draft) > 0;
   const lines = (draft.items || []).length + (draft.rentals || []).length + (draft.equipment || []).length;
   // Hours OR a line: a visit that dropped off a lift and left is a real visit,
   // and so is an hour of troubleshooting with nothing fitted.
@@ -395,6 +396,28 @@ function logSetReady(e, v) {
 // on this entry — the labor screen's rule, and for the same reason. A man
 // hidden last month is still on the visit he worked, and his row has to be
 // there to be corrected.
+//
+// ONE TOTAL, OR HOURS PER WORKER. His own paper has always counted a visit as
+// one total, and hours per man is work he does at the tailgate on every entry
+// for an answer the invoice does not ask for. So the first row of this card is
+// the total, and the men are under it for the jobs that need them.
+//
+// The two never hold at once. Typing a total takes the men off, setting a
+// man's hours takes the total off, and the banner says which just happened —
+// the card would otherwise be showing two answers to one question and billing
+// only one of them.
+
+const LOG_HOURS_CAPTION = 'One total, or hours per worker, whichever is easier.';
+const LOG_CREW_CLEARED = 'Hours by worker cleared.';
+const LOG_TOTAL_REPLACED = 'Total hours replaced by hours per worker.';
+
+// The right-hand side of the Total hours row. "Add hours" rather than a blank
+// or a zero: a visit with nothing counted on it yet is a thing to do, and this
+// is the row that says how.
+function logTotalValue(e) {
+  const h = InvMath.entryHours(e);
+  return h > 0 ? numText(h) + ' hrs' : 'Add hours';
+}
 
 function logCrewOffered(e) {
   const on = new Set((e.crew || []).map((m) => m.crewId));
@@ -403,9 +426,21 @@ function logCrewOffered(e) {
 
 function buildLogCrew(host, e) {
   const box = card('Who and hours');
+  // The total comes FIRST, and before the crew is even asked about: it is the
+  // quick answer, and a phone with nobody in Settings yet can still say a
+  // visit took eight hours.
+  box.appendChild(row('Total hours', logTotalValue(e), () => {
+    promptNumber(typeof e.hoursTotal === 'number' ? e.hoursTotal : null, {
+      label: 'Total hours',
+      allowDecimal: true,
+      maxDecimals: 2,
+      done: (v) => logSetTotalHours(e, v),
+    });
+  }, { keypad: true }));
   const offered = logCrewOffered(e);
   if (!offered.length) {
     box.appendChild(emptyNote('No crew in Settings yet.'));
+    box.appendChild(caption(LOG_HOURS_CAPTION));
     host.appendChild(box);
     return;
   }
@@ -424,26 +459,69 @@ function buildLogCrew(host, e) {
     if (!m) line.classList.add('log-crew-off');
     box.appendChild(line);
   });
+  box.appendChild(caption(LOG_HOURS_CAPTION));
   box.appendChild(caption('Clear takes a man off this visit.'));
   host.appendChild(box);
 }
 
-function logSetHours(e, crewId, v) {
-  const prev = (e.crew || []).slice();
-  // Clear means he was not on this one, which is a real answer and the way a
-  // man comes back off a visit he was put on by mistake.
+// The restore both setters share. Either one can move BOTH fields, so both go
+// back, and a hoursTotal that was never there has to go back to never having
+// been there: writing null instead would be a key validateImport refuses, on
+// a visit he only meant to count.
+function logHoursRestore(e, prev) {
+  return () => {
+    if (prev.hoursTotal === undefined) delete e.hoursTotal; else e.hoursTotal = prev.hoursTotal;
+    e.crew = prev.crew;
+  };
+}
+function logHoursPrev(e) {
+  return { hoursTotal: e.hoursTotal, crew: (e.crew || []).slice() };
+}
+
+// ONE TOTAL FOR THE VISIT. It takes the men off, because the two of them
+// together are two answers to one question, and the banner says so — a card
+// that quietly emptied itself while he was looking at the keypad would read as
+// hours the app lost.
+function logSetTotalHours(e, v) {
+  const prev = logHoursPrev(e);
+  // Clear takes the total off and leaves nothing behind, the way Clear on a
+  // man's row takes him off the visit.
   if (v === null) {
-    e.crew = prev.filter((x) => x.crewId !== crewId);
-    logCommit(() => { e.crew = prev; });
+    delete e.hoursTotal;
+    logCommit(logHoursRestore(e, prev));
     render();
     return;
   }
   if (!(v > 0)) { showBanner('Hours have to be more than zero'); render(); return; }
-  const hit = prev.find((x) => x.crewId === crewId);
+  const had = prev.crew.length > 0;
+  e.hoursTotal = v;
+  e.crew = [];
+  logCommit(logHoursRestore(e, prev));
+  if (had) showBanner(LOG_CREW_CLEARED);
+  render();
+}
+
+function logSetHours(e, crewId, v) {
+  const prev = logHoursPrev(e);
+  // Clear means he was not on this one, which is a real answer and the way a
+  // man comes back off a visit he was put on by mistake. It is not him saying
+  // how the visit is counted, so a total is left where it is.
+  if (v === null) {
+    e.crew = prev.crew.filter((x) => x.crewId !== crewId);
+    logCommit(logHoursRestore(e, prev));
+    render();
+    return;
+  }
+  if (!(v > 0)) { showBanner('Hours have to be more than zero'); render(); return; }
+  const hit = prev.crew.find((x) => x.crewId === crewId);
   e.crew = hit
-    ? prev.map((x) => (x.crewId === crewId ? { crewId, hours: v } : x))
-    : prev.concat([{ crewId, hours: v }]);
-  logCommit(() => { e.crew = prev; });
+    ? prev.crew.map((x) => (x.crewId === crewId ? { crewId, hours: v } : x))
+    : prev.crew.concat([{ crewId, hours: v }]);
+  // Hours on a man is him counting the visit the other way, so the total goes.
+  const had = prev.hoursTotal !== undefined;
+  delete e.hoursTotal;
+  logCommit(logHoursRestore(e, prev));
+  if (had) showBanner(LOG_TOTAL_REPLACED);
   render();
 }
 
@@ -669,6 +747,10 @@ function logSave() {
   // gave a range to has to be saved with the range, and a one-day visit has to
   // land without the key at all, the way every entry written before v3.1 did.
   if (typeof draft.toISO === 'string') e.toISO = draft.toISO;
+  // The total is optional on disk for the same reason and copied the same way:
+  // a visit counted per man lands without the key at all, the way every entry
+  // written before v3.3 did.
+  if (typeof draft.hoursTotal === 'number') e.hoursTotal = draft.hoursTotal;
   if (!persistOr(() => {
     const i = d.logs.indexOf(e);
     if (i !== -1) d.logs.splice(i, 1);
@@ -692,6 +774,9 @@ function renderLogBilled(host, e, inv) {
   box.appendChild(row('Customer', logCustomerName(e.customerId), null));
   box.appendChild(row('Project', logProjectTitle(e.projectId), null));
   box.appendChild(row('Service', InvMath.rangeText(InvMath.entryFrom(e), InvMath.entryTo(e)), null));
+  // The hours, counted the way he counted them. A visit billed as one total
+  // would otherwise show a card with no hours on it at all.
+  if (typeof e.hoursTotal === 'number') box.appendChild(row('Total hours', logTotalValue(e), null));
   logCrewOffered(e).forEach((c) => {
     const m = (e.crew || []).find((x) => x.crewId === c.id);
     if (m) box.appendChild(row(c.name, logCrewValue(e, c.id), null));
