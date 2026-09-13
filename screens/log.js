@@ -419,6 +419,18 @@ function logTotalValue(e) {
   return h > 0 ? numText(h) + ' hrs' : 'Add hours';
 }
 
+// What the keypad's "was" line says over the Total hours row. A visit counted
+// per man has no total of its own, and the keypad's own "was not set" under a
+// row reading 13 hrs calls the men's hours missing. So that case says whose the
+// number is. The keypad still opens empty either way: 13 is what the men add up
+// to, not a total he typed and might mean to keep. Pinned in
+// tests/invoices.test.js.
+function logTotalWas(e) {
+  if (typeof e.hoursTotal === 'number') return 'was ' + numText(e.hoursTotal);
+  const h = InvMath.entryHours(e);
+  return h > 0 ? 'the men add up to ' + numText(h) + ' hrs' : 'was not set';
+}
+
 function logCrewOffered(e) {
   const on = new Set((e.crew || []).map((m) => m.crewId));
   return (logData().settings.crew || []).filter((c) => c.hidden === false || on.has(c.id));
@@ -434,13 +446,15 @@ function buildLogCrew(host, e) {
       label: 'Total hours',
       allowDecimal: true,
       maxDecimals: 2,
+      wasText: logTotalWas(e),
       done: (v) => logSetTotalHours(e, v),
     });
   }, { keypad: true }));
   const offered = logCrewOffered(e);
   if (!offered.length) {
+    // No caption about the choice: with nobody in Settings there is no choice
+    // to make, and the Total hours row above is the whole lane.
     box.appendChild(emptyNote('No crew in Settings yet.'));
-    box.appendChild(caption(LOG_HOURS_CAPTION));
     host.appendChild(box);
     return;
   }
@@ -485,8 +499,11 @@ function logHoursPrev(e) {
 function logSetTotalHours(e, v) {
   const prev = logHoursPrev(e);
   // Clear takes the total off and leaves nothing behind, the way Clear on a
-  // man's row takes him off the visit.
+  // man's row takes him off the visit. On a visit counted per man there is no
+  // total of his own to take off, and the row is showing the men's sum: Clear
+  // there is a no-op, not a reason to write the same entry back to disk.
   if (v === null) {
+    if (prev.hoursTotal === undefined) { render(); return; }
     delete e.hoursTotal;
     logCommit(logHoursRestore(e, prev));
     render();

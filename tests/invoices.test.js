@@ -93,7 +93,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   invoicePinnedLabel, invoiceSentCaption,
   enterLog, logTarget, logScreenTitle, logSetFrom, logSetTo, logSetReady, logSave,
   logMarkDone, logMarkDoneText, logMarkDoneLabel, logProjectsOffered, entryStatusPill,
-  logTotalValue, logSetTotalHours, logSetHours, logDirty } = sandbox;
+  logTotalValue, logTotalWas, logSetTotalHours, logSetHours, logDirty } = sandbox;
 // Three sentences on these screens are top-level consts, which are lexical
 // rather than properties of the context's global object, so they are read out
 // of the sandbox's own scope.
@@ -290,6 +290,34 @@ test('the Total hours row says the hours either way, or asks for them', () => {
   assert.strictEqual(logTotalValue(draftEntry({ hoursTotal: 4.5 })), '4.5 hrs');
   // The men add up to the total when it is counted that way.
   assert.strictEqual(logTotalValue(draftEntry({ crew: [{ crewId: 'a', hours: 8 }, { crewId: 'b', hours: 5 }] })), '13 hrs');
+});
+
+test('the keypad over the Total hours row says where the number on it came from', () => {
+  assert.strictEqual(logTotalWas(draftEntry({ hoursTotal: 12 })), 'was 12');
+  assert.strictEqual(logTotalWas(draftEntry({ hoursTotal: 4.5 })), 'was 4.5');
+  // A visit counted per man has no total of its own, and "was not set" under a
+  // row reading 13 hrs calls the men's hours missing. The line says whose the
+  // number is instead. The keypad itself still opens empty: 13 is what the men
+  // add up to, not a total he typed and might mean to keep.
+  assert.strictEqual(logTotalWas(draftEntry({ crew: [{ crewId: 'a', hours: 8 }, { crewId: 'b', hours: 5 }] })),
+    'the men add up to 13 hrs');
+  assert.strictEqual(logTotalWas(draftEntry()), 'was not set');
+});
+
+test('Clear on a Total hours row with no total on it writes nothing', (t) => {
+  const w = world();
+  let saves = 0;
+  stub(t, { persistOr: () => { saves += 1; return true; }, showBanner: () => {}, render: () => {} });
+
+  // This visit is counted per man, so the total row is showing the men's sum
+  // and there is no total of his own to take off.
+  const e = w.d.logs[0];
+  enterLog(e.id);
+  const crew = e.crew.slice();
+  logSetTotalHours(e, null);
+  assert.strictEqual(saves, 0, 'nothing to clear is nothing to save');
+  assert.strictEqual(e.hoursTotal, undefined);
+  assert.deepStrictEqual([...e.crew], [...crew], 'and the men are still on it');
 });
 
 test('a total takes the men off, and says so only when there were men', (t) => {

@@ -149,8 +149,8 @@ twenty seconds:
    old keypad if you would rather punch **0903**.
 4. **Who and hours.** The hours can be **one total for the visit** on the top
    row, or a row per man underneath it, whichever is easier: put a total in and
-   the men come off, put a man's hours in and the total comes off. **Clear**
-   takes him off.
+   the men come off, put a man's hours in and the total comes off. **Clear** on
+   a man's row takes him off; **Clear** on the total row takes the total off.
 5. **Parts, rentals, equipment.** **+ Part** is the same picker as the walk,
    tiles and a search box. **+ Rental** for a lift. **+ Equipment** for your own.
    Nothing to add? Leave it empty.
