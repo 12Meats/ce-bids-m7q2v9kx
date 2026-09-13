@@ -1176,6 +1176,27 @@ test('validateImport accepts the invoice shapes and refuses the wrong ones', () 
   assert.ok(!ok((f) => { f.d.invoices.push({ ...f.inv, id: 'inv2', logIds: [] }); }), 'two invoices with the same number');
 });
 
+// v3.3: a visit can carry ONE total of hours instead of a row per man, and an
+// invoice can carry the labor row that total becomes. Both are optional, both
+// fall back, and a backup written before this release has neither.
+test('validateImport takes hoursTotal on a log and a labor row with no man on it', () => {
+  const ok = (mutate) => { const f = invoiceFixture(); mutate(f); return S.validateImport(JSON.stringify(f.d)) !== null; };
+  // The fixture is a v3 file: no hoursTotal anywhere, and it loads as it always did.
+  assert.ok(ok(() => {}), 'a file with no hoursTotal on any entry still loads');
+  assert.ok(ok((f) => { f.log.crew = []; f.log.hoursTotal = 12; }), 'one total for the visit');
+  assert.ok(ok((f) => { f.log.hoursTotal = 4.5; }), 'half an hour is a real total');
+  assert.ok(!ok((f) => { f.log.crew = []; f.log.hoursTotal = 0; }), 'no hours is absent, not zero');
+  assert.ok(!ok((f) => { f.log.hoursTotal = -4; }), 'hours below nothing');
+  assert.ok(!ok((f) => { f.log.hoursTotal = '12'; }), 'a total is a number, not the text of one');
+  assert.ok(!ok((f) => { f.log.hoursTotal = null; }), 'absent is the only way to say not set');
+
+  // The invoice row a total becomes: no man's id on it, and still a name,
+  // because the name is what the row says on the paper.
+  assert.ok(ok((f) => { f.inv.labor = [{ crewId: null, name: 'Labor hours', loggedHours: 12, billedHours: 12 }]; }));
+  assert.ok(!ok((f) => { f.inv.labor = [{ crewId: null, name: null, loggedHours: 12, billedHours: 12 }]; }), 'a row still needs a name');
+  assert.ok(!ok((f) => { f.inv.labor = [{ crewId: 7, name: 'Labor hours', loggedHours: 12, billedHours: 12 }]; }), 'a crew id is a string or nothing');
+});
+
 test('newProject, newLogEntry: the shapes the screens write', () => {
   const d = S.emptyData();
   const c = S.findOrCreateCustomer(d, 'UDA');

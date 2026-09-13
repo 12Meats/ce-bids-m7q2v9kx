@@ -41,6 +41,32 @@
   // is not him saying the week is finished.
   function isReady(e) { return !!e && e.ready === true; }
 
+  // THE HOURS ON A VISIT, counted one way or the other.
+  //
+  // His own method on paper is one total for the visit: thirteen hours, at the
+  // rate, on one line. Hours per man is the extra work he did not ask for and
+  // does not want on every entry, so an entry may carry hoursTotal instead of a
+  // crew, and both are OPTIONAL — an entry with neither is nothing yet, and a
+  // backup written before this release has no hoursTotal on any entry and reads
+  // exactly as it did on the phone that wrote it.
+  //
+  // The crew WINS when it has hours on it. The two cannot both be true at once
+  // and the log screen makes sure of it (setting one clears the other), but a
+  // hand-edited file can hold both, and in that case the men are the more
+  // particular answer: a total left behind beside them would silently double
+  // the day if it were added on.
+  function hoursTotalOf(e) {
+    return e && typeof e.hoursTotal === 'number' && isFinite(e.hoursTotal) && e.hoursTotal > 0 ? e.hoursTotal : 0;
+  }
+  function crewHours(e) { return ((e && e.crew) || []).reduce((t, m) => t + m.hours, 0); }
+  function entryHours(e) {
+    const crew = crewHours(e);
+    return crew > 0 ? crew : hoursTotalOf(e);
+  }
+  // The hours that belong to the ONE labor row rather than to a man's: a total
+  // is only a total while there is no crew under it.
+  function totalOnlyHours(e) { return crewHours(e) > 0 ? 0 : hoursTotalOf(e); }
+
   // -------------------------------------------------------------------------
   // THE PILE: which entries become which invoices
   // -------------------------------------------------------------------------
@@ -218,7 +244,7 @@
       return (a >= from && a <= to) || (b >= from && b <= to);
     };
     const week = ((data && data.logs) || []).filter((e) => e && from && inWeek(e));
-    const hours = week.reduce((s, e) => s + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
+    const hours = week.reduce((s, e) => s + entryHours(e), 0);
     const mine = week.filter((e) => !e.invoiceId);
     const ready = mine.filter(isReady).length;
     const unbilledCents = groupEach(mine, data)
@@ -235,7 +261,7 @@
   // what is sitting there unbilled, and the customer's price is a decision the
   // invoice has not made yet.
   function pileHours(g) {
-    return ((g && g.entries) || []).reduce((s2, e) => s2 + (e.crew || []).reduce((t, m) => t + m.hours, 0), 0);
+    return ((g && g.entries) || []).reduce((s2, e) => s2 + entryHours(e), 0);
   }
   function pileParts(g) {
     return ((g && g.entries) || []).reduce((s2, e) => s2 + B.materialCost({ areas: [{ items: e.items || [] }] }), 0);
@@ -256,6 +282,13 @@
   // or the customer card. Labor is one row per man with the hours summed
   // across the entries; billedHours starts equal to loggedHours and is his to
   // change on the invoice.
+  //
+  // A visit logged as ONE TOTAL has no man to hang its hours on, so those
+  // entries sum into a single row of their own — crewId null, named for what
+  // it is — after the men. An invoice can carry both kinds: one visit counted
+  // per man on the Monday and one counted as a total on the Thursday is two
+  // rows, and the paper adds them into the labor line it already prints.
+  const LABOR_TOTAL_NAME = 'Labor hours';
   function draftInvoice(g, data, createdAt) {
     const s = data.settings;
     const cust = customerOf(data, g.customerId);
@@ -276,6 +309,10 @@
     const labor = Array.from(byCrew.entries())
       .map(([crewId, hours]) => ({ crewId, name: crewName(data, crewId), loggedHours: hours, billedHours: hours }))
       .sort((x, y) => rank(x.crewId) - rank(y.crewId));
+    const totalHours = g.entries.reduce((s2, e) => s2 + totalOnlyHours(e), 0);
+    if (totalHours > 0) {
+      labor.push({ crewId: null, name: LABOR_TOTAL_NAME, loggedHours: totalHours, billedHours: totalHours });
+    }
     return {
       id: null, number: null, kind: 'tm', customerId: g.customerId, projectTitle: g.title,
       dateISO: null, serviceFrom: g.from, serviceTo: g.to,
@@ -420,7 +457,7 @@
   }
 
   return {
-    AMBER_AFTER_DAYS, entryFrom, entryTo, isReady,
+    AMBER_AFTER_DAYS, LABOR_TOTAL_NAME, entryFrom, entryTo, isReady, entryHours,
     groupEach, combineAll, pileAge, thisWeek,
     group, canCombine, combine, split, pileHours, pileParts,
     draftInvoice, draftProjectInvoice, projectRemainingCents,

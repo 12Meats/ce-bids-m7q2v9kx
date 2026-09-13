@@ -834,7 +834,12 @@
         if (!isIntGte0(inv.rateCents) || !isFiniteGte0(inv.markupPct)) return null;
         if (!isArr(inv.labor)) return null;
         for (const l of inv.labor) {
-          if (!isObj(l) || !isStr(l.crewId) || !isStr(l.name)) return null;
+          // v3.3: a labor row may belong to NO man. A visit logged as one
+          // total for the day has no crew id to carry, so its row is
+          // crewId null with the name the paper prints. The name is still
+          // required either way — it is what the row says on the invoice,
+          // and a row with nothing to call itself is a blank line on paper.
+          if (!isObj(l) || !(l.crewId === null || isStr(l.crewId)) || !isStr(l.name)) return null;
           if (!isFiniteGte0(l.loggedHours) || !isFiniteGte0(l.billedHours)) return null;
         }
         if (!validAreas([{ id: 'inv-' + inv.id, name: '', items: inv.items, photoIds: [] }])) return null;
@@ -880,6 +885,14 @@
         // writes one and a file that has one has been edited by hand.
         if (e.toISO !== undefined && !isISO(e.toISO)) return null;
         if (e.ready !== undefined && !isBool(e.ready)) return null;
+        // v3.3: the hours on a visit can be ONE total instead of a row per
+        // man, which is the way his paper always counted them. Optional, like
+        // the To above it: a file written before this release has no key and
+        // reads as the crew hours it was logged with. Zero is refused rather
+        // than treated as absent, for the reason the log screen refuses it —
+        // a visit with no hours is a visit with nothing on it, and absent is
+        // the only way this app says that.
+        if (e.hoursTotal !== undefined && !isFiniteGt0(e.hoursTotal)) return null;
         if (!isArr(e.crew)) return null;
         for (const m of e.crew) {
           if (!isObj(m) || !crewIds.has(m.crewId) || !isFiniteGt0(m.hours)) return null;

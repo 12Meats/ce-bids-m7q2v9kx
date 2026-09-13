@@ -527,3 +527,94 @@ test('thisWeek on a phone with nothing on it answers with zeros', () => {
   const w = I.thisWeek(d, '2026-09-09', S.mondayOf);
   assert.deepStrictEqual({ ...w }, { hours: 0, logged: 0, inProgress: 0, ready: 0, unbilledCents: 0, from: '2026-09-07', to: '2026-09-13' });
 });
+
+// ---------------------------------------------------------------------------
+// ONE TOTAL OF HOURS
+// ---------------------------------------------------------------------------
+// His own paper counts a visit as one total: thirteen hours, at the rate, on
+// one line. Hours per man is still there for the jobs that need it, and an
+// entry carries one or the other. Every rule that adds hours up reads
+// entryHours, so a total counts everywhere a man's hours already did.
+
+test('entryHours: the crew wins when it has hours, the total answers when it does not', () => {
+  assert.strictEqual(I.entryHours({ crew: [{ crewId: 'a', hours: 8 }, { crewId: 'b', hours: 5 }] }), 13);
+  assert.strictEqual(I.entryHours({ crew: [], hoursTotal: 12 }), 12);
+  assert.strictEqual(I.entryHours({ hoursTotal: 12 }), 12, 'an entry that never had a crew key');
+  // A hand-edited file can hold both. The men are the more particular answer,
+  // and adding the leftover total on would silently bill the day twice.
+  assert.strictEqual(I.entryHours({ crew: [{ crewId: 'a', hours: 8 }], hoursTotal: 12 }), 8);
+  // A crew that was put on and cleared back to nothing is not hours, so the
+  // total underneath it still answers.
+  assert.strictEqual(I.entryHours({ crew: [{ crewId: 'a', hours: 0 }], hoursTotal: 12 }), 12);
+  // Nothing at all, and every shape a hand-edited key can arrive in.
+  assert.strictEqual(I.entryHours({ crew: [] }), 0);
+  assert.strictEqual(I.entryHours({}), 0);
+  assert.strictEqual(I.entryHours(null), 0);
+  assert.strictEqual(I.entryHours({ hoursTotal: 0 }), 0);
+  assert.strictEqual(I.entryHours({ hoursTotal: -4 }), 0);
+  assert.strictEqual(I.entryHours({ hoursTotal: '12' }), 0);
+});
+
+test('pileHours and thisWeek count a visit logged as one total', () => {
+  const g = { entries: [
+    { crew: [{ crewId: 'a', hours: 8 }], items: [] },
+    { crew: [], hoursTotal: 12, items: [] },
+  ] };
+  assert.strictEqual(I.pileHours(g), 20);
+
+  const w = world();
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-08', createdAt: 1 });
+  e.hoursTotal = 12;
+  // Sep 8 2026 is a Tuesday: the week of Sep 7, which had nothing in it.
+  const week = I.thisWeek(w.d, '2026-09-08', S.mondayOf);
+  assert.strictEqual(week.hours, 12);
+  assert.strictEqual(week.logged, 1);
+  assert.strictEqual(week.inProgress, 1);
+  assert.strictEqual(week.unbilledCents, 12 * 8500, 'twelve hours at the customer rate');
+});
+
+test('draftInvoice: per-man rows first, then the one row for the totals', () => {
+  const w = world();
+  const perMan = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-07', createdAt: 1 });
+  perMan.crew = [{ crewId: w.c1, hours: 8 }, { crewId: w.c2, hours: 5 }];
+  const total = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-08', createdAt: 2 });
+  total.hoursTotal = 12;
+  const second = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-09', createdAt: 3 });
+  second.hoursTotal = 4.5;
+
+  const g = I.group([perMan, total, second], w.d, monday)[0];
+  const inv = I.draftInvoice(g, w.d, 1);
+  assert.deepStrictEqual(inv.labor, [
+    { crewId: w.c1, name: 'Shawn', loggedHours: 8, billedHours: 8 },
+    { crewId: w.c2, name: 'George', loggedHours: 5, billedHours: 5 },
+    // The two totals are ONE row, summed, and it comes after the men.
+    { crewId: null, name: 'Labor hours', loggedHours: 16.5, billedHours: 16.5 },
+  ]);
+  assert.strictEqual(I.billedHours(inv), 29.5);
+  assert.strictEqual(I.laborCents(inv), Math.round(29.5 * 8500));
+
+  // An invoice with nothing but per-man hours grows no empty total row.
+  const men = I.draftInvoice(I.group([perMan], w.d, monday)[0], w.d, 1);
+  assert.deepStrictEqual(men.labor.map((l) => l.crewId), [w.c1, w.c2]);
+});
+
+test('draftInvoice: a total is only a total while there is no crew under it', () => {
+  const w = world();
+  const both = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-07', createdAt: 1 });
+  both.crew = [{ crewId: w.c1, hours: 8 }];
+  both.hoursTotal = 12;               // a hand-edited leftover, not a shape this app writes
+  const inv = I.draftInvoice(I.group([both], w.d, monday)[0], w.d, 1);
+  assert.deepStrictEqual(inv.labor, [{ crewId: w.c1, name: 'Shawn', loggedHours: 8, billedHours: 8 }]);
+  assert.strictEqual(I.billedHours(inv), 8, 'the day is billed once');
+});
+
+test('the paper prints a total inside the one labor line it already had', () => {
+  const w = world();
+  const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: w.uf.id, dateISO: '2026-09-07', createdAt: 1 });
+  e.hoursTotal = 12;
+  const inv = I.draftInvoice(I.group([e], w.d, monday)[0], w.d, 1);
+  const rows = I.invoiceRows(inv);
+  assert.deepStrictEqual(rows.labor, [
+    { qtyText: '12 hrs', desc: 'Labor hours', unitCents: 8500, cents: 102000 },
+  ]);
+});
