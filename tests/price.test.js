@@ -274,14 +274,18 @@ test('Done with nothing typed, on any of the three handles, writes nothing at al
   assert.ok(S.validateImport(JSON.stringify(d)));
 });
 
-// The readout's material rows: what a line cost him, then what it prints at.
-// A lot has no unit, so the row says the whole amount and calls it a lot
-// rather than printing a dash or falling over on a null.
-test('priceItemReadout: cost then the unit it prints at; a lot says the lot', () => {
-  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null }, 15), '$0.38 → $0.44');
-  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, listCents: 40 }, 15), '$0.38 → $0.46');
+// The readout's material rows: what a line PRINTS at, with QED's list beside
+// it when it has one. A lot has no unit, so the row says the whole amount and
+// calls it a lot rather than printing a dash or falling over on a null.
+test('priceItemReadout: the unit it prints at, QED beside it; a lot says the lot', () => {
+  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null }, 15), '$0.44');
+  assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, listCents: 40 }, 15), '$0.46 · QED $0.40');
   assert.strictEqual(priceItemReadout({ qty: 500, costCents: 38, priceCents: null, lotCents: 21600 }, 15),
-    '$0.38 → $216.00 the lot');
+    '$216.00 the lot');
+  // A v3.4 line carries no cost at all, and the old sentence put a dash where
+  // its first number used to be.
+  assert.strictEqual(priceItemReadout({ qty: 2, costCents: null, priceCents: 2200, listCents: 1800 }, 15),
+    '$22.00 · QED $18.00');
 });
 
 // The readout's biggest lines are the biggest AS PRINTED. A lot is the one

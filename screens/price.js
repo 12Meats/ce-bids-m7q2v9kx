@@ -1223,13 +1223,15 @@ function priceTopItems(bid, markupPct) {
   return rows.slice(0, PRICE_TOP_ITEMS);
 }
 
-// One material line on the readout: what it cost him, then what it prints
-// at. A lot has no unit price, so the row gives the whole amount and says so;
-// moneyText(null) would print a dash where a number belongs.
+// One material line on the readout: what it PRINTS at, and QED's list beside
+// it when the line has one. It used to say the cost first, and since v3.4 a
+// line may carry none at all, which put a dash where a number belongs and a
+// number he no longer sees anywhere else on his screens. A lot has no unit
+// price, so the row gives the whole amount and says so.
 function priceItemReadout(it, markupPct) {
   const p = BidMath.itemPrice(it, markupPct);
-  const cost = moneyText(it.costCents);
-  return p.unit == null ? cost + ' → ' + moneyText(p.cents) + ' the lot' : cost + ' → ' + moneyText(p.unit);
+  const qed = Number.isInteger(it.listCents) && it.listCents > 0 ? ' · QED ' + moneyText(it.listCents) : '';
+  return (p.unit == null ? moneyText(p.cents) + ' the lot' : moneyText(p.unit)) + qed;
 }
 
 function buildReadouts(bid, stack, solved, markup) {
