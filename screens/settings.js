@@ -773,8 +773,8 @@ function buildSetRates() {
   settingsPctRow(box, s, 'marginPct', 'Default margin',
     'What a new bid aims for. New bids only.');
 
-  settingsPctRow(box, s, 'markupPct', 'Material markup',
-    'What you add on top of what a part bills at: its list price when the line has one, what it cost you when it does not. New bids only.');
+  settingsPctRow(box, s, 'markupPct', 'Suggested markup',
+    "What the price keypad suggests on top of QED's list price. What you type on a line is what prints. New bids only.");
 
   settingsPctRow(box, s, 'consumablesPct', 'Consumables',
     'Tape, wire nuts, straps, bits, blades. A share of material cost. New bids only.');
@@ -1978,14 +1978,16 @@ function buildSetCatalogRow(box, p, searching, options) {
 
 // The muted line under a part's name: the drawer when he is searching across
 // all of them, and the supplier's handle when the part has one. "QED 3302434 ·
-// $39.08 list, Sep 8, 2026" says the import reached this part and when.
+// list $39.08, Sept 8, 2026 · yours $45.00" says what QED lists the part at,
+// when the import last said so, and what he charged for it himself.
 function settingsCatalogSub(p, searching, options) {
   const bits = [];
   if (searching) bits.push(catalogCategoryLabel(p.category));
   if (p.sku) bits.push('QED ' + p.sku);
-  if (Number.isInteger(p.lastListCents) && p.priceCheckedISO) {
-    bits.push(moneyText(p.lastListCents) + ' list, ' + fmtDate(p.priceCheckedISO));
+  if (Number.isInteger(p.lastListCents)) {
+    bits.push('list ' + moneyText(p.lastListCents) + (p.priceCheckedISO ? ', ' + fmtDate(p.priceCheckedISO) : ''));
   }
+  if (Number.isInteger(p.lastPriceCents)) bits.push('yours ' + moneyText(p.lastPriceCents));
   // Where the ROW came from, which is not the same fact as the part number
   // above it: he can type a QED number onto a part of his own, and that part
   // is still one he typed. This is what the filter chips are filtering on.

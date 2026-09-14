@@ -257,9 +257,8 @@ function buildInvoiceLines(host, inv) {
   if (empty) box.appendChild(emptyNote('Nothing but hours on this one. Tap + Part for anything you fitted.'));
 
   (inv.items || []).forEach((it) => {
-    const bills = itemBillText(it, markup);
     const line = lineRow(it.name,
-      itemCountText(it.qty, it.unit, it.costCents) + (bills ? ' · ' + bills : ''),
+      itemLineText(it, markup),
       moneyText(BidMath.itemPrice(it, markup).cents),
       () => { invoiceItemMenu = invoiceItemMenu === it ? null : it; render(); });
     if (invoicePicker.highlight === it) line.classList.add('walk-row-new');
@@ -368,6 +367,7 @@ function renderInvoiceAdd(host, inv) {
     // draft under review is in the catalog whether or not the draft ever is.
     persistOr: (restore) => invoiceWrite(inv, restore),
     persistCatalog: persistOr,
+    markupPct: inv.markupPct,
     data: invoiceData(),
   });
 }

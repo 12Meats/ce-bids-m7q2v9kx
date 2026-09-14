@@ -356,7 +356,13 @@ test('settingsCatalogSub says where a part came from and how many options it has
   const imported = catPart('60 A 3-pole breaker · B360',
     { source: QED, sku: '22590', lastListCents: 9900, priceCheckedISO: '2026-09-09' });
   assert.strictEqual(settingsCatalogSub(imported, false, 0),
-    'QED 22590 · $99.00 list, Sept 9, 2026 · From QED');
+    'QED 22590 · list $99.00, Sept 9, 2026 · From QED');
+
+  // A list price he typed himself has no checked-on date, and the row says the
+  // number anyway rather than dropping it. What he charged for it last is said
+  // beside it (v3.4), so the two numbers sit together where he compares them.
+  const byHand = catPart('60 A 3-pole breaker · B360', { lastListCents: 9900, lastPriceCents: 11400 });
+  assert.strictEqual(settingsCatalogSub(byHand, false, 0), 'list $99.00 · yours $114.00');
 });
 
 // Only the parts that could actually hold an option: same drawer, still on the

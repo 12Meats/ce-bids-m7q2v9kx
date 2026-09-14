@@ -547,8 +547,8 @@ function logSetHours(e, crewId, v) {
 // ---------------------------------------------------------------------------
 // The walk's three kinds, on the same entry: material lines counted through
 // the picker, a rental passed through with its markup switch, and his own gear
-// at the day rate Settings keeps. The money on this screen is COST, the way it
-// is on the walk; what the customer pays is decided on the invoice.
+// at the day rate Settings keeps. The money on a part line is what the paper
+// PRINTS, the way it is on the walk since v3.4.
 
 function logMarkup() { return logData().settings.markupPct; }
 
@@ -559,10 +559,9 @@ function buildLogLines(host, e) {
   if (empty) box.appendChild(emptyNote('Nothing on this visit yet. Tap + Part for what you fitted.'));
 
   (e.items || []).forEach((it) => {
-    const bills = itemBillText(it, markup);
     const line = lineRow(it.name,
-      itemCountText(it.qty, it.unit, it.costCents) + (bills ? ' · ' + bills : ''),
-      BidMath.fmt(BidMath.materialCost({ areas: [{ items: [it] }] })),
+      itemLineText(it, markup),
+      moneyText(BidMath.itemPrice(it, markup).cents),
       () => { logItemMenu = logItemMenu === it ? null : it; render(); });
     if (logPicker.highlight === it) line.classList.add('walk-row-new');
     box.appendChild(line);
@@ -664,12 +663,13 @@ function renderLogAdd(host, e) {
     // The line goes through logCommit, which writes nothing while this visit is
     // still a draft in memory. The CATALOG goes through the shell's own save:
     // a part invented at the truck, the unit it is counted in, one more use,
-    // and what it cost this time are facts about his catalog and they are true
-    // whether or not this visit is ever saved. The walk has always written
+    // and what he charged this time are facts about his catalog and they are
+    // true whether or not this visit is ever saved. The walk has always written
     // them at once, and a part invented here and lost on Back is the same part
     // typed again tomorrow.
     persistOr: logCommit,
     persistCatalog: persistOr,
+    markupPct: logMarkup(),
     data: logData(),
   });
 }
@@ -799,7 +799,7 @@ function renderLogBilled(host, e, inv) {
     if (m) box.appendChild(row(c.name, logCrewValue(e, c.id), null));
   });
   (e.items || []).forEach((it) => {
-    box.appendChild(lineRow(it.name, itemCountText(it.qty, it.unit, it.costCents), null, null));
+    box.appendChild(lineRow(it.name, itemLineText(it, logMarkup()), null, null));
   });
   (e.rentals || []).forEach((x) => box.appendChild(lineRow(x.name || 'Rental', rentalSubText(x), null, null)));
   (e.equipment || []).forEach((x) => box.appendChild(lineRow(x.name || 'Equipment', equipSubText(x), null, null)));

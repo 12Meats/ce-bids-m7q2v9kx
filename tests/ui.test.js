@@ -36,7 +36,7 @@ const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
   bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, daysText, detailCaption, itemCountText,
-  itemBillText, itemLineText, priceSuggestions, areaNoteLine, perUnitText,
+  itemLineText, priceSuggestions, areaNoteLine, perUnitText,
   priceSearchUrl, deferredBanner } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -869,25 +869,6 @@ test('perUnitText names the unit, or says each', () => {
   assert.equal(perUnitText('ft'), ' per foot');
   assert.equal(perUnitText('ea'), ' each');
   assert.equal(perUnitText('pcs'), ' each');
-});
-
-// What a walk row says under its cost when the line bills at something other
-// than cost plus markup. Empty when it does not, so the row reads as it
-// always has and nothing on an old bid changes.
-test('itemBillText: nothing by default, the unit for a list, the whole amount for a lot', () => {
-  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null }, 15), '');
-  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: null, lotCents: null }, 15), '');
-  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: 40 }, 15),
-    'bills at $0.46 per foot');                                          // 40 × 1.15 = 46
-  assert.equal(itemBillText({ unit: 'ea', qty: 2, costCents: 1500, priceCents: null, listCents: 1800 }, 15),
-    'bills at $20.70 each');
-  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, listCents: 40, lotCents: 21600 }, 15),
-    'bills $216.00 the lot');
-  // A $0 lot is unpriced, and says so with the number rather than hiding.
-  assert.equal(itemBillText({ unit: 'ft', qty: 500, costCents: 38, priceCents: null, lotCents: 0 }, 15),
-    'bills $0.00 the lot');
-  // A legacy per-unit override is a price the paper prints too, so the row says it.
-  assert.equal(itemBillText({ unit: 'ea', qty: 2, costCents: 1500, priceCents: 2000 }, 15), 'bills at $20.00 each');
 });
 
 test('itemLineText: the count, what prints per unit, QED beside it', () => {

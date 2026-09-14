@@ -154,10 +154,12 @@ function walkChangeOrder(bid) {
 // name, the catalog, the rentals — off the bid, so the two are never confused.
 function walkCurrentArea(edit) { return (edit.areas || []).find((a) => a.id === walkAreaId) || null; }
 
-// One area's cost, through the same primitive that computes the whole bid's
-// material cost — so the numbers on this screen always add up to the number on
-// the Price screen, rather than being a second opinion that rounds differently.
-function walkAreaCost(area) { return BidMath.materialCost({ areas: [area] }); }
+// What an area's lines PRINT, added up: since v3.4 the walk shows him prices,
+// not costs (the cost stack on Costs & price is where cost lives), so a row's
+// number and the area's number are both the paper's, and add up to each other.
+function walkAreaTotal(area, markup) {
+  return (area.items || []).reduce((s, it) => s + BidMath.itemPrice(it, markup).cents, 0);
+}
 
 
 function walkPlural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
@@ -195,12 +197,16 @@ function renderWalkAreas(bid, edit, host) {
   ));
 
   const areas = edit.areas || [];
+  // The markup a line's suggestion is figured at, resolved once for the whole
+  // screen: every number here is what the lines PRINT, and the cards under the
+  // big one have to add up to it.
+  const markup = BidMath.resolveMarkup(bid, state.data.settings);
 
-  // The one number this screen produces: what he has counted, at cost, with
-  // the rooms it came out of underneath it.
+  // The one number this screen produces: what he has counted, at what the
+  // paper will print, with the rooms it came out of underneath it.
   host.appendChild(bigNumber(
-    BidMath.fmt(BidMath.materialCost({ areas })),
-    walkPlural(areas.length, 'area', 'areas') + ' · at cost, not the price'
+    BidMath.fmt(areas.reduce((s, a) => s + walkAreaTotal(a, markup), 0)),
+    walkPlural(areas.length, 'area', 'areas') + ' · what the parts print'
   ));
 
   // ONE SECTION, not a heading and then some loose cards and then a button
@@ -243,7 +249,7 @@ function renderWalkAreas(bid, edit, host) {
         // never reaches the customer's paper, so this card is the only place
         // it can remind him it is there.
         note: areaNoteLine(area.notes),
-        value: BidMath.fmt(walkAreaCost(area)),
+        value: BidMath.fmt(walkAreaTotal(area, markup)),
         onTap: () => {
           // A step deeper, so it gets a history entry: the phone's back gesture
           // and this screen's own Back are one action now (see app.js navPush).
@@ -379,27 +385,25 @@ function renderWalkArea(bid, edit, area, host) {
 
   const box = card();
   const items = area.items || [];
+  // What the line will PRINT at, which is what decides whether it is still
+  // unpriced — an "Anything missing?" row lands here at $0 and has to say so
+  // until he puts a number on it. Resolved before the list so the rows, the
+  // area total under them and the picker all figure off one number.
+  const markup = BidMath.resolveMarkup(bid, state.data.settings);
   if (items.length === 0) {
     box.appendChild(emptyNote('Tap + Item to add conduit, wire, boxes, or parts.'));
   } else {
-    // What the line will PRINT at, which is what decides whether it is still
-    // unpriced — an "Anything missing?" row lands here at $0 and has to say so
-    // until he puts a number on it.
-    const markup = BidMath.resolveMarkup(bid, state.data.settings);
     // One sentence per card, then a mark. See unpricedWarns in ui.js.
     const warn = unpricedWarns();
     items.forEach((it) => {
-      // The right-hand number stays COST, because the area cost under it is
-      // the total of these lines and a row has to add up to its own total.
-      // What the line bills at, when that is not cost plus markup, is a few
-      // words after the count: "500 ft at $0.38 · bills $216.00 the lot".
-      const bills = itemBillText(it, markup);
+      // The right-hand number is what the line PRINTS, so it adds up to the
+      // area total under it and to the paper. The sentence under the name says
+      // the count, the price per unit, and QED's list beside it when the line
+      // has one: "2 rolls at $198.57 · QED $172.67".
       const line = walkRow(
         it.name,
-        itemCountText(it.qty, it.unit, it.costCents) + (bills ? ' · ' + bills : ''),
-        // The line's cost off the same helper the area total uses,
-        // rather than a second copy of qty × cost written here.
-        BidMath.fmt(walkAreaCost({ items: [it] })),
+        itemLineText(it, markup),
+        BidMath.fmt(BidMath.itemPrice(it, markup).cents),
         () => { walkItemMenu = walkItemMenu === it ? null : it; render(); }
       );
       if (walkPicker.highlight === it) line.classList.add('walk-row-new');
@@ -417,15 +421,15 @@ function renderWalkArea(bid, edit, area, host) {
   // nothing at all and a banner sent him to a screen he was not on. It shows
   // here, as what it is — a line somebody else prices.
   //
-  // ABOVE the area cost, not under it. Area cost is the total of the material
-  // lines over it, and a row printed beneath a total reads as part of it: a
-  // $0 lift under "Area cost $412.00" says the lift is in the 412, and it is
-  // not — it is priced by the day on Costs & price.
+  // ABOVE the area total, not under it. The area total is the total of the
+  // material lines over it, and a row printed beneath a total reads as part of
+  // it: a $0 lift under "Area total $412.00" says the lift is in the 412, and
+  // it is not — it is priced by the day on Costs & price.
   walkAreaRentals(bid, area).forEach((x) => {
     box.appendChild(walkRow(x.name || 'Rental', WALK_RENTAL_SUB, null, null));
   });
   if (items.length > 0) {
-    box.appendChild(walkRow('Area cost', null, BidMath.fmt(walkAreaCost(area)), null));
+    box.appendChild(walkRow('Area total', null, BidMath.fmt(walkAreaTotal(area, markup)), null));
   }
   host.appendChild(box);
 
@@ -512,7 +516,7 @@ function buildItemActions(box, lineEl, area, it) {
 // ADD ITEM
 // ---------------------------------------------------------------------------
 // The flow itself — tiles, search, the catalog list, + New part, the unit
-// picker, quantity, same-or-different price, the cost keypad, the commit — is
+// picker, quantity, same-or-different price, the price keypad, the commit — is
 // renderItemPicker in ui.js. It moved there so the truck log can offer the
 // identical one onto a log entry rather than growing a second copy of it that
 // drifts. What is left here is what is the WALK's: which list is being filled,
@@ -555,6 +559,7 @@ function renderWalkAdd(bid, edit, area, host) {
     onChanged: render,
     navPush,
     persistOr,
+    markupPct: BidMath.resolveMarkup(bid, state.data.settings),
     data: state.data,
   });
 }
@@ -1278,6 +1283,10 @@ function walkForgetAdd(bid, name) {
 // to be "on the item, in the area, one tap away, and nothing says so." Now the
 // keypad comes up with the row's own name on it, and the item lands priced.
 //
+// "Permits, how much?" is what the CUSTOMER pays for it, so it prints exactly
+// as typed: $500 prints $500 (before v3.4 it went on as a cost and printed
+// with the markup on top of it, which is the complaint this release answers).
+//
 // Clear is a real answer here, the same as it is on the misc line: he does not
 // know what the permits cost yet, so the line lands at $0 and wears the amber
 // flag until he does. Cancel is not an answer at all — nothing is added and the
@@ -1301,8 +1310,8 @@ function walkForgetAddToArea(bid, name, area) {
 
 // The item and the answer reach the disk together or not at all: the row is
 // only 'added' once the line it is about really was saved.
-function walkForgetCommitItem(bid, name, area, costCents) {
-  const item = { catalogId: null, name, unit: 'lot', qty: 1, costCents, priceCents: null };
+function walkForgetCommitItem(bid, name, area, priceCents) {
+  const item = { catalogId: null, name, unit: 'lot', qty: 1, costCents: null, priceCents: priceCents > 0 ? priceCents : null };
   area.items.push(item);
   const undoAnswer = walkForgetMark(bid, name, 'added');
 
@@ -1316,8 +1325,8 @@ function walkForgetCommitItem(bid, name, area, costCents) {
   // His words, from the wording table: the area is the one he just picked (or
   // the only one there is), so naming it again is noise in front of the thing
   // he has to do.
-  showBanner(costCents > 0
-    ? name + ' added at ' + moneyText(costCents) + '.'
+  showBanner(priceCents > 0
+    ? name + ' added at ' + moneyText(priceCents) + '.'
     : name + ' added. Tap it to put a price on it.', 'ok');
   render();
 }

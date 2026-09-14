@@ -850,32 +850,19 @@ const UNIT_PLURAL = { roll: 'rolls', lot: 'lots', day: 'days', box: 'boxes', cas
 // this app reads the catalog's vocabulary from here.
 
 // '2 rolls at $185.00' — one unit, plural when there is more than one of it,
-// and the price said once. It used to read '2 roll · $185.00 each', which is
-// two things wrong in six words: a plural that isn't, and an "each" that made
-// the unit price look like the line total.
-function itemCountText(qty, unit, costCents) {
+// and the amount per unit said once. It used to read '2 roll · $185.00 each',
+// which is two things wrong in six words: a plural that isn't, and an "each"
+// that made the unit price look like the line total. The one caller left is
+// the picker's same-price question, and the amount it hands in is his price.
+function itemCountText(qty, unit, unitCents) {
   const plural = (qty === 1 ? unit : (UNIT_PLURAL[unit] || unit));
-  return numText(qty) + ' ' + plural + ' at ' + BidMath.fmt(costCents);
+  return numText(qty) + ' ' + plural + ' at ' + BidMath.fmt(unitCents);
 }
 
 // ' per foot' or ' each': the tail of every sentence that names a unit price.
 function perUnitText(unit) {
   const w = UNIT_ONE[unit];
   return w ? ' per ' + w : ' each';
-}
-
-// What a walk row says under its cost when the line carries a list price or
-// a lot: the marked-up unit for a list price, the whole amount for a lot.
-// Empty when neither is set, so a row on an old bid reads exactly as it
-// always has. BidMath.itemPrice does the arithmetic; this only chooses the
-// sentence, and it asks the RESULT whether the line is a lot (no unit came
-// back) rather than the field, so it can never disagree with the paper.
-function itemBillText(it, markupPct) {
-  const p = BidMath.itemPrice(it, markupPct);
-  if (p.unit == null) return 'bills ' + BidMath.fmt(p.cents) + ' the lot';
-  // A legacy per-unit override is a price the paper prints too, so the row says it.
-  if (it.listCents == null && it.priceCents == null) return '';
-  return 'bills at ' + BidMath.fmt(p.unit) + perUnitText(it.unit);
 }
 
 // What a line says under its name, on the walk, on a visit and on an invoice:

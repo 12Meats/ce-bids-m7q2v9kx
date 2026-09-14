@@ -26,8 +26,8 @@
 //   The readouts        — the floor, his usual rate, and what a part prints
 //                         at. Four sentences, no controls.
 //
-// EVERY PERCENTAGE ON THIS SCREEN BELONGS TO THIS BID. Material markup and the
-// hours cushion always did. Payroll burden, consumables, overhead and the
+// EVERY PERCENTAGE ON THIS SCREEN BELONGS TO THIS BID. The suggested markup
+// and the hours cushion always did. Payroll burden, consumables, overhead and the
 // truck day rate used to be Settings, read live, so moving one re-figured what
 // every bid in the file cost — sent ones included — and each of them asked a
 // question before it would move. They are snapshotted onto the bid at
@@ -742,9 +742,11 @@ function buildCostStack(bid, stack, markup) {
   box.classList.add('price-stack');
 
   box.appendChild(row('Materials (at cost)', moneyText(stack.materialCost)));
+  box.appendChild(caption("A part with no cost on it counts at QED's list, or at your price."));
+  box.appendChild(row('Materials bill at', moneyText(stack.materialPrice)));
 
-  const mk = row('Materials markup ' + pctText(markup), '→ ' + moneyText(stack.materialPrice), () => {
-    pricePromptPct(markup, 'Material markup %, this bid', mk, (v) => {
+  const mk = row('Suggested markup', pctText(markup), () => {
+    pricePromptPct(markup, 'Suggested markup %, this bid', mk, (v) => {
       const prev = bid.pricing.markupPct;
       const untouch = priceTouch(bid);
       bid.pricing.markupPct = v;
@@ -912,7 +914,7 @@ function buildCostStack(bid, stack, markup) {
   // The sentence that only ever explains. It was captions under their own
   // rows, which put four grey lines through the middle of the one card on this
   // screen he actually reads down.
-  box.appendChild(whatsThis('Every number on this card belongs to THIS bid. Materials markup, payroll '
+  box.appendChild(whatsThis('Every number on this card belongs to THIS bid. Suggested markup, payroll '
     + 'burden, truck and gas, consumables and overhead were copied off Settings the day the bid was '
     + 'written, and changing one here changes this bid and nothing else. Truck and gas is '
     + moneyText(BidMath.bidSetting(bid, s, 'truckDayCents')) + ' a day on this bid, and the days come '

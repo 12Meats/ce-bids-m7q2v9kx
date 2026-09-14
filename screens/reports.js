@@ -279,6 +279,7 @@ function buildEstimatingCard(stats) {
     pctText(stats.margin.weightedNowPct), null, reportsMarginSays(stats.margin),
     onTrack ? 'rep-good' : 'rep-bad');
   marginWrap.appendChild(caption(reportsMarginMeanSays(stats.margin)));
+  marginWrap.appendChild(caption("Parts with no cost typed count at QED's list price, so these margins are a floor."));
 
   return box;
 }
