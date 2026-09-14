@@ -878,6 +878,38 @@ function itemBillText(it, markupPct) {
   return 'bills at ' + BidMath.fmt(p.unit) + perUnitText(it.unit);
 }
 
+// What a line says under its name, on the walk, on a visit and on an invoice:
+// the count, the price per unit the paper will print, and QED's list beside
+// it when the line has one. "suggested" marks a price he has not made his own
+// yet: the line prints QED's list plus the markup (or, on a line from before
+// v3.4, its cost plus the markup) until he does. A lot says the whole amount.
+// A line with nothing says so, and the amber flag under it does the rest.
+// What he paid is never said here: since v3.4 it is not a number he sees.
+function itemLineText(it, markupPct) {
+  const p = BidMath.itemPrice(it, markupPct);
+  const count = numText(it.qty) + ' ' + (it.qty === 1 ? it.unit : (UNIT_PLURAL[it.unit] || it.unit));
+  const qed = Number.isInteger(it.listCents) && it.listCents > 0 ? ' · QED ' + BidMath.fmt(it.listCents) : '';
+  if (p.unit == null) return count + ' · ' + BidMath.fmt(p.cents) + ' the lot' + qed;
+  if (!(p.unit > 0)) return count + ', no price yet' + qed;
+  const own = Number.isInteger(it.priceCents);
+  return count + ' at ' + BidMath.fmt(p.unit) + (own ? '' : ' suggested') + qed;
+}
+
+// The rows above the Price keypad's digits: QED's list plus the markup first
+// (the number that moves with the market), then what he charged last time,
+// with its date, so an old habit sits next to today's list and not instead
+// of it. Nothing when the line has neither. it only needs listCents; the
+// add-a-part flow hands in a stand-in built off the catalog's memory.
+function priceSuggestions(it, part, markupPct) {
+  const out = [];
+  const s = BidMath.suggestedUnit(it, markupPct);
+  if (s != null) out.push({ label: 'QED list + ' + pctText(markupPct), cents: s });
+  if (part && Number.isInteger(part.lastPriceCents)) {
+    out.push({ label: 'Last time' + (part.lastPriceISO ? ', ' + fmtDate(part.lastPriceISO) : ''), cents: part.lastPriceCents });
+  }
+  return out;
+}
+
 // Order matters: what goes on everything, then the three kinds of job that
 // carry their own risk, then subs. A clause whose group is not named here is
 // still shown by both screens, under "Other" — a clause that is invisible is a

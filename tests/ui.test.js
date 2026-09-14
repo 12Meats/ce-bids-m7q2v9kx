@@ -28,7 +28,7 @@ const B = require('../bidmath.js');
 // Store is in the sandbox because ui.js reads one string back off it at load
 // time: MISC_LABEL is defined in storage.js (which loads first and cannot read
 // ui.js) and re-exported here.
-const sandbox = { document: undefined, console, BidMath: B, Store: S };
+const sandbox = { document: undefined, console, BidMath: B, Store: S, Dates: require('../dates.js') };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
@@ -36,7 +36,7 @@ const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
   bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, daysText, detailCaption, itemCountText,
-  itemBillText, areaNoteLine, perUnitText,
+  itemBillText, itemLineText, priceSuggestions, areaNoteLine, perUnitText,
   priceSearchUrl, deferredBanner } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -888,6 +888,28 @@ test('itemBillText: nothing by default, the unit for a list, the whole amount fo
     'bills $0.00 the lot');
   // A legacy per-unit override is a price the paper prints too, so the row says it.
   assert.equal(itemBillText({ unit: 'ea', qty: 2, costCents: 1500, priceCents: 2000 }, 15), 'bills at $20.00 each');
+});
+
+test('itemLineText: the count, what prints per unit, QED beside it', () => {
+  assert.equal(itemLineText({ unit: 'roll', qty: 2, costCents: null, priceCents: 19857, listCents: 17267 }, 15), '2 rolls at $198.57 · QED $172.67');
+  assert.equal(itemLineText({ unit: 'roll', qty: 2, costCents: null, priceCents: null, listCents: 17267 }, 15), '2 rolls at $198.57 suggested · QED $172.67');
+  assert.equal(itemLineText({ unit: 'ea', qty: 3, costCents: 1800, priceCents: null }, 15), '3 ea at $20.70 suggested', 'an old line: the markup on its cost is the suggestion, and the cost is not said');
+  assert.equal(itemLineText({ unit: 'ea', qty: 1, costCents: 1800, priceCents: 2200 }, 15), '1 ea at $22.00');
+  assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 40, lotCents: 21600 }, 15), '500 ft · $216.00 the lot · QED $0.40');
+  assert.equal(itemLineText({ unit: 'lot', qty: 1, costCents: null, priceCents: null }, 15), '1 lot, no price yet');
+  assert.equal(itemLineText({ unit: 'ea', qty: 2, costCents: 0, priceCents: null }, 15), '2 ea, no price yet', 'a $0 cost with nothing else prints nothing');
+  assert.equal(itemLineText({ unit: 'lot', qty: 1, costCents: null, priceCents: 50000 }, 15), '1 lot at $500.00');
+});
+
+test('priceSuggestions: QED plus the markup first, then last time with its date', () => {
+  const part = { lastPriceCents: 2200, lastPriceISO: '2026-09-03' };
+  assert.deepEqual(priceSuggestions({ listCents: 1800 }, part, 15), [
+    { label: 'QED list + 15%', cents: 2070 },
+    { label: 'Last time, Sept 3, 2026', cents: 2200 },
+  ]);
+  assert.deepEqual(priceSuggestions({ listCents: null }, { lastPriceCents: 2200, lastPriceISO: null }, 15), [{ label: 'Last time', cents: 2200 }]);
+  assert.deepEqual(priceSuggestions({ listCents: 1800 }, null, 15), [{ label: 'QED list + 15%', cents: 2070 }]);
+  assert.deepEqual(priceSuggestions({ listCents: null, costCents: 1800 }, null, 15), [], 'a cost suggests nothing');
 });
 
 // ---------------------------------------------------------------------------
