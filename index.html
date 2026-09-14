@@ -1834,6 +1834,20 @@
       letter-spacing: 0.06em;
     }
     .panel-digits.shake { animation: shake 0.5s; color: var(--color-danger); }
+    /* Suggestions above the digits. Rows, not chips: each one is a label AND
+       a price, and a chip has room for one of those. 48px like everything a
+       thumb lands on. */
+    .panel-suggest { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: var(--space-1); margin: var(--space-2) auto 0; }
+    .panel-suggest[hidden] { display: none; }
+    .panel-suggest-row {
+      display: flex; justify-content: space-between; align-items: center; gap: var(--space-2);
+      min-height: 48px; padding: 0 var(--space-3);
+      background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px;
+      font: inherit; font-size: 1rem; color: var(--color-text); text-align: left; cursor: pointer;
+    }
+    .panel-suggest-row:active { background: var(--color-bg); }
+    .panel-suggest-label { min-width: 0; }
+    .panel-suggest-value { font-weight: 700; color: var(--color-accent); white-space: nowrap; }
     .panel-keypad { margin: 0 auto var(--space-3); }
 
     .panel-message {
@@ -2177,6 +2191,10 @@
          standing, so the number he came here to type is still half-typed when
          he comes back. -->
     <button type="button" id="keypadCaptionAction" class="link-btn panel-caption-action" hidden></button>
+    <!-- Numbers he can take with one tap: QED's list plus the markup, what he
+         charged last time. Filled by promptNumber(opts.suggestions); tapping
+         one puts it in the digits, Done still commits. -->
+    <div id="keypadSuggest" class="panel-suggest" hidden></div>
     <div id="keypadDigits" class="panel-digits" aria-live="polite"></div>
     <div id="keypadGrid" class="keypad panel-keypad">
       <button type="button" class="key" data-digit="1">1</button>

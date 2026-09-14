@@ -262,6 +262,14 @@ function promptNumber(current, opts) {
     actBtn.hidden = !act;
   }
 
+  // suggestions: [{ label, value, text? }] — up to three rows above the
+  // digits, each a number he can take with one tap. Tapping one puts it in
+  // the digits and nothing else: Done is still the only thing that commits,
+  // so what he saw is what he agreed to. Written for the Price keypad: QED's
+  // list plus the markup, and what he charged last time. text is how the
+  // value reads on the row when the caller formats its own (money does).
+  renderKeypadSuggestions(Array.isArray(opts.suggestions) ? opts.suggestions.slice(0, 3) : []);
+
   // The decimal key only exists for callers that allow one; otherwise it stays
   // blanked so 0 and backspace never shift under the thumb.
   const dot = el('keypadDot');
@@ -280,6 +288,35 @@ function promptNumber(current, opts) {
 // there; the panel only draws the buffer and reads its value.
 function renderKeypad() {
   el('keypadDigits').textContent = keypadCtx.buffer ? keypadCtx.buffer.text() : '';
+}
+
+// The suggestion rows above the digits. Rebuilt on every open and emptied on
+// every close: the element is wired once, the panel opens a thousand times.
+function renderKeypadSuggestions(list) {
+  const host = el('keypadSuggest');
+  if (!host) return;
+  host.textContent = '';
+  list.forEach((s) => {
+    if (!s || typeof s.value !== 'number' || !isFinite(s.value)) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panel-suggest-row';
+    const l = document.createElement('span');
+    l.className = 'panel-suggest-label';
+    l.textContent = String(s.label == null ? '' : s.label);
+    const v = document.createElement('span');
+    v.className = 'panel-suggest-value';
+    v.textContent = typeof s.text === 'string' ? s.text : numText(s.value);
+    btn.appendChild(l);
+    btn.appendChild(v);
+    btn.addEventListener('click', () => {
+      if (!keypadCtx.open || !keypadCtx.buffer) return;
+      keypadCtx.buffer.set(s.value);
+      renderKeypad();
+    });
+    host.appendChild(btn);
+  });
+  host.hidden = host.childElementCount === 0;
 }
 
 function keypadPress(ch) {
@@ -310,6 +347,7 @@ function closeKeypad() {
   keypadCtx.captionCloses = false;
   const actBtn = el('keypadCaptionAction');
   if (actBtn) { actBtn.hidden = true; actBtn.textContent = ''; }
+  renderKeypadSuggestions([]);
   syncPanelClass();
 }
 
@@ -341,7 +379,7 @@ function keypadClear() {
   if (done) done(null);
 }
 
-// promptMoney(cents, { label, caption, captionAction, done }) — the ONE money entry point. Every later
+// promptMoney(cents, { label, caption, captionAction, suggestions: [{ label, cents }], done }) — the ONE money entry point. Every later
 // screen that takes dollars goes through this, so the cents<->dollars
 // conversion and its rounding live in exactly one place: the keypad speaks
 // dollars, the data model only ever sees integer cents.
@@ -354,6 +392,10 @@ function promptMoney(cents, opts) {
     label: opts.label,
     caption: opts.caption,
     captionAction: opts.captionAction,
+    suggestions: Array.isArray(opts.suggestions)
+      ? opts.suggestions.filter((s) => s && Number.isInteger(s.cents) && s.cents >= 0)
+          .map((s) => ({ label: s.label, value: s.cents / 100, text: BidMath.fmt(s.cents) }))
+      : undefined,
     allowDecimal: true,
     maxDecimals: 2, // cents are the smallest thing money has
     wasText: has ? 'was ' + BidMath.fmt(cents) : 'was not set',

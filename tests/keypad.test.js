@@ -217,3 +217,35 @@ test('clear() puts him back on the prior, because Clear is a separate answer', (
   assert.strictEqual(b.value(), null);
   assert.strictEqual(b.submit(), 32);
 });
+
+test('set(): a suggestion lands in the buffer spelled the way typing it would', () => {
+  const b = K.createBuffer({ allowDecimal: true, maxDecimals: 2 });
+  assert.strictEqual(b.set(198.57), true);
+  assert.strictEqual(b.text(), '198.57');
+  assert.strictEqual(b.value(), 198.57);
+  b.backspace();
+  assert.strictEqual(b.text(), '198.5', 'and backspace keeps working on it');
+  assert.strictEqual(b.set(40), true);
+  assert.strictEqual(b.text(), '40', 'no trailing point, no trailing zeros');
+  assert.strictEqual(b.set(0.4), true);
+  assert.strictEqual(b.text(), '0.4');
+  assert.strictEqual(b.set(20.7), true);
+  assert.strictEqual(b.text(), '20.7');
+  assert.strictEqual(b.set(12.345), true);
+  assert.strictEqual(b.text(), '12.35', 'rounded to the decimals the caller allows');
+});
+
+test('set(): whole-number keypads round, and a number that cannot be shown is refused', () => {
+  const whole = K.createBuffer({ allowDecimal: false });
+  assert.strictEqual(whole.set(2.6), true);
+  assert.strictEqual(whole.text(), '3');
+  const tiny = K.createBuffer({ allowDecimal: true, maxChars: 4, maxDecimals: 2 });
+  assert.strictEqual(tiny.set(198.57), false, 'six characters do not fit in four');
+  assert.strictEqual(tiny.text(), '', 'and the buffer is untouched');
+  assert.strictEqual(tiny.set(-1), false);
+  assert.strictEqual(tiny.set(NaN), false);
+  assert.strictEqual(tiny.set('40'), false);
+  const b = K.createBuffer({ allowDecimal: true, maxDecimals: 2, prior: 5 });
+  b.set(7);
+  assert.strictEqual(b.submit(), 7, 'Done hands back the suggestion he took, not the prior');
+});

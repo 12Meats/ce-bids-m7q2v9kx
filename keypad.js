@@ -9,9 +9,10 @@
   'use strict';
 
   // createBuffer({ allowDecimal, maxChars, maxDecimals, prior })
-  //   -> { press, backspace, clear, text, value, submit }
+  //   -> { press, backspace, clear, set, text, value, submit }
   //
   // press(key) takes '0'-'9' or '.'; anything else is ignored.
+  // set(n) fills the buffer with a number in one go (a tapped suggestion).
   // text() is the raw string under the big digits.
   // value() is what he TYPED, or null when he typed nothing.
   // submit() is what Done hands back, which is not always the same thing.
@@ -63,6 +64,23 @@
 
     function backspace() { buf = buf.slice(0, -1); }
     function clear() { buf = ''; }
+
+    // set(n) puts a whole number into the buffer at once: a suggestion tapped
+    // above the keys. Spelled the way typing it would spell it (no trailing
+    // zeros, no more decimals than the caller allows, rounded to a whole
+    // number on a keypad with no point) so backspace and value() behave as if
+    // he had typed it. Refused, and the buffer left alone, when it is not a
+    // number the keypad could show: too long, negative, not a number at all.
+    function set(n) {
+      if (typeof n !== 'number' || !isFinite(n) || n < 0) return false;
+      const dec = allowDecimal ? (isFinite(maxDecimals) ? maxDecimals : 3) : 0;
+      const f = Math.pow(10, dec);
+      const t = String(Math.round(n * f) / f);
+      if (t.indexOf('e') !== -1 || t.length > maxChars) return false;
+      buf = t;
+      return true;
+    }
+
     function text() { return buf; }
 
     // '0.' is a real zero (the point was tapped and nothing followed), not a
@@ -90,7 +108,7 @@
       return v === null ? prior : v;
     }
 
-    return { press, backspace, clear, text, value, submit };
+    return { press, backspace, clear, set, text, value, submit };
   }
 
   return { createBuffer };
