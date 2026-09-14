@@ -46,7 +46,7 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 2. **Crew ›.** Shawn at $32 and George at $30 are in already. Check both, then **+ Worker** for anyone else and his wage.
 3. **Rates ›.** **Labor rate** and **Rate floor** both come set to **$85**, what UDA pays. The floor is the lowest rate worth working for. **Hours per day** should be 8. Leave the other percentages alone.
 
-   **Material markup** should read **15%**. If yours says 18, tap it and put in 15. Bids you already wrote keep the markup they were figured at.
+   **Suggested markup** should read **15%**. It is only what the price keypad suggests on top of QED's list price; what you type on a line is what prints. Bids you already wrote keep the markup they were figured at.
 4. **Equipment ›.** Thirty tools. Tap one and put in a **Cost new**. A tool with no cost asks for one the first time you use it.
 5. **Company ›.** Check the phone, the address, and the ROC number. Pick a **Proposal style**: **Blue & logo** or **Plain black**. **Supply house search** is where the **Check price** link points, and it already says **QED**. Nothing to do: Check price opens QED's own search, and a part with a QED part number searches by the number and lands on the exact product.
 
@@ -56,7 +56,7 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 
 **Import parts and prices.** Adrian sends you a price file, one QED price per part. Settings › Backup › **Import parts and prices**, pick the file, and read the button before you tap it: it says exactly what will happen, like **Update 0 prices, add 318 parts**. Everything it adds is a real QED part with its number, QED's own name for it, and its price. Nothing you already have is renamed, put away or taken off. Send it the same file twice and the second time adds nothing.
 
-**A part with options.** After an import, a part like **60 A 3-pole breaker** carries a small **3 options** on its line. Tapping it does not add it: it opens the three breakers QED actually sells, each with the maker's name and what it bills at, and at the bottom **Just 60 A 3-pole breaker** for the day you do not care which. Pick one and it goes on the bid like anything else, and the customer's paper prints QED's full name for it. Searching finds the options straight away: type **B360** or the QED number and tap the one you want.
+**A part with options.** After an import, a part like **60 A 3-pole breaker** carries a small **3 options** on its line. Tapping it does not add it: it opens the three breakers QED actually sells, each with the maker's name and what QED lists it at, and at the bottom **Just 60 A 3-pole breaker** for the day you do not care which. Pick one and it goes on the bid like anything else, and the customer's paper prints QED's full name for it. Searching finds the options straight away: type **B360** or the QED number and tap the one you want.
 
 **Sorting them out later.** Settings › Parts catalog now has **All / Typed by hand / From QED** over the list, so you can go through the imported ones without touching the parts you typed. On any part, **Belongs with** says which part it is an option of, or **None** to stand it back on its own. That is also how a part you typed yourself becomes one of the choices under another one.
 
@@ -67,9 +67,9 @@ Then tap **Settings**. It is a list of doors: a row with a **›** opens its own
 1. On the **Bids** tab, tap **+ New bid**. Put in the customer, a title, the date, and tap **Service** or **Project**. Tap **Start the walk →**.
 2. **The walk.** Add an area, like a room or a panel. Tap **+ Item**, then a tile or the **search box**. Type it however you say it: **1"** and **1 in** find the same part. **Photos** shoots pictures into that area. **Notes** is where you write what you saw, or hold the **mic** key and say it. Those notes are yours: they never go on the customer's paper.
 
-   When it asks a part's cost, **Check price** opens your supply house in Safari with the name typed in. It needs signal, and the keypad waits for you.
+   When a part has no QED price yet, **Check price** under the keypad opens your supply house in Safari with the name typed in. It needs signal, and the keypad waits for you.
 
-   **Two prices on a part.** Tap a line, then **Bills at** to put the list price on it: the price the customer is billed, before the markup. Cost stays what you paid. Tap **Price the whole line instead** on that keypad to give the line one number for all of it, the way your invoices do a roll of wire ($216.00 for 500 ft prints as 500 ft with no price per foot, just $216.00). **Clear** on the whole-line keypad puts the line back to a price per foot. **Clear** on the **Bills at** keypad puts it back to billing off its cost. Once you put a bill price on a part, the next line you add for it starts there.
+   **Your price.** When you add a part, the keypad asks its price: what the paper prints, to the penny. Above the keys it suggests **QED list + 15%** and, once you have charged for the part before, **Last time** with the date. Tap a suggestion or type your own number, then **Done**. Nothing gets added on top of what you type. Tap a line later and **Price** opens the same keypad; **QED list** on the same strip is where you can put what QED lists a part at when the import has not. **Price the whole line instead** on the price keypad gives the line one number for all of it, the way your invoices do a roll of wire ($216.00 for 500 ft prints as 500 ft with no price per foot, just $216.00); **Clear** on that keypad puts the line back to a price per foot.
 
    Before you leave, answer **Anything missing?**. It shows the six you forget most, and **Show all 19** opens the rest. **Not this job** puts a row away. **Add it** puts it on the bid: a lift or a dumpster goes through the rental question, anything else asks the price there and then.
 
