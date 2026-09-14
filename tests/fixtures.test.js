@@ -356,8 +356,8 @@ test('backup-bids-v2.3.json really is a v2.3 file', () => {
   const rows = D.build(b, d, 'full').sections.find((s) => s.title === 'Materials').rows;
   assert.deepStrictEqual(rows.map((r) => [r.qtyText, r.unitCents, r.cents]), [
     ['500 ft', null, 21600],
-    ['2 ea', 2070, 4140],
-    ['2 ea', 1150, 2300],
+    ['2', 2070, 4140],
+    ['2', 1150, 2300],
   ]);
   // Cost is cost: 500 × 38 + 2 × 1500 + 2 × 1000.
   assert.strictEqual(BidMath.costStack(b, d.settings).materialCost, 24000);

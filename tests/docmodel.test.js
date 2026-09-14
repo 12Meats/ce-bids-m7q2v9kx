@@ -581,7 +581,7 @@ test('full level: a lot row prints the quantity, no unit price, and the whole am
   const rows = doc.sections.find((s) => s.title === 'Materials').rows;
   assert.deepStrictEqual(rows, [
     { desc: '#12 wire', qtyText: '500 ft', unitCents: null, cents: 21600 },
-    { desc: '20 A breaker', qtyText: '2 ea', unitCents: 2070, cents: 4140 },
+    { desc: '20 A breaker', qtyText: '2', unitCents: 2070, cents: 4140 },
   ]);
   // And the rows still add up to the stack, the same way every other row does.
   assertRowsMatchStack(b, d);

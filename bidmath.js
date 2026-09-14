@@ -53,7 +53,20 @@
 
   function items(bid) { return (bid.areas || []).flatMap((a) => a.items || []); }
 
-  function materialCost(bid) { return items(bid).reduce((s, it) => s + r(it.qty * it.costCents), 0); }
+  // What a line COSTS him, for the cost stack. Three answers, in order:
+  //   1. a cost he typed (every line written before v3.4, and $0 typed on
+  //      purpose is a cost of nothing, not an unknown);
+  //   2. no cost on the line: QED's list stands in. Higher than what he pays,
+  //      so the margin the stack shows is a floor, never a flattery;
+  //   3. neither: what the line prints (his price, or the lot). No profit is
+  //      assumed on a part nobody knows the cost of.
+  // itemPrice never reads this and the paper never changes because of it.
+  function itemCostCents(it) {
+    if (Number.isInteger(it.costCents)) return r(it.qty * it.costCents);
+    if (Number.isInteger(it.listCents)) return r(it.qty * it.listCents);
+    return itemPrice(it, 0).cents;
+  }
+  function materialCost(bid) { return items(bid).reduce((s, it) => s + itemCostCents(it), 0); }
 
   // Per-line primitives shared with docmodel.js so a document's printed rows
   // and this module's cost stack are computed by the exact same code, not
@@ -81,6 +94,12 @@
     const unit = it.priceCents != null ? it.priceCents : unitPrice(itemBillBase(it), markupPct);
     return { unit, cents: r(it.qty * unit) };
   }
+  // What the Price keypad proposes per unit: QED's list plus the markup. Only
+  // a list makes a suggestion; a cost never does, because the cost is not a
+  // number he sees any more (v3.4). Null means "nothing to suggest".
+  function suggestedUnit(it, markupPct) {
+    return Number.isInteger(it.listCents) && it.listCents > 0 ? unitPrice(it.listCents, markupPct) : null;
+  }
   function rentalPrice(x, markupPct) { return x.markup ? unitPrice(x.cents, markupPct) : x.cents; }
   function equipmentLine(x) { return r(x.days * x.dayCents); }
 
@@ -90,9 +109,20 @@
   // docmodel.js (the bid paper) and invmath.js (the invoice paper) so the
   // same part reads the same way on both documents.
   function qtyNum(q) { return String(Math.round(q * 1000) / 1000); }
+
+  // The quantity column on the paper. Each and lot print the bare number: his
+  // own UDA invoices never said "2 ea", and "1 lot" beside "Permits" read as
+  // a mistake. Feet keep their abbreviation ("500 FT" on his paper); rolls,
+  // boxes, cases and days say the word, plural when there is more than one.
+  // A unit the paper has no word for prints as typed.
+  const PAPER_BARE = { ea: true, lot: true };
+  const PAPER_MANY = { ft: 'ft', roll: 'rolls', box: 'boxes', case: 'cases', day: 'days' };
   function unitText(it) {
-    if (it.qty === 1 && it.unit === 'ea') return '1';
-    return qtyNum(it.qty) + ' ' + it.unit;
+    const n = qtyNum(it.qty);
+    if (PAPER_BARE[it.unit]) return n;
+    const many = PAPER_MANY[it.unit];
+    if (!many) return n + ' ' + it.unit;
+    return n + ' ' + (it.qty === 1 && it.unit !== 'ft' ? it.unit : many);
   }
 
   // A file name's one segment: stripped of the characters no filesystem this
@@ -671,7 +701,7 @@
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,
-    resolveMarkup, itemBillBase, itemPrice, rentalPrice, equipmentLine, changeOrderIsEmpty,
+    resolveMarkup, itemBillBase, itemPrice, itemCostCents, suggestedUnit, rentalPrice, equipmentLine, changeOrderIsEmpty,
     qtyNum, unitText, fileNameSegment,
   };
 });

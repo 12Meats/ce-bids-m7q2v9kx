@@ -631,3 +631,47 @@ test('qtyNum/unitText/fileNameSegment: shared by the bid and invoice documents',
   assert.strictEqual(B.fileNameSegment('  extra   spaces  '), 'extra spaces');
   assert.strictEqual(B.fileNameSegment(null), '');
 });
+
+test('itemCostCents: cost when typed, else QED list, else what the line prints', () => {
+  assert.strictEqual(B.itemCostCents({ qty: 500, unit: 'ft', costCents: 38, listCents: 40, priceCents: 50 }), 19000, 'a typed cost wins');
+  assert.strictEqual(B.itemCostCents({ qty: 500, unit: 'ft', costCents: null, listCents: 40, priceCents: 50 }), 20000, 'no cost: QED list stands in');
+  assert.strictEqual(B.itemCostCents({ qty: 500, unit: 'ft', costCents: null, listCents: null, priceCents: 50 }), 25000, 'neither: his price, no profit assumed');
+  assert.strictEqual(B.itemCostCents({ qty: 500, unit: 'ft', costCents: null, priceCents: null, lotCents: 21600 }), 21600, 'a lot with nothing else counts at the lot');
+  assert.strictEqual(B.itemCostCents({ qty: 500, unit: 'ft', costCents: null, priceCents: null }), 0);
+  assert.strictEqual(B.itemCostCents({ qty: 500, unit: 'ft', priceCents: 50 }), 25000, 'an absent costCents key reads as unknown');
+  assert.strictEqual(B.itemCostCents({ qty: 2, unit: 'ea', costCents: 0, listCents: 1800, priceCents: null }), 0, 'a typed $0 is a cost of nothing, not an unknown');
+});
+
+test('materialCost: old lines at cost and new lines at list or price, on one bid', () => {
+  const bid = { areas: [{ items: [
+    { qty: 500, unit: 'ft', costCents: 38, listCents: null, priceCents: null },      // 19,000
+    { qty: 2, unit: 'ea', costCents: null, listCents: 1800, priceCents: 2200 },     //  3,600
+    { qty: 1, unit: 'lot', costCents: null, listCents: null, priceCents: 50000 },   // 50,000
+  ] }] };
+  assert.strictEqual(B.materialCost(bid), 19000 + 3600 + 50000);
+  assert.strictEqual(B.materialPrice(bid, 15), 500 * B.unitPrice(38, 15) + 4400 + 50000, 'what prints is untouched by the fallback');
+});
+
+test('suggestedUnit: QED list plus the markup, or nothing', () => {
+  assert.strictEqual(B.suggestedUnit({ listCents: 1800 }, 15), 2070);
+  assert.strictEqual(B.suggestedUnit({ listCents: 17267 }, 15), 19857);
+  assert.strictEqual(B.suggestedUnit({ listCents: null, costCents: 1800 }, 15), null, 'cost is not a suggestion');
+  assert.strictEqual(B.suggestedUnit({ listCents: 0 }, 15), null);
+  assert.strictEqual(B.suggestedUnit({}, 15), null);
+});
+
+test('unitText: bare number for each and lot, feet as ft, the rest pluralized', () => {
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'ea' }), '1');
+  assert.strictEqual(B.unitText({ qty: 2, unit: 'ea' }), '2');
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'lot' }), '1');
+  assert.strictEqual(B.unitText({ qty: 500, unit: 'ft' }), '500 ft');
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'ft' }), '1 ft');
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'roll' }), '1 roll');
+  assert.strictEqual(B.unitText({ qty: 2, unit: 'roll' }), '2 rolls');
+  assert.strictEqual(B.unitText({ qty: 1.5, unit: 'roll' }), '1.5 rolls');
+  assert.strictEqual(B.unitText({ qty: 2, unit: 'box' }), '2 boxes');
+  assert.strictEqual(B.unitText({ qty: 3, unit: 'case' }), '3 cases');
+  assert.strictEqual(B.unitText({ qty: 1, unit: 'day' }), '1 day');
+  assert.strictEqual(B.unitText({ qty: 2, unit: 'day' }), '2 days');
+  assert.strictEqual(B.unitText({ qty: 2, unit: 'stick' }), '2 stick', 'a unit the paper has no word for prints as typed');
+});
