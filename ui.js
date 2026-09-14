@@ -1157,7 +1157,7 @@ function daysText(n) {
 // place that cannot afford the long form.
 function fmtDateShort(iso) { return Dates.fmtDateShort(iso); }
 
-// Epoch milliseconds — a saved PDF's stamp — as 'Sep 4, 2026, 1:59 am'.
+// Epoch milliseconds — a saved PDF's stamp — as 'Sept 4, 2026, 1:59 am'.
 function fmtDateTime(ms) { return Dates.fmtDateTime(ms); }
 
 function daysSince(iso) { return Dates.daysSince(iso, Store.todayISO()); }

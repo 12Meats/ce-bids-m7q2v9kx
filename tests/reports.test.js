@@ -315,9 +315,9 @@ test('the last page says when it was made, and says so when it cannot', () => {
   // Built in local time and read in local time, so the string is the same in
   // Phoenix and in London.
   const at = new Date(2026, 8, 4, 7, 12).getTime();
-  assert.strictEqual(reportsLastPageSays(at), 'Made Sep 4, 2026, 7:12 am');
+  assert.strictEqual(reportsLastPageSays(at), 'Made Sept 4, 2026, 7:12 am');
   assert.strictEqual(reportsLastPageSays(new Date(2026, 8, 4, 13, 5).getTime()),
-    'Made Sep 4, 2026, 1:05 pm');
+    'Made Sept 4, 2026, 1:05 pm');
   // A page stored before the store's stamp was read back has no time to show.
   assert.strictEqual(reportsLastPageSays(null), 'Last page, no date kept');
   assert.strictEqual(reportsLastPageSays(undefined), 'Last page, no date kept');

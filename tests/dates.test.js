@@ -100,7 +100,7 @@ test('parseTypedDate: an exact tie goes to the earlier date', () => {
 // ---------------------------------------------------------------------------
 
 test('fmtDate prints the way the owner reads a date', () => {
-  assert.equal(D.fmtDate('2026-09-10'), 'Sep 10, 2026');
+  assert.equal(D.fmtDate('2026-09-10'), 'Sept 10, 2026');
   assert.equal(D.fmtDate('2026-01-01'), 'Jan 1, 2026');
   assert.equal(D.fmtDate('2026-12-31'), 'Dec 31, 2026');
   // Never "Invalid Date" in front of a customer.
@@ -128,16 +128,16 @@ test('fmtDateShort drops the padding and the century for the home list', () => {
 const at = (y, m, d, h, min) => new Date(y, m - 1, d, h, min, 0, 0).getTime();
 
 test('fmtDateTime prints the date and the time of day', () => {
-  assert.equal(D.fmtDateTime(at(2026, 9, 4, 1, 59)), 'Sep 4, 2026, 1:59 am');
-  assert.equal(D.fmtDateTime(at(2026, 9, 4, 13, 5)), 'Sep 4, 2026, 1:05 pm');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 1, 59)), 'Sept 4, 2026, 1:59 am');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 13, 5)), 'Sept 4, 2026, 1:05 pm');
   // Minutes keep their leading zero; the hour never does.
   assert.equal(D.fmtDateTime(at(2026, 12, 31, 23, 7)), 'Dec 31, 2026, 11:07 pm');
 });
 
 test('fmtDateTime reads midnight and noon the way a clock face does', () => {
-  assert.equal(D.fmtDateTime(at(2026, 9, 4, 0, 0)), 'Sep 4, 2026, 12:00 am');
-  assert.equal(D.fmtDateTime(at(2026, 9, 4, 12, 0)), 'Sep 4, 2026, 12:00 pm');
-  assert.equal(D.fmtDateTime(at(2026, 9, 4, 12, 1)), 'Sep 4, 2026, 12:01 pm');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 0, 0)), 'Sept 4, 2026, 12:00 am');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 12, 0)), 'Sept 4, 2026, 12:00 pm');
+  assert.equal(D.fmtDateTime(at(2026, 9, 4, 12, 1)), 'Sept 4, 2026, 12:01 pm');
 });
 
 test('fmtDateTime says nothing rather than "Invalid Date"', () => {
@@ -296,4 +296,9 @@ test('monthTitle names the month the way a calendar does', () => {
   assert.strictEqual(D.monthTitle('2026-12-31'), 'December 2026');
   assert.strictEqual(D.monthTitle('9/9/26'), '');
   assert.strictEqual(D.monthTitle('2026-13-01'), '');
+});
+
+test('September is Sept, on the phone and on the paper alike (Mom, 9/14)', () => {
+  assert.strictEqual(D.fmtDate('2026-09-04'), 'Sept 4, 2026');
+  assert.strictEqual(D.fmtDate('2026-08-31'), 'Aug 31, 2026', 'the other eleven are unchanged');
 });

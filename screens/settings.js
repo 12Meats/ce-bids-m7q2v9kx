@@ -3326,7 +3326,7 @@ const SETTINGS_CARDS = [
   ['set-backup', () => buildSetBackup()],
 ];
 
-// "CE Billing · v3 · built Sep 9, 2026". The version is the cache the phone is
+// "CE Billing · v3 · built Sept 9, 2026". The version is the cache the phone is
 // actually being served by (APP_VERSION, held to sw.js's CACHE by
 // tests/sw.test.js); the date is APP_BUILT beside it. index.html is served
 // cache-first, so a deploy that forgets to bump CACHE leaves him on old code

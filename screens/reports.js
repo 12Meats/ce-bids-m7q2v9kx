@@ -188,7 +188,7 @@ function reportsTypeSays(t) {
     + ', bid ' + numText(t.bidHours) + ', worked ' + numText(t.actualHours);
 }
 
-// 'Made Sep 4, 2026, 7:12 am' — the page kept on the phone, stamped with the
+// 'Made Sept 4, 2026, 7:12 am' — the page kept on the phone, stamped with the
 // clock he was standing next to, the same way the proposal screen stamps its
 // previous PDFs. The stamp is the store's own createdAt and nothing is written
 // anywhere to produce it, so a record saved before this row existed has no

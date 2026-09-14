@@ -464,7 +464,7 @@ test('one day, no parts: the card says neither', () => {
   const e = S.newLogEntry(w.d, { customerId: w.uda.id, projectId: p.id, dateISO: '2026-09-02', createdAt: 2 });
   e.crew = [{ crewId: w.c1, hours: 4 }];
   const g = I.group(w.d.logs, w.d, S.mondayOf).find((x) => x.title === 'R2 condensate pump');
-  assert.strictEqual(reviewCardSub(I.draftInvoice(g, w.d, 1)), 'Sep 2 · 4 hrs at $85');
+  assert.strictEqual(reviewCardSub(I.draftInvoice(g, w.d, 1)), 'Sept 2 · 4 hrs at $85');
 });
 
 test('a rate with cents on it keeps them', () => {
@@ -1515,7 +1515,7 @@ test('a card marked Ready says how long it has been waiting, counted from the To
   // One day is one day.
   e.toISO = '2026-09-07';
   const one = invAllGroups().find((x) => x.entries[0] === e);
-  assert.strictEqual(pileRowText(one, TODAY), 'Aug 24 to Sep 7 · Ready · 13 hrs · 1 day');
+  assert.strictEqual(pileRowText(one, TODAY), 'Aug 24 to Sept 7 · Ready · 13 hrs · 1 day');
 });
 
 // Ready today, and Ready through a Friday that has not come yet. Neither has
@@ -1527,13 +1527,13 @@ test('a card ready today says today, and one whose To is ahead says no age at al
   e.toISO = TODAY;
   e.ready = true;
   const now = invAllGroups().find((x) => x.entries[0] === e);
-  assert.strictEqual(pileRowText(now, TODAY), 'Sep 8 · Ready · 13 hrs · today');
+  assert.strictEqual(pileRowText(now, TODAY), 'Sept 8 · Ready · 13 hrs · today');
 
   // Booked through Friday, finished early, marked Ready on the Tuesday. The
   // range and the pill stay; the age is not a thing yet.
   e.toISO = '2026-09-11';
   const ahead = invAllGroups().find((x) => x.entries[0] === e);
-  assert.strictEqual(pileRowText(ahead, TODAY), 'Sep 8 to Sep 11 · Ready · 13 hrs');
+  assert.strictEqual(pileRowText(ahead, TODAY), 'Sept 8 to Sept 11 · Ready · 13 hrs');
 });
 
 test('the pile is one card per entry, oldest first, and nothing groups itself', () => {
@@ -1786,10 +1786,10 @@ test('the caption under it says the office had it, and whether the phone kept a 
   inv.sentAt = '2026-09-05';
   // Both halves are one sentence, and it ends like every other caption does.
   assert.strictEqual(invoiceSentCaption(inv),
-    'Sent to the office Sep 5, 2026 · not saved on the phone yet.');
+    'Sent to the office Sept 5, 2026 · not saved on the phone yet.');
   inv.savedToFilesAt = '2026-09-05';
   assert.strictEqual(invoiceSentCaption(inv),
-    'Sent to the office Sep 5, 2026 · saved on the phone Sep 5, 2026.');
+    'Sent to the office Sept 5, 2026 · saved on the phone Sept 5, 2026.');
 });
 
 test('the two questions after the share sheet ask about the office', async (t) => {

@@ -356,7 +356,7 @@ test('settingsCatalogSub says where a part came from and how many options it has
   const imported = catPart('60 A 3-pole breaker · B360',
     { source: QED, sku: '22590', lastListCents: 9900, priceCheckedISO: '2026-09-09' });
   assert.strictEqual(settingsCatalogSub(imported, false, 0),
-    'QED 22590 · $99.00 list, Sep 9, 2026 · From QED');
+    'QED 22590 · $99.00 list, Sept 9, 2026 · From QED');
 });
 
 // Only the parts that could actually hold an option: same drawer, still on the

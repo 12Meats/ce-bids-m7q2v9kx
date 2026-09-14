@@ -29,7 +29,7 @@
 const APP_VERSION = 'billing-v3.3';
 
 // The day that build was made, as a plain ISO date. The version line at the
-// bottom of Settings reads "CE Billing · v3 · built Sep 9, 2026" off these two
+// bottom of Settings reads "CE Billing · v3 · built Sept 9, 2026" off these two
 // together: the version says WHICH build and this says WHEN, which is the half
 // he can check against the day he was told to update. Bumped with APP_VERSION
 // and CACHE, in the same commit, every release.
@@ -557,7 +557,7 @@ const dateCtx = { open: false, done: null, iso: null, month: null, today: null, 
 // YYYY-MM-DD, which is the same gate every other date in this app passes.
 function dateIsReal(iso) { return Dates.fmtDate(iso) !== ''; }
 
-const DATE_TYPE_LABEL = 'Date: type 915 for Sep 15, or 91526';
+const DATE_TYPE_LABEL = 'Date: type 915 for Sept 15, or 91526';
 const DATE_TYPE_REFUSAL = 'That date needs 4 digits (MMDD) or 6 (MMDDYY)';
 
 function promptDate(initialISO, label, onPick, opts) {

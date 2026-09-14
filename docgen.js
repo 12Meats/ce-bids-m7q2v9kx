@@ -213,9 +213,13 @@
       logoBottom = M + 16;
     }
 
+    // One fact per line: person, phone, email, address, ROC, tagline. Phone
+    // and email used to share a line with a dot between them; the office
+    // reads them as two things and wanted them on two lines (9/14).
     const lines = [
       { t: h.person, bold: true },
-      { t: [h.phone, h.email].map(str).filter((x) => x.trim() !== '').join('  ·  ') },
+      { t: h.phone },
+      { t: h.email },
       { t: h.address },
       { t: h.roc },
       { t: h.tagline },
@@ -683,8 +687,8 @@
   // line under the table (his was red; nothing on this paper is red), then
   // Subtotal / Tax $0.00 / Total and the sentence he has always printed.
   //
-  // The header's own contact block (person, phone · email, address, ROC,
-  // tagline — five lines on his real letterhead) sits top-right, exactly
+  // The header's own contact block (person, phone, email, address, ROC,
+  // tagline, six lines) sits top-right, exactly
   // where an Invoice box drawn at the header's own top would land, so the
   // box is drawn BELOW the header rule instead, flush right, rather than
   // overlapping his name and phone number.

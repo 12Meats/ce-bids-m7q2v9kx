@@ -13,7 +13,8 @@
   'use strict';
 
   const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // 'Sept', not 'Sep': the one abbreviation his office reads as a typo (9/14).
+  const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
   // Spelled out, for the one place with room for it: the heading over a month
   // of the calendar.
   const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -34,7 +35,7 @@
     return isNaN(dt.getTime()) ? null : dt;
   }
 
-  // fmtDate('2026-09-10') -> 'Sep 10, 2026'. Anything that isn't a valid
+  // fmtDate('2026-09-10') -> 'Sept 10, 2026'. Anything that isn't a valid
   // YYYY-MM-DD comes back as '' rather than "Invalid Date".
   function fmtDate(iso) {
     if (!isISO(iso)) return '';
@@ -45,7 +46,7 @@
 
   // fmtDateShort('2026-09-04') -> '9/4/26'. The home list only, and it exists
   // for one reason: that row carries a price, a status, a date and a number on
-  // one line, and on a 375px phone 'Sep 4, 2026' is the 78 pixels that makes
+  // one line, and on a 375px phone 'Sept 4, 2026' is the 78 pixels that makes
   // the row wrap in two. Of the four it is the one that can be said shorter
   // without losing anything — he is placing a bid in time, not reading a
   // contract date, and 9/4/26 is how he writes it on a job ticket anyway.
@@ -57,7 +58,7 @@
     return m + '/' + Number(iso.slice(8, 10)) + '/' + iso.slice(2, 4);
   }
 
-  // fmtDateTime(ms) -> 'Sep 4, 2026, 1:59 am' — a stamp he can match against
+  // fmtDateTime(ms) -> 'Sept 4, 2026, 1:59 am' — a stamp he can match against
   // his sent folder. The input is epoch milliseconds, which is what the app
   // stores on a saved PDF, and it is read in LOCAL time because that is the
   // clock he was standing next to when the document went out. Midnight reads

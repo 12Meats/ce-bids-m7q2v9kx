@@ -267,7 +267,7 @@ test('invoiceRows: what the paper prints, in order, from one primitive', () => {
   inv.labor[0].billedHours = 16;
   const rows = I.invoiceRows(inv);
   assert.deepStrictEqual(rows.materials, [{ qtyText: '500 ft', desc: '#12 wire', unitCents: null, cents: 21600 }]);
-  assert.deepStrictEqual(rows.labor, [{ qtyText: '20 hrs', desc: 'Labor hours, Aug 31 to Sep 4, 2026', unitCents: 8500, cents: 20 * 8500 }]);
+  assert.deepStrictEqual(rows.labor, [{ qtyText: '20 hrs', desc: 'Labor hours, Aug 31 to Sept 4, 2026', unitCents: 8500, cents: 20 * 8500 }]);
   const one = I.draftInvoice(I.group(w.entries, w.d, monday)[2], w.d, 1);
   assert.deepStrictEqual(I.invoiceRows(one).labor, [{ qtyText: '4 hrs', desc: 'Labor hours', unitCents: 8500, cents: 34000 }]);
 });

@@ -541,7 +541,7 @@ test('the calendar opens on the day it was handed, and a tapped day is the answe
   assert.strictEqual(days[8].dataset.iso, '2026-09-09');
   assert.strictEqual(days[8].getAttribute('aria-pressed'), 'true');
   // The whole date is said out loud: "12" on its own is not one.
-  assert.strictEqual(days[8].getAttribute('aria-label'), 'Sep 9, 2026');
+  assert.strictEqual(days[8].getAttribute('aria-label'), 'Sept 9, 2026');
 
   datePick('2026-09-11');
   assert.strictEqual(picked, '2026-09-11');
@@ -602,8 +602,8 @@ test('Type it takes the calendar down and hands the same question to the keypad'
   assert.strictEqual(anyPanelOpen(), true);
   assert.strictEqual(nodes.get('panel-date').hidden, true);
   assert.strictEqual(nodes.get('panel-keypad').hidden, false);
-  assert.strictEqual(nodes.get('keypadLabel').textContent, 'Date: type 915 for Sep 15, or 91526');
-  assert.strictEqual(nodes.get('keypadWas').textContent, 'was Sep 9, 2026');
+  assert.strictEqual(nodes.get('keypadLabel').textContent, 'Date: type 915 for Sept 15, or 91526');
+  assert.strictEqual(nodes.get('keypadWas').textContent, 'was Sept 9, 2026');
 
   keypadPress('9'); keypadPress('1'); keypadPress('5');
   keypadDone();

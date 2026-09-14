@@ -430,7 +430,7 @@
   const unitText = B.unitText;
   function rangeText(from, to) {
     if (from === to) return Dates.fmtDate(from);
-    // "Aug 31 to Sep 4, 2026": the year once, at the end, when both are in it.
+    // "Aug 31 to Sept 4, 2026": the year once, at the end, when both are in it.
     const a = Dates.fmtDate(from), b = Dates.fmtDate(to);
     const ya = a.slice(-4), yb = b.slice(-4);
     return ya === yb ? a.slice(0, -6) + ' to ' + b : a + ' to ' + b;
