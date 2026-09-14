@@ -86,7 +86,7 @@ const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, i
   reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
-  invoiceLineOpts, lineAskCost, moneyText,
+  invoiceLineOpts, lineAskPrice, moneyText,
   invoiceLaborSub, invoiceLaborPrompt,
   thisWeekText, invAllGroups, invReadyCount, invoicesToggle,
   reviewSameJobCount, reviewCombineAllLabel, reviewCombineAll,
@@ -1169,22 +1169,22 @@ test('bidHasInvoices is what holds a billed bid where it is', () => {
 // ---------------------------------------------------------------------------
 // A PRICE LEARNED ON A DRAFT
 // ---------------------------------------------------------------------------
-// Friday night: he opens one of the drafts the review built and fixes a cost he
-// fat-fingered at the truck on Tuesday. The draft is not on the file, so the
-// invoice's own write does nothing — but what the part COSTS is a fact about
-// his catalog and is true whether or not this draft ever becomes paper. One
-// save, and it is the shell's.
-test('a cost fixed on a review draft teaches the catalog, and writes the draft nowhere', (t) => {
+// Friday night: he opens one of the drafts the review built and fixes a price
+// he fat-fingered at the truck on Tuesday. The draft is not on the file, so the
+// invoice's own write does nothing — but what he CHARGES for the part is a fact
+// about his catalog and is true whether or not this draft ever becomes paper.
+// One save, and it is the shell's.
+test('a price fixed on a review draft teaches the catalog, and writes the draft nowhere', (t) => {
   const w = world();
   const part = S.addCatalogItem(w.d, { category: 'wire', name: '#12 THHN', unit: 'ft' });
-  part.lastCostCents = 38;
+  part.lastListCents = 38;
 
   reviewDrafts.set([I.draftInvoice(groups(w)[0], w.d, 1)]);
   enterInvoice({ draft: 0 });
   const draft = invoiceTarget();
   assert.strictEqual(draft.id, null, 'a draft under review is not on the file');
 
-  const it = { catalogId: part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: 38, priceCents: null };
+  const it = { catalogId: part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 38 };
   draft.items.push(it);
 
   const saves = [];
@@ -1195,18 +1195,20 @@ test('a cost fixed on a review draft teaches the catalog, and writes the draft n
     render: () => {},
   });
 
-  lineAskCost(it, invoiceLineOpts(draft));
+  lineAskPrice(it, invoiceLineOpts(draft));
 
-  assert.strictEqual(it.costCents, 4200, 'the line took the new cost');
-  assert.strictEqual(part.lastCostCents, 4200, 'and so did the catalog');
+  assert.strictEqual(it.priceCents, 4200, 'the line took the new price');
+  assert.strictEqual(part.lastPriceCents, 4200, 'and so did the catalog');
+  assert.strictEqual(part.lastPriceISO, S.todayISO(), 'dated the day he typed it');
   assert.strictEqual(saves.length, 1,
     'one save: the catalog. The draft is not on the file and wrote nothing');
 
   // And that one save is the CATALOG's: its restore puts the part's memory
   // back and leaves the line where he typed it.
   saves[0]();
-  assert.strictEqual(part.lastCostCents, 38);
-  assert.strictEqual(it.costCents, 4200);
+  assert.strictEqual(part.lastPriceCents, null);
+  assert.strictEqual(part.lastPriceISO, null);
+  assert.strictEqual(it.priceCents, 4200);
 });
 
 // ---------------------------------------------------------------------------

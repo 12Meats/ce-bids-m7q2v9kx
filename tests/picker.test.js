@@ -31,6 +31,7 @@ const sandbox = {
   BidMath: B,
   Store: S,
   Catalog: C,
+  Dates: require('../dates.js'),
   // entryStatusPill asks InvMath what Ready is; the pill only chooses words.
   InvMath: require('../invmath.js'),
   navigator: { onLine: true },
@@ -50,7 +51,8 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sandbox, { filename: 'ui.js' });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
-  partQtyLabel, partCostLabel, partBillLabel, partLotLabel,
+  partQtyLabel, partPriceLabel, partListLabel, partLotLabel,
+  lineAskPrice, lineAskList,
   rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill,
   pickerChooserRows, pickerOptionsTag, pickerVariantCounts } = sandbox;
 
@@ -73,8 +75,12 @@ function world(overrides) {
     onRental: () => {},
     onDone: () => {},
     onChanged: () => changed.push(items.slice()),
+    onClose: () => {},
     navPush: () => {},
     persistOr: (restore) => { saved.push(restore); return true; },
+    // The markup a new line's suggestion is figured at; the strip and the
+    // add flow both read it, and nothing on the paper depends on it.
+    markupPct: 15,
     data: d,
   };
   return { d, part, items, opts, saved, changed, ps: pickerState() };
@@ -97,18 +103,18 @@ test('pickerCommitItem builds the line, pushes it, and records the price against
   const ok = pickerCommitItem(w.ps, w.opts, w.part, 500, 38);
   assert.strictEqual(ok, true);
   assert.deepEqual(w.items, [{
-    catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: 38,
-    priceCents: null, listCents: 71, supplierName: 'Elliott',
+    catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null,
+    priceCents: 38, listCents: 71, supplierName: 'Elliott',
   }]);
   // The catalog's memory of the part moves with the line: one more use, and
-  // the price this line paid is the price the next one starts at.
+  // the price he just charged is the price the next line starts at.
   assert.strictEqual(w.part.uses, 1);
-  assert.strictEqual(w.part.lastCostCents, 38);
-  // recordCatalogUse takes THREE arguments here. A fourth would be a list
-  // price, and the picker has no new list price to record: passing
-  // part.lastListCents back in would look harmless and would overwrite the
-  // one on the part with itself forever, which is how a fourth argument gets
-  // added later and quietly wipes it.
+  assert.strictEqual(w.part.lastPriceCents, 38);
+  assert.strictEqual(w.part.lastPriceISO, S.todayISO());
+  // Since v3.4 this flow names no cost at all: recordCatalogUse is called with
+  // TWO arguments, so what he paid last time is left standing rather than
+  // overwritten with a price, and the list price is left alone the same way.
+  assert.strictEqual(w.part.lastCostCents, null, 'what he paid was not touched');
   assert.strictEqual(w.part.lastListCents, 71, 'the list price on the part was not touched');
 });
 
@@ -116,13 +122,35 @@ test('pickerCommitItem: no second price and no supplier read as null, not undefi
   const w = world();
   pickerCommitItem(w.ps, w.opts, w.part, 2, 1200);
   assert.deepEqual(w.items[0], {
-    catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 2, costCents: 1200,
-    priceCents: null, listCents: null, supplierName: null,
+    catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 2, costCents: null,
+    priceCents: 1200, listCents: null, supplierName: null,
   });
   // A supplier of whitespace is no supplier.
   const w2 = world({ supplierName: '   ' });
   pickerCommitItem(w2.ps, w2.opts, w2.part, 1, 100);
   assert.strictEqual(w2.items[0].supplierName, null);
+});
+
+test('pickerCommitItem: the line carries his price, no cost, and QED list from the catalog; the part remembers the price', () => {
+  const w = world({ lastListCents: 1800, lastCostCents: 1500 });
+  const ps = pickerState();
+  assert.ok(pickerCommitItem(ps, w.opts, w.part, 2, 2200));
+  const it = w.items[0];
+  assert.strictEqual(it.costCents, null);
+  assert.strictEqual(it.priceCents, 2200);
+  assert.strictEqual(it.listCents, 1800);
+  assert.strictEqual(w.part.lastPriceCents, 2200);
+  assert.strictEqual(w.part.lastPriceISO, S.todayISO());
+  assert.strictEqual(w.part.lastCostCents, 1500, 'what he paid is left alone');
+  assert.strictEqual(w.part.uses, 1);
+});
+
+test('pickerCommitItem: Clear adds the line with no price of its own and remembers nothing', () => {
+  const w = world({ lastListCents: 1800, lastPriceCents: 2000, lastPriceISO: '2026-09-01' });
+  assert.ok(pickerCommitItem(pickerState(), w.opts, w.part, 1, null));
+  assert.strictEqual(w.items[0].priceCents, null);
+  assert.strictEqual(w.items[0].listCents, 1800, 'it prints the suggestion');
+  assert.strictEqual(w.part.lastPriceCents, 2000, 'a line with no price does not erase the memory');
 });
 
 test('pickerCommitItem clears pending, flashes the new line, and lets the flash time out', () => {
@@ -139,14 +167,16 @@ test('pickerCommitItem clears pending, flashes the new line, and lets the flash 
 });
 
 test('pickerCommitItem: a refused save puts the line, the uses and the price back', () => {
-  const w = world({ lastCostCents: 40, uses: 7 });
+  const w = world({ lastCostCents: 40, uses: 7, lastPriceCents: 45, lastPriceISO: '2026-09-01' });
   w.ps.pending = { part: w.part, qty: 500 };
   w.opts.persistOr = (restore) => { restore(); return false; };
   const ok = pickerCommitItem(w.ps, w.opts, w.part, 500, 38);
   assert.strictEqual(ok, false);
   assert.deepEqual(w.items, [], 'the line came back off the list');
   assert.strictEqual(w.part.uses, 7, 'the use count came back');
-  assert.strictEqual(w.part.lastCostCents, 40, 'the last price came back');
+  assert.strictEqual(w.part.lastPriceCents, 45, 'the price he charged last time came back');
+  assert.strictEqual(w.part.lastPriceISO, '2026-09-01', 'and its date came back with it');
+  assert.strictEqual(w.part.lastCostCents, 40, 'what he paid was never touched');
   // Nothing was saved, so nothing is behind him: the flow stays where it is
   // rather than flashing a line that is not there.
   assert.strictEqual(w.ps.pending, null);
@@ -221,21 +251,22 @@ test('renderItemPicker refuses rentals with nobody to answer them', () => {
 
 test('a keypad asks about the part by name, in words', () => {
   assert.equal(partQtyLabel('3/4" EMT', 'ft'), '3/4" EMT, how many feet?');
-  assert.equal(partCostLabel('3/4" EMT', 'ft'), '3/4" EMT, cost per foot');
+  assert.equal(partPriceLabel('3/4" EMT', 'ft'), '3/4" EMT, price per foot');
   assert.equal(partQtyLabel('Wire nuts', 'box'), 'Wire nuts, how many boxes?');
-  assert.equal(partCostLabel('Wire nuts', 'box'), 'Wire nuts, cost per box');
+  assert.equal(partPriceLabel('Wire nuts', 'box'), 'Wire nuts, price per box');
   // 'ea' has no English form that reads: "how many each?" is not a question.
   assert.equal(partQtyLabel('4-square', 'ea'), '4-square, how many?');
-  assert.equal(partCostLabel('4-square', 'ea'), '4-square, cost each');
+  assert.equal(partPriceLabel('4-square', 'ea'), '4-square, price each');
   // An unknown unit is passed through rather than dropped.
   assert.equal(partQtyLabel('Thing', 'crate'), 'Thing, how many?');
-  assert.equal(partCostLabel('Thing', 'crate'), 'Thing, cost each');
+  assert.equal(partPriceLabel('Thing', 'crate'), 'Thing, price each');
 });
 
-test('partBillLabel and partLotLabel read the way partCostLabel does', () => {
-  assert.equal(partBillLabel('#12 wire', 'ft'), '#12 wire, bill price per foot');
-  assert.equal(partBillLabel('20 A breaker', 'ea'), '20 A breaker, bill price each');
-  assert.equal(partBillLabel('#12 THHN', 'roll'), '#12 THHN, bill price per roll');
+test('partListLabel and partLotLabel read the way partPriceLabel does', () => {
+  assert.equal(partPriceLabel('#12 THHN', 'ft'), '#12 THHN, price per foot');
+  assert.equal(partPriceLabel('20 A breaker', 'ea'), '20 A breaker, price each');
+  assert.equal(partListLabel('#12 THHN', 'ft'), "#12 THHN, QED's price per foot");
+  assert.equal(partListLabel('20 A breaker', 'ea'), "20 A breaker, QED's price each");
   assert.equal(partLotLabel('#12 wire', 500, 'ft'), '#12 wire, all 500 feet together');
   assert.equal(partLotLabel('#12 THHN', 2, 'roll'), '#12 THHN, all 2 rolls together');
   assert.equal(partLotLabel('20 A breaker', 6, 'ea'), '20 A breaker, all 6 together');
@@ -487,4 +518,62 @@ test('pickerCommitItem closes the chooser, and a refused save leaves it open', (
 
 test('pickerState starts with no chooser open', () => {
   assert.strictEqual(pickerState().choose, null);
+});
+
+test('lineAskPrice: writes his price on the line and into the catalog, Clear takes both off', () => {
+  const w = world({ lastListCents: 1800 });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 1800 };
+  w.items.push(it);
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  lineAskPrice(it, Object.assign({ markupPct: 15 }, w.opts));
+  assert.strictEqual(opened.cur, 2070, 'opens on what the line prints today, the suggestion');
+  assert.equal(opened.o.label, '#12 THHN, price per foot');
+  assert.deepEqual(opened.o.suggestions, [{ label: 'QED list + 15%', cents: 2070 }]);
+  assert.equal(opened.o.captionAction.label, 'Price the whole line instead');
+  opened.o.done(2500);
+  assert.strictEqual(it.priceCents, 2500);
+  assert.strictEqual(w.part.lastPriceCents, 2500);
+  assert.strictEqual(w.part.lastPriceISO, S.todayISO());
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  lineAskPrice(it, Object.assign({ markupPct: 15 }, w.opts));
+  assert.strictEqual(opened.cur, 2500, 'his own price now');
+  assert.deepEqual(opened.o.suggestions.map((s) => s.cents), [2070, 2500]);
+  opened.o.done(null);
+  assert.strictEqual(it.priceCents, null, 'Clear: back to the suggestion');
+  assert.strictEqual(w.part.lastPriceCents, null);
+  assert.strictEqual(w.part.lastPriceISO, null);
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
+});
+
+test('lineAskPrice on a lot: the lot wins, the keypad says so, and the link changes the lot', () => {
+  const w = world({});
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 40, lotCents: 21600 };
+  w.items.push(it);
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  lineAskPrice(it, Object.assign({ markupPct: 15 }, w.opts));
+  assert.strictEqual(opened.cur, null);
+  assert.ok(/priced as a lot at \$216\.00/.test(opened.o.caption));
+  assert.equal(opened.o.captionAction.label, "Change the whole line's price");
+  assert.deepEqual(opened.o.suggestions, []);
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
+});
+
+test('lineAskList: QED\'s price on the line and in the catalog, dated as his own reading', () => {
+  const w = world({ lastListCents: 1800, priceCheckedISO: '2026-09-09' });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 1800 };
+  w.items.push(it);
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  lineAskList(it, Object.assign({ markupPct: 15 }, w.opts));
+  assert.strictEqual(opened.cur, 1800);
+  assert.equal(opened.o.label, "#12 THHN, QED's price per foot");
+  assert.ok(!/markup/i.test(opened.o.caption), 'no markup talk on this keypad');
+  assert.equal(opened.o.captionAction.label, 'Check price');
+  opened.o.done(1900);
+  assert.strictEqual(it.listCents, 1900);
+  assert.strictEqual(w.part.lastListCents, 1900);
+  assert.strictEqual(w.part.priceCheckedISO, null, 'typed by hand, not the file');
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
 });

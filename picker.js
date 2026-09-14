@@ -210,20 +210,20 @@ function billThisJobConfirm(bid, data) {
 // ---------------------------------------------------------------------------
 // THE LINE STRIP
 // ---------------------------------------------------------------------------
-// What a counted line can be after it is on the list: Quantity, Cost, Bills at,
-// Delete. This was the walk's buildItemActions, and it moved here for the same
+// What a counted line can be after it is on the list: Quantity, Price, QED
+// list, Delete. This was the walk's buildItemActions, and it moved here for the same
 // reason the picker did — the truck log holds the same lines and had to be able
 // to fix a fat-fingered count without a second copy of these four buttons
 // drifting away from the first.
 //
 //   lineActions(box, lineEl, items, it, opts)
 //     items          the array the line is IN, so Delete can take it out
-//     opts.markupPct what this line bills at, for the Bills at caption
+//     opts.markupPct the markup this line's suggestion is figured at
 //     opts.data      the shell's data (the catalog's memory of the price, the
 //                    settings the price search reads)
 //     opts.persistOr the save for the LINE, with an exact restore handed to it
 //     opts.persistCatalog the save for what the CATALOG remembers about the
-//                    part (its last cost, its bill price, the date a price was
+//                    part (its bill price, his last price, the date a price was
 //                    checked). Defaults to persistOr. A caller whose own save
 //                    writes nothing — a draft under review, a visit not saved
 //                    yet — hands in the shell's, so a price corrected here
@@ -247,15 +247,15 @@ function partQtyLabel(name, unit) {
   return w ? name + ', how many ' + w + '?' : name + ', how many?';
 }
 
-// '3/4" EMT, cost per foot'
-function partCostLabel(name, unit) {
-  const w = UNIT_ONE[unit];
-  return w ? name + ', cost per ' + w : name + ', cost each';
+// '#12 THHN, price per foot' — the one number on a line the paper prints. His.
+function partPriceLabel(name, unit) {
+  return name + ', price' + perUnitText(unit);
 }
 
-// '#12 wire, bill price per foot' — the second price, asked the way the cost is.
-function partBillLabel(name, unit) {
-  return name + ', bill price' + perUnitText(unit);
+// "#12 THHN, QED's price per foot" — the reference beside it, and what the
+// keypad's suggestion is figured on.
+function partListLabel(name, unit) {
+  return name + ", QED's price" + perUnitText(unit);
 }
 
 // '#12 wire, all 500 feet together' — one number for the whole line. A count
@@ -323,8 +323,8 @@ function lineActions(box, lineEl, items, it, opts) {
         },
       });
     } },
-    { label: 'Cost', onTap: () => lineAskCost(it, opts) },
-    { label: 'Bills at', onTap: () => lineAskBillsAt(it, opts) },
+    { label: 'Price', onTap: () => lineAskPrice(it, opts) },
+    { label: 'QED list', onTap: () => lineAskList(it, opts) },
     { label: 'Delete', quiet: true, onTap: async () => {
       const ok = await confirmPanel('Delete ' + it.name + '?', { ok: 'Delete', danger: true });
       if (!ok) { opts.onChanged(); return; }
@@ -341,66 +341,64 @@ function lineActions(box, lineEl, items, it, opts) {
   if (!strip.parentNode) box.appendChild(strip);
 }
 
-// The SECOND price. His supply houses sell him a part under list and the
-// customer is billed at list, then the markup, so a line has two numbers:
-// Cost, which the margin is figured on, and this, which the paper prints.
-// Absent, the markup goes on the cost, which is what every line did before
-// this button existed, and Clear puts a line back there. The catalog
-// remembers it the way it remembers the cost, so the next bid offers both.
+// HIS PRICE, per unit: the one number on a line the paper prints (v3.4). The
+// keypad opens on what the line prints today (his own price, or the
+// suggestion when he has not made one his own) so Done with nothing typed
+// keeps it, and it offers the suggestions above the digits: QED's list plus
+// the markup, and what he charged last time. Clear takes his price off the
+// line and out of the catalog's memory, and the line goes back to printing
+// the suggestion. No markup is ever put on what he types here.
 //
-// The caption's link is the door to the lot: one number for the whole line.
-// It CLOSES this keypad (captionAction.closes) because promptMoney will not
-// open over an open panel, and a link that did nothing would read as broken.
-// WHAT HE PAID FOR IT. Its own function beside the other two keypads the strip
-// opens, rather than an inline closure in the button list, because it writes in
-// two places (the line and the catalog's memory of the price) and that is the
-// part of the strip worth pinning in a test without a screen in front of it.
-function lineAskCost(it, opts) {
-  promptMoney(it.costCents, {
-    label: partCostLabel(it.name, it.unit),
-    caption: pickerPriceCaption(),
-    captionAction: pickerPriceAction(opts.data.settings, it.name),
+// A lot wins over this, the way it wins over everything per unit, so on a
+// lot the keypad opens empty, says so, and its link changes the lot instead.
+// The link CLOSES this keypad (captionAction.closes) because promptMoney will
+// not open over an open panel.
+function lineAskPrice(it, opts) {
+  const part = lineCatalogPart(it, opts.data);
+  const lot = it.lotCents != null;
+  const printed = BidMath.itemPrice(it, opts.markupPct);
+  promptMoney(!lot && printed.unit > 0 ? printed.unit : null, {
+    label: partPriceLabel(it.name, it.unit),
+    caption: lot
+      ? 'This line is priced as a lot at ' + moneyText(it.lotCents) + '. The lot wins until you clear it.'
+      : 'What the paper prints, to the penny. Clear to go back to the suggestion.',
+    captionAction: {
+      label: lot ? "Change the whole line's price" : 'Price the whole line instead',
+      closes: true,
+      onTap: () => lineAskLot(it, opts),
+    },
+    suggestions: lot ? [] : priceSuggestions(it, part, opts.markupPct),
     done: (cents) => {
-      const part = lineCatalogPart(it, opts.data);
-      const prev = it.costCents;
-      const prevLast = part ? part.lastCostCents : null;
-      it.costCents = cents === null ? 0 : cents;
-      // The catalog remembers the last price he actually paid, so correcting
-      // a fat-fingered cost here also corrects what the next bid offers him.
-      if (part) part.lastCostCents = it.costCents;
+      const prev = it.priceCents;
+      const prevLast = part ? part.lastPriceCents : undefined;
+      const prevISO = part ? part.lastPriceISO : undefined;
+      it.priceCents = cents;                       // null is "back to the suggestion"
+      if (part) Store.rememberPrice(opts.data, part.id, cents, Store.todayISO());
       saveLineAndCatalog(opts,
-        () => { it.costCents = prev; },
-        part ? () => { part.lastCostCents = prevLast; } : null);
+        () => { it.priceCents = prev; },
+        part ? () => { part.lastPriceCents = prevLast; part.lastPriceISO = prevISO; } : null);
       opts.onClose();
     },
   });
 }
 
-// A line restored from an old file with a per-unit price of its own
-// (priceCents, which no screen writes any more) says so, because that price
-// wins over this one and a Done that moved nothing would look like a bug.
-function lineAskBillsAt(it, opts) {
+// QED'S LIST, per unit: the reference beside his price, and what the
+// suggestion is figured on. Filled by the import; typed here for a part QED
+// does not carry, or corrected when the shelf says otherwise. A number he
+// types here is his own reading, not the file's, so the part's checked-on
+// date comes off with it (it would otherwise say the import put it there).
+// Clear takes the list off the line and out of the catalog's memory.
+function lineAskList(it, opts) {
   const part = lineCatalogPart(it, opts.data);
   promptMoney(it.listCents != null ? it.listCents : null, {
-    label: partBillLabel(it.name, it.unit),
-    caption: it.lotCents != null
-      ? 'This line is priced as a lot at ' + moneyText(it.lotCents) + '. The lot wins until you clear it.'
-      : it.priceCents != null
-        ? 'This line has a price of its own at ' + moneyText(it.priceCents) + ', and that wins.'
-        : 'Before the ' + pctText(opts.markupPct) + ' markup. Clear to bill off the cost instead.',
-    captionAction: {
-      label: it.lotCents != null ? "Change the whole line's price" : 'Price the whole line instead',
-      closes: true,
-      onTap: () => lineAskLot(it, opts),
-    },
+    label: partListLabel(it.name, it.unit),
+    caption: 'What QED lists it at. Your price is what the paper prints.',
+    captionAction: pickerPriceAction(opts.data.settings, it.name),
     done: (cents) => {
       const prev = it.listCents;
       const prevLast = part ? part.lastListCents : undefined;
       const prevChecked = part ? part.priceCheckedISO : undefined;
-      it.listCents = cents;                       // null is "back to the cost"
-      // A price he types here is his own, typed by hand, not QED's. If the
-      // part still carried the date of an earlier import, that date now lies
-      // about where this number came from, so it comes off with it.
+      it.listCents = cents;                        // null is "no list on this line"
       if (part) { part.lastListCents = cents; part.priceCheckedISO = null; }
       saveLineAndCatalog(opts,
         () => { it.listCents = prev; },
@@ -876,11 +874,13 @@ function notePhrasesPicker(box, notes, opts) {
 //                                                  exactly one Back
 //     opts.persistOr    the save for the LINE, with an exact restore handed to it
 //     opts.persistCatalog the save for the CATALOG: a part invented here, one more
-//                       use of it, and what it cost this time. Defaults to
+//                       use of it, and what he charged this time. Defaults to
 //                       persistOr; a caller whose own save writes nothing hands
 //                       in the shell's. See saveLineAndCatalog.
 //     opts.data         the shell's own data object (catalog, settings)
-//   pickerCommitItem(ps, opts, part, qty, costCents) -> boolean
+//     opts.markupPct    the markup a new line's suggestion is figured at (the bid's
+//                       own, the invoice's own, or Settings' for a visit)
+//   pickerCommitItem(ps, opts, part, qty, priceCents) -> boolean
 //   pickerBackStep(ps) -> boolean: pending, then newPart, then the chooser, then
 //                     the search and the category together.
 //
@@ -1191,9 +1191,9 @@ function pickerCreatePart(ps, opts, unit) {
   pickerPickPart(ps, opts, part);
 }
 
-// Quantity, then price. A part he has bought before offers the price he paid
-// last time as one button, because typing the same $3.40 for the fortieth
-// length of EMT is the kind of friction that gets an app put down.
+// Quantity, then price. A part he has charged for before offers the price he
+// charged last time as one button, because typing the same $3.40 for the
+// fortieth length of EMT is the kind of friction that gets an app put down.
 function pickerPickPart(ps, opts, part) {
   // The catalog carries a rentals category, and a lift is not a material line:
   // priced as one it would take material markup and be counted in the material
@@ -1208,39 +1208,42 @@ function pickerPickPart(ps, opts, part) {
     done: (v) => {
       if (v === null) return;
       if (!(v > 0)) { showBanner('A count has to be more than zero'); opts.onChanged(); return; }
-      if (typeof part.lastCostCents === 'number') {
+      if (Number.isInteger(part.lastPriceCents)) {
         ps.pending = { part, qty: v };
         opts.onChanged();
         return;
       }
-      pickerAskCost(ps, opts, part, v);
+      pickerAskPrice(ps, opts, part, v);
     },
   });
 }
 
+// The price he CHARGED last time, offered as one tap (v3.4: it used to be the
+// cost he paid). The catalog remembers it with the day, and the Price keypad
+// behind "Different price" says that day out loud.
 function pickerPriceAnswer(ps, opts) {
   const { part, qty } = ps.pending;
   const box = card();
-  box.appendChild(lineRow(part.name, itemCountText(qty, part.unit, part.lastCostCents), null, null));
+  box.appendChild(lineRow(part.name, itemCountText(qty, part.unit, part.lastPriceCents), null, null));
 
   const nav = document.createElement('div');
   nav.className = 'bid-nav';
   nav.appendChild(textButton(
-    'Same price (' + BidMath.fmt(part.lastCostCents) + ')',
+    'Same price (' + BidMath.fmt(part.lastPriceCents) + ')',
     'btn btn-primary btn-block',
-    () => pickerCommitItem(ps, opts, part, qty, part.lastCostCents)
+    () => pickerCommitItem(ps, opts, part, qty, part.lastPriceCents)
   ));
   // The pending state is NOT cleared here: pickerCommitItem owns clearing it.
-  // If he cancels the cost keypad, this view is still what is on the glass and
+  // If he cancels the price keypad, this view is still what is on the glass and
   // Back still walks one step, rather than the screen and the state disagreeing.
   nav.appendChild(textButton('Different price', 'btn btn-block', () => {
-    pickerAskCost(ps, opts, part, qty);
+    pickerAskPrice(ps, opts, part, qty);
   }));
   box.appendChild(nav);
   return box;
 }
 
-// "Check price" under a cost keypad. Offline it is not offered at all rather
+// "Check price" under a price keypad. Offline it is not offered at all rather
 // than offered and then refused: a link that opens the browser's own no-signal
 // page is a tab he has to find his way back out of, and in a plant with no
 // signal that is every tap. Nothing here blocks anything either way.
@@ -1248,53 +1251,67 @@ function pickerPriceCaption() {
   return navigator.onLine === false ? '' : 'Not sure? Check the price first.';
 }
 
-// settings rather than opts, because the walk's own Cost strip puts the same
-// caption under the same keypad and has no picker in front of it.
+// settings rather than opts, because the strip's own QED list keypad puts the
+// same link under it and has no picker in front of it.
 function pickerPriceAction(settings, name) {
   if (navigator.onLine === false) return null;
   return { label: 'Check price', onTap: () => openPriceSearch(settings, name) };
 }
 
-function pickerAskCost(ps, opts, part, qty) {
-  promptMoney(part.lastCostCents, {
-    label: partCostLabel(part.name, part.unit || 'ea'),
-    // The one panel in the app with somewhere to send him. It opens the search
-    // in another tab and leaves the keypad standing, so what he was half way
-    // through typing is still here when he comes back with the number.
-    caption: pickerPriceCaption(),
-    captionAction: pickerPriceAction(opts.data.settings, part.name),
+// THE LINE'S PRICE, asked once, on the way in (v3.4). The keypad opens ON the
+// suggestion when the catalog knows QED's list for the part, so Done is one
+// tap and the line lands at QED plus the markup; empty otherwise, with the
+// search under it for the day he wants to look. Clear adds the line with no
+// price of its own: it prints the suggestion when there is one, and $0 with
+// the amber flag (and the banner) when there is not.
+function pickerAskPrice(ps, opts, part, qty) {
+  const probe = { listCents: Number.isInteger(part.lastListCents) ? part.lastListCents : null };
+  const suggested = BidMath.suggestedUnit(probe, opts.markupPct);
+  promptMoney(suggested, {
+    label: partPriceLabel(part.name, part.unit || 'ea'),
+    caption: suggested == null ? pickerPriceCaption() : '',
+    captionAction: suggested == null ? pickerPriceAction(opts.data.settings, part.name) : null,
+    suggestions: priceSuggestions(probe, part, opts.markupPct),
     done: (cents) => {
-      // Clear on the cost keypad means "I don't know yet". The count he just
-      // walked off is worth more than the price he hasn't looked up, so the
-      // line goes on at zero and shows on the list until it has been priced.
-      const zero = cents === null;
-      if (pickerCommitItem(ps, opts, part, qty, zero ? 0 : cents) && zero) {
+      const zero = cents === null && suggested == null;
+      if (pickerCommitItem(ps, opts, part, qty, cents) && zero) {
         showBanner('Added at $0. Put a price on it when you know it');
       }
     },
   });
 }
 
-function pickerCommitItem(ps, opts, part, qty, costCents) {
-  // The second price comes along when the catalog has one for this part: he
-  // put it there on a line once, and the next line starts where that one
-  // ended. A part with none has none, and the line bills off its cost.
-  const listCents = part.lastListCents != null ? part.lastListCents : null;
+function pickerCommitItem(ps, opts, part, qty, priceCents) {
+  // QED's list comes along when the catalog has one for this part, so the
+  // line can print the suggestion and the Price keypad can offer it. His
+  // price is what he just answered, or nothing (Clear). No cost: since v3.4
+  // that is not a number this flow asks for (BidMath.itemCostCents reads the
+  // list, then the price, in its place).
+  const listCents = Number.isInteger(part.lastListCents) ? part.lastListCents : null;
   const supplierName = typeof part.supplierName === 'string' && part.supplierName.trim() !== '' ? part.supplierName : null;
-  const item = { catalogId: part.id, name: part.name, unit: part.unit, qty, costCents, priceCents: null, listCents, supplierName };
+  const item = {
+    catalogId: part.id, name: part.name, unit: part.unit, qty,
+    costCents: null,
+    priceCents: Number.isInteger(priceCents) ? priceCents : null,
+    listCents, supplierName,
+  };
   const prevUses = part.uses;
-  const prevCost = part.lastCostCents;
+  const prevPrice = part.lastPriceCents;
+  const prevPriceISO = part.lastPriceISO;
   opts.items.push(item);
-  // The line and the catalog's memory of the price: one save on the walk, two
-  // on a draft, and saveLineAndCatalog is where that is decided. Either way
-  // the restores are exact and belong to the fact they undo.
-  Store.recordCatalogUse(opts.data, part.id, costCents);
+  // The line and the catalog's memory of it: one save on the walk, two on a
+  // draft, and saveLineAndCatalog is where that is decided. Either way the
+  // restores are exact and belong to the fact they undo. The use is counted
+  // with no cost named, so what he paid last time is left standing.
+  Store.recordCatalogUse(opts.data, part.id);
+  if (item.priceCents !== null) Store.rememberPrice(opts.data, part.id, item.priceCents, Store.todayISO());
   if (!saveLineAndCatalog(opts, () => {
     const i = opts.items.indexOf(item);
     if (i !== -1) opts.items.splice(i, 1);
   }, () => {
     part.uses = prevUses;
-    part.lastCostCents = prevCost;
+    part.lastPriceCents = prevPrice;
+    part.lastPriceISO = prevPriceISO;
   })) {
     // Stay in the add view: nothing was saved, so nothing is behind him.
     ps.pending = null;
