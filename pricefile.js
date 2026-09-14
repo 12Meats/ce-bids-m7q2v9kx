@@ -389,6 +389,7 @@
         // newParts is called with whatever plan() was called with.
         supplierName: Catalog.straighten(c.row.name).slice(0, 120),
         priceCheckedISO: checkedISO,
+        lastPriceCents: null, lastPriceISO: null,
       };
       if (c.seedPart && typeof c.seedPart.id === 'string' && c.seedPart.id !== '') p.variantOf = c.seedPart.id;
       p.source = { kind: 'qed', checkedISO };

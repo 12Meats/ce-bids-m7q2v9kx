@@ -1449,3 +1449,47 @@ test('seeds and addCatalogItem carry no variantOf and no source', () => {
   assert.strictEqual('variantOf' in p, false);
   assert.strictEqual('source' in p, false);
 });
+
+test('validateImport: a line may carry no cost at all (v3.4), but never a bad one', () => {
+  const { d } = buildFullData();
+  const base = JSON.stringify(d);
+  const nul = JSON.parse(base); nul.bids[0].areas[0].items[0].costCents = null;
+  assert.ok(S.validateImport(JSON.stringify(nul)), 'null is "nobody knows"');
+  const absent = JSON.parse(base); delete absent.bids[0].areas[0].items[0].costCents;
+  assert.ok(S.validateImport(JSON.stringify(absent)), 'absent reads the same as null');
+  const neg = JSON.parse(base); neg.bids[0].areas[0].items[0].costCents = -1;
+  assert.strictEqual(S.validateImport(JSON.stringify(neg)), null);
+  const str = JSON.parse(base); str.bids[0].areas[0].items[0].costCents = '38';
+  assert.strictEqual(S.validateImport(JSON.stringify(str)), null);
+});
+
+test('validateImport: a part may remember his last price and its date (v3.4)', () => {
+  const { d } = buildFullData();
+  const base = JSON.stringify(d);
+  const ok = JSON.parse(base); ok.catalog[0].lastPriceCents = 2200; ok.catalog[0].lastPriceISO = '2026-09-14';
+  assert.ok(S.validateImport(JSON.stringify(ok)));
+  const nulls = JSON.parse(base); nulls.catalog[0].lastPriceCents = null; nulls.catalog[0].lastPriceISO = null;
+  assert.ok(S.validateImport(JSON.stringify(nulls)));
+  const badCents = JSON.parse(base); badCents.catalog[0].lastPriceCents = 'x';
+  assert.strictEqual(S.validateImport(JSON.stringify(badCents)), null);
+  const badISO = JSON.parse(base); badISO.catalog[0].lastPriceISO = 'Sept 14';
+  assert.strictEqual(S.validateImport(JSON.stringify(badISO)), null);
+});
+
+test('recordCatalogUse leaves the cost memory alone when not given one; rememberPrice sets and clears', () => {
+  const d = S.emptyData();
+  const p = S.addCatalogItem(d, { category: 'gear', name: '20 A breaker', unit: 'ea' });
+  assert.strictEqual(p.lastPriceCents, null); assert.strictEqual(p.lastPriceISO, null);
+  S.recordCatalogUse(d, p.id, 1800);
+  S.recordCatalogUse(d, p.id);
+  assert.strictEqual(p.uses, 2);
+  assert.strictEqual(p.lastCostCents, 1800, 'a use with no cost named does not erase the cost');
+  S.rememberPrice(d, p.id, 2200, '2026-09-14');
+  assert.strictEqual(p.lastPriceCents, 2200); assert.strictEqual(p.lastPriceISO, '2026-09-14');
+  S.rememberPrice(d, p.id, null, '2026-09-15');
+  assert.strictEqual(p.lastPriceCents, null); assert.strictEqual(p.lastPriceISO, null, 'no price, no date');
+  S.rememberPrice(d, p.id, 2500, 'not a date');
+  assert.strictEqual(p.lastPriceCents, 2500); assert.strictEqual(p.lastPriceISO, null);
+  S.rememberPrice(d, 'nope', 1, '2026-09-14');   // an unknown part is ignored, not thrown
+  assert.ok(S.validateImport(JSON.stringify(d)), 'what the app wrote, the app loads');
+});

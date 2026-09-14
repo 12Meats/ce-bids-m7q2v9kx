@@ -501,9 +501,13 @@ test('newParts builds a catalog part, stamped and linked', () => {
     sku: '22590',
     supplierName: 'Siemens B360 3-Pole 60 Amp Circuit Breaker',
     priceCheckedISO: '2026-09-09',
+    lastPriceCents: null,
+    lastPriceISO: null,
     variantOf: 'g1',
     source: { kind: 'qed', checkedISO: '2026-09-09' },
   });
+  assert.strictEqual(made[0].lastPriceCents, null, 'a new part has no price of his yet');
+  assert.strictEqual(made[0].lastPriceISO, null);
 });
 
 // The same keys the seed catalog carries, so a part the import made and a part

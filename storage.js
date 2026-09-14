@@ -398,7 +398,7 @@
         // restores without it and every PDF simply reads as pending, so the
         // document version does not have to move.
         lastBackupAt: null, pdfsSentThroughMs: null },
-      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null })),
+      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null })),
       customers: [], bids: [], projects: [], logs: [], invoices: [] };
   }
 
@@ -570,6 +570,12 @@
         // OPTIONAL: the last "bills at" he put on this part. Absent on every
         // file older than v2.3, which is why undefined loads.
         if (p.lastListCents !== undefined && !isIntGte0OrNull(p.lastListCents)) return null;
+        // OPTIONAL, both new in v3.4: what he last charged per unit for this
+        // part, and the day he did. The Price keypad writes them; the next
+        // line for the part starts there, and the keypad's "Last time" row
+        // carries the date so a stale habit sits next to QED's number, dated.
+        if (p.lastPriceCents !== undefined && !isIntGte0OrNull(p.lastPriceCents)) return null;
+        if (p.lastPriceISO !== undefined && p.lastPriceISO !== null && !isISO(p.lastPriceISO)) return null;
         // OPTIONAL, the supplier's handle on the part: QED's part number, QED's
         // own name, and the day a price file last touched it. Absent on every
         // file older than v2.4. A number where a name goes is refused, so a
@@ -624,7 +630,11 @@
         if (!isObj(it)) return false;
         if (it.catalogId !== null && !catalogIds.has(it.catalogId)) return false;
         if (!isStr(it.name) || !isStr(it.unit) || !isFiniteGt0(it.qty)) return false;
-        if (!isIntGte0(it.costCents)) return false;
+        // What he paid, per unit. Required on every line before v3.4; since
+        // then a line may carry none at all (null or absent), because the
+        // number he sees is QED's list and his own price. BidMath.itemCostCents
+        // is where an unknown cost is read.
+        if (it.costCents !== undefined && it.costCents !== null && !isIntGte0(it.costCents)) return false;
         if (it.priceCents !== null && !isIntGte0(it.priceCents)) return false;
         // OPTIONAL, both: what the line bills at per unit (the markup goes on
         // it), and the whole line's price as a lot (nothing per unit prints).
@@ -1259,7 +1269,7 @@
     const nm = Catalog.straighten(name);
     if (!nm) return null;
     const un = String(unit || '');
-    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null };
+    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null };
     d.catalog.push(p); return p;
   }
   // A tool he owns, added from Settings or from the price screen's picker.
@@ -1330,7 +1340,7 @@
     SEED_CATALOG.forEach(([category, name, unit]) => {
       if (have.has(Catalog.normalizeName(name))) return;
       have.add(Catalog.normalizeName(name));
-      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null });
+      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null });
       added += 1;
     });
     return added;
@@ -1505,15 +1515,24 @@
     return c.bids + c.projects + c.logs + c.invoices;
   }
 
-  // costCents is what he paid; listCents, when the caller has one, is what the
-  // line bills at. undefined leaves that memory alone (a caller that never
-  // asked), null clears it (he took it off the line), a number sets it.
+  // uses counts the tap. costCents is what he paid: a number sets the memory,
+  // null clears it, undefined leaves it alone (since v3.4 the add-a-part flow
+  // names no cost at all). listCents the same way, for what the line bills at.
   function recordCatalogUse(d, id, costCents, listCents) {
     const p = d.catalog.find((x) => x.id === id);
     if (!p) return;
     p.uses += 1;
-    p.lastCostCents = costCents;
+    if (costCents !== undefined) p.lastCostCents = costCents;
     if (listCents !== undefined) p.lastListCents = listCents;
+  }
+  // What he charged for the part, per unit, and when. null takes the memory
+  // off (he cleared his price on a line), and the date goes with it: a date
+  // on no price would be a stamp on nothing.
+  function rememberPrice(d, id, priceCents, iso) {
+    const p = d.catalog.find((x) => x.id === id);
+    if (!p) return;
+    p.lastPriceCents = Number.isInteger(priceCents) && priceCents >= 0 ? priceCents : null;
+    p.lastPriceISO = p.lastPriceCents === null ? null : (isISO(iso) ? iso : null);
   }
   function numberInUse(d, number, exceptBidId) { return d.bids.some((b) => b.number === number && b.id !== exceptBidId); }
 
@@ -1522,7 +1541,7 @@
     findOrCreateCustomer, newBid, newJob, jobIsEmpty, newChangeOrder, duplicateBid, noteCrewWage, addCatalogItem, newTool, findEquipmentByName, bidEquipmentLine, equipmentInUse, crewInUse, catalogInUse, clauseInUse,
     addStandardCatalog, addStandardEquipment, addStandardForget, addStandardNotes, resetClauseLibrary,
     standardCatalogNames, standardEquipmentNames,
-    recordCatalogUse, numberInUse,
+    recordCatalogUse, rememberPrice, numberInUse,
     newProject, openProjects, newLogEntry, takeInvoiceNumber, effectiveNextInvoiceNumber,
     invoiceNumberInUse, customerInUse, customerUseCounts,
     INVOICE_KIND, INVOICE_STATUS, PROJECT_TITLE_MAX, ADDRESS_MAX };
