@@ -502,6 +502,38 @@
     });
   }
 
+  // WHAT AN IMPORT WOULD WRITE BEYOND PRICES.
+  //
+  //   matchedGains(matched) -> { lengths: [{ part, rollFt }], bases: n }
+  //
+  // apply does more than reprice: it puts a roll length on a wire part that
+  // has none, and QED's exact price per thousand feet on one whose basis is
+  // not the file's yet. Neither shows up in a count of prices that moved, and
+  // the screen skipped apply altogether on a week where none did, so a wire
+  // part that matched every single week never got either of them: the next
+  // file would not move a price either, and nor would the one after that.
+  //
+  // So the screen asks this. It is a reason to open the confirm at all, and it
+  // is something the confirm then has to NAME, because a question about a
+  // change it does not mention is a question he cannot answer.
+  //
+  // Only ever a GAIN, never a correction. A length he typed is his and apply
+  // will not touch it, so it is not on the list either.
+  function matchedGains(matched) {
+    const rows = Array.isArray(matched) ? matched : [];
+    const lengths = [];
+    let bases = 0;
+    rows.forEach((x) => {
+      if (!x || !x.part) return;
+      const p = x.part;
+      if (Number.isInteger(x.newRollFt) && !(Number.isInteger(p.rollFt) && p.rollFt > 0)) {
+        lengths.push({ part: p, rollFt: x.newRollFt });
+      }
+      if (Number.isInteger(x.newPerM) && isLengthUnit(p.unit) && p.lastListPerM !== x.newPerM) bases += 1;
+    });
+    return { lengths, bases };
+  }
+
   function n(count, one, many) { return count + ' ' + (count === 1 ? one : many); }
 
   // Names a list of movers or mismatches, at most SHOWN of them, with the
@@ -522,7 +554,16 @@
   // the same three sentences however the summary opened.
   function summaryText(m) {
     const creatable = Array.isArray(m.creatable) ? m.creatable : [];
-    const rolls = Array.isArray(m.genericRolls) ? m.genericRolls : [];
+    const gains = matchedGains(m.matched);
+    // ONE LIST FOR ONE FACT. A wire part is handed a roll length two ways in
+    // the same import — off the title of the row that matched it, and off the
+    // smallest length the new options under it carry — and he does not care
+    // which. Two sentences about roll lengths would read like two different
+    // things happening. The generic's own list goes FIRST because its number
+    // is the one that lands: the screen writes it after apply, on purpose.
+    const generics = Array.isArray(m.genericRolls) ? m.genericRolls : [];
+    const named = new Set(generics.map((g) => g.part));
+    const rolls = generics.concat(gains.lengths.filter((g) => !named.has(g.part)));
     // The "put the part numbers on your parts first" sentence only belongs
     // to a file that found NOTHING: no matches, no mismatches, no duplicates,
     // nothing to create, and no roll length to hand a wire part either. A
@@ -557,6 +598,19 @@
     else if (rolls.length > 1) {
       parts.push(rolls.length + ' wire parts get a roll length: ' + namesList(rolls, (g) => g.part.name + ' (' + g.rollFt + ' ft)') + '.');
     }
+    // AND THE BASIS, when it is the only thing left for this file to write.
+    // QED's exact price per thousand feet is what a length's per-foot and
+    // per-roll suggestions are both figured off, and the week every price is
+    // already right is exactly the week a part that has none finally gets one.
+    // A price that MOVED brings its basis along with it and was counted at the
+    // top, so the sentence would only be noise beside real work: it is said
+    // when there is no other news, and then it is the whole reason the confirm
+    // opened. The moved rule is the screen's own settingsImportChanging,
+    // written out once more because a pure module cannot reach into a screen.
+    const moved = m.matched.filter((x) => x.newListCents !== x.oldListCents).length;
+    if (gains.bases && !moved && !creatable.length && !rolls.length) {
+      parts.push("QED's exact prices per thousand feet are kept on " + n(gains.bases, 'wire part', 'wire parts') + '.');
+    }
     if (m.unmatched.length) parts.push(n(m.unmatched.length, 'row is', 'rows are') + ' not in your catalog and ' + (m.unmatched.length === 1 ? 'is' : 'are') + ' skipped.');
     if (m.mismatched.length) {
       parts.push(n(m.mismatched.length, 'part is', 'parts are') + ' counted differently than QED sells '
@@ -567,5 +621,5 @@
     return parts.join(' ');
   }
 
-  return { parse, convertCents, rollFtOf, perMOf, match, plan, guessCategory, newParts, apply, snapshot, restore, summaryText };
+  return { parse, convertCents, rollFtOf, perMOf, match, plan, guessCategory, newParts, apply, snapshot, restore, matchedGains, summaryText };
 });

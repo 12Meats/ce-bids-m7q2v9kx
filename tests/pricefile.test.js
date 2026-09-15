@@ -863,6 +863,63 @@ test('plan: a generic with no roll length is offered the smallest its new option
   assert.strictEqual(twelve.rollFt, 500);
 });
 
+// WHAT AN IMPORT WRITES BEYOND PRICES. The screen skipped apply altogether on
+// a week where no price moved, so a wire part that matched every single week
+// never got its roll length or QED's exact basis: the next file would not move
+// a price either, and nor would the one after that. These two are the reason
+// the confirm opens on such a week, and what it then has to name.
+test('matchedGains: a roll length a part has none of, and a basis that is not the file\'s yet', () => {
+  const eight = { name: '#8 THHN', unit: 'ft', lastListPerM: 95284 };
+  const ten = { name: '#10 THHN', unit: 'roll', rollFt: 1000, lastListPerM: 51334 };
+  const six = { name: '#6 THHN', unit: 'ft' };
+  const breaker = { name: '60 A 3-pole breaker', unit: 'ea' };
+  const g = P.matchedGains([
+    { part: eight, newRollFt: 500, newPerM: 95284 },
+    { part: ten, newRollFt: 2500, newPerM: 51334 },
+    { part: six, newRollFt: null, newPerM: 61840 },
+    { part: breaker, newRollFt: null, newPerM: 9528 },
+  ]);
+  assert.deepStrictEqual(g.lengths.map((x) => [x.part.name, x.rollFt]), [['#8 THHN', 500]],
+    'a length he typed is his, and a title with no length in it offers none');
+  assert.strictEqual(g.bases, 1, 'only the basis #6 THHN has none of: two already match, and a breaker is not a length');
+  assert.deepStrictEqual(P.matchedGains(null), { lengths: [], bases: 0 });
+});
+
+// A wire part is handed a roll length two ways in one import — off the title
+// of the row that matched it, and off the smallest length the new options
+// under it carry — and he does not care which. One sentence, and the
+// generic's own number, because that is the one the screen writes last.
+test('summaryText merges the roll lengths a matched part and a new option both bring', () => {
+  const eight = { name: '#8 THHN', unit: 'ft' };
+  const six = { name: '#6 THHN', unit: 'ft' };
+  const text = P.summaryText({
+    matched: [
+      { part: eight, newListCents: 95, oldListCents: 95, changePct: 0, newRollFt: 2500, newPerM: 95284 },
+      { part: six, newListCents: 150, oldListCents: 150, changePct: 0, newRollFt: 1000, newPerM: 150000 },
+    ],
+    unmatched: [], mismatched: [], duplicates: [], creatable: [],
+    genericRolls: [{ part: eight, rollFt: 500 }],
+  });
+  assert.match(text, /2 wire parts get a roll length: #8 THHN \(500 ft\), #6 THHN \(1000 ft\)\./);
+  assert.strictEqual((text.match(/roll length/g) || []).length, 1, 'one sentence about roll lengths, not two');
+  assert.ok(!/—/.test(text));
+});
+
+// And the week where the basis is the whole of it. Without this sentence the
+// confirm opened on "None of your parts got a new price. 318 are already
+// right." and asked him to say yes to nothing at all.
+test('summaryText says the basis is kept when that is the only thing the file would write', () => {
+  const eight = { name: '#8 THHN', unit: 'ft', rollFt: 500 };
+  const only = { matched: [{ part: eight, newListCents: 95, oldListCents: 95, changePct: 0, newRollFt: 500, newPerM: 95284 }],
+    unmatched: [], mismatched: [], duplicates: [], creatable: [], genericRolls: [] };
+  assert.match(P.summaryText(only), /QED's exact prices per thousand feet are kept on 1 wire part\./);
+  // Not beside real work: a price that moved was counted at the top and
+  // brought its basis along with it.
+  const moved = { matched: [{ part: eight, newListCents: 96, oldListCents: 95, changePct: 1.05, newRollFt: 500, newPerM: 96000 }],
+    unmatched: [], mismatched: [], duplicates: [], creatable: [], genericRolls: [] };
+  assert.ok(!/per thousand feet/.test(P.summaryText(moved)));
+});
+
 test('summaryText says when wire parts get a roll length', () => {
   const d = S.emptyData();
   const eight = d.catalog.find((p) => p.name === '#8 THHN');

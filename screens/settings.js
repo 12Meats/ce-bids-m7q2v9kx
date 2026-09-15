@@ -1846,14 +1846,23 @@ function settingsImportPrices(file) {
     const changing = settingsImportChanging(m.matched);
     const right = settingsImportRightText(m.matched.length, changing, m.creatable.length);
     const summary = PriceFile.summaryText(m) + (right ? ' ' + right : '');
-    // Nothing to update AND nothing to create AND no wire part to hand a roll
-    // length to: there is no question to ask, so the summary is simply said
-    // and the screen stays where it is. A file that matched three hundred
-    // parts and would move none of them is that file, however many rows it
-    // read. The button's two halves still describe the whole deal, because a
-    // roll length only ever rides in with the new options that carry it.
+    // Nothing to update AND nothing to create AND nothing a wire part gains
+    // beyond its price: there is no question to ask, so the summary is simply
+    // said and the screen stays where it is.
+    //
+    // THE PRICES ARE NOT ALL apply WRITES. It also puts a roll length on a
+    // wire part that has none and QED's exact basis per thousand feet on one
+    // whose basis is not the file's yet, and neither of those shows up in a
+    // count of prices that moved. Returning here on a week where none moved
+    // meant an already-matched wire part never got either of them, ever: the
+    // next file would not move a price either. PriceFile.matchedGains is that
+    // question, and summaryText names every part of the answer, so the confirm
+    // never opens over a change it did not mention.
+    const gains = PriceFile.matchedGains(m.matched);
     const rolls = (m.genericRolls || []).length;
-    if (!changing && !m.creatable.length && !rolls) { showBanner(summary); render(); return; }
+    if (!changing && !m.creatable.length && !rolls && !gains.lengths.length && !gains.bases) {
+      showBanner(summary); render(); return;
+    }
     // confirmPanel refuses to open over another open panel; asking anyway
     // would look like the button did nothing, so say why instead.
     if (anyPanelOpen()) { showBanner('Finish what you were doing, then try the import again.'); render(); return; }
