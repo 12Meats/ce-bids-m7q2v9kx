@@ -1064,7 +1064,13 @@ async function proposalSaveToFiles(bid) {
   // IndexedDB here, because a read would cost the tap its share sheet.
   const pdfBlob = last ? last.blob : (newest && newest.blob);
   if (!pdfBlob) {
-    showBanner(last || newest ? "That copy isn't on this phone any more" : 'Make the PDF first', 'danger');
+    // Named for the button that actually makes one. "Make the PDF first" sent
+    // him looking for a Make the PDF button that has never been on this screen:
+    // the one that builds it is Share proposal, and this one only hands over
+    // what that share already sent.
+    showBanner(last || newest
+      ? "That copy isn't on this phone any more"
+      : 'Share the proposal first. Save to Files keeps a copy of what was shared.', 'danger');
     return;
   }
   const name = last ? last.name : DocModel.fileName(bid, state.data);
