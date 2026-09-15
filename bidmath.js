@@ -96,10 +96,25 @@
   // cents cannot say; his own invoices print the quantity, a blank unit price
   // and the amount for exactly that reason. unit is null so the paper prints
   // the blank rather than a rounded lie. The lot wins over the per-unit
-  // override, which wins over markup on the base, as it always did.
+  // override, which wins over the suggestion, which wins over markup on the
+  // base, as it always did.
+  //
+  // THE SUGGESTION IS THE SAME NUMBER WHEREVER IT IS READ. A line with no
+  // price of his own prints "QED list + 15%", and that phrase has to mean one
+  // figure: the suggestion row over the keypad, the row on the walk, and the
+  // amount on the paper are all the same promise. Pricing here off the
+  // ROUNDED per-unit list while suggestedUnit read the exact per-thousand
+  // basis made #8 THHN print $1.09 under a suggestion row offering $1.10, a
+  // penny a foot he never agreed to give away. So the suggestion is asked
+  // first, and markup on the base is the answer only for a line it has no
+  // opinion about (no list at all, or a cost and nothing else).
   function itemPrice(it, markupPct) {
     if (it.lotCents != null) return { unit: null, cents: it.lotCents };
-    const unit = it.priceCents != null ? it.priceCents : unitPrice(itemBillBase(it), markupPct);
+    let unit = it.priceCents;
+    if (unit == null) {
+      const s = suggestedUnit(it, markupPct);
+      unit = s != null ? s : unitPrice(itemBillBase(it), markupPct);
+    }
     return { unit, cents: r(it.qty * unit) };
   }
   // WIRE, CABLE AND CORD come by the foot and by the roll, and QED prices
@@ -121,11 +136,21 @@
   // 39 gives the wire away over a 2,500 ft pull); by the roll rounded to the
   // nearest, off the spool price. Everything else is the line's list, as in
   // v3.4. Only a list makes a suggestion; a cost never does.
+  // The arithmetic is deliberately integer-first: whole cents times whole feet
+  // times (100 + markup), divided once at the end. Written the natural way —
+  // basis times 1.1, divided by a thousand — a basis of 50000 at 10% comes out
+  // 55.00000000000001 and rounds UP to 56, a cent a foot off a number that is
+  // exactly 55. The epsilon is there for the same reason in the other
+  // direction: it absorbs the last bit of float slop before the ceiling or the
+  // half-up rounding reads it, and it is far too small to move a real price.
+  const EPS = 1e-9;
   function suggestedUnit(it, markupPct) {
-    const f = 1 + markupPct / 100;
     if (isLength(it.unit) && Number.isInteger(it.listPerM) && it.listPerM > 0) {
-      if (it.unit === 'ft') return Math.ceil(it.listPerM * f / 1000);
-      if (Number.isInteger(it.rollFt) && it.rollFt > 0) return r(it.listPerM * it.rollFt / 1000 * f);
+      const m = 100 + markupPct;
+      if (it.unit === 'ft') return Math.ceil(it.listPerM * m / 100000 - EPS);
+      if (Number.isInteger(it.rollFt) && it.rollFt > 0) {
+        return Math.floor(it.listPerM * it.rollFt * m / 100000 + 0.5 + EPS);
+      }
     }
     return Number.isInteger(it.listCents) && it.listCents > 0 ? unitPrice(it.listCents, markupPct) : null;
   }

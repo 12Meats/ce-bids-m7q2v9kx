@@ -52,7 +52,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui.js'), 'utf8'), sa
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'picker.js'), 'utf8'), sandbox, { filename: 'picker.js' });
 const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
   partQtyLabel, partPriceLabel, partListLabel, partLotLabel,
-  lineAskPrice, lineAskList,
+  lineAskPrice, lineAskList, pickerAskPrice,
   rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill,
   pickerChooserRows, pickerOptionsTag, pickerVariantCounts, pickerRowValue,
   lineSwitchUnit, lineRollFt } = sandbox;
@@ -643,6 +643,25 @@ test('pickerCommitItem: a length part hands its roll length and basis to the lin
   assert.ok(pickerCommitItem(pickerState(), w2.opts, w2.part, 500, 40));
   assert.strictEqual(w2.items[0].rollFt, null, 'a part with no length hands none');
   assert.strictEqual(w2.items[0].listPerM, null);
+});
+
+// ONE NUMBER ON THE WAY IN TOO. The keypad opens on what the line is going to
+// print, so it has to be figured off the same basis itemPrice reads. The probe
+// carried only the rounded per-foot list, and #8 THHN opened at $1.09 under a
+// suggestion row offering $1.10 for a line that printed $1.10 the moment it
+// landed. Three numbers for one promise, and the cheapest of them his.
+test('pickerAskPrice: the keypad opens on the number the line will print', () => {
+  const w = world({ name: '#8 THHN', lastListCents: 95, lastListPerM: 95284 });
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  pickerAskPrice(pickerState(), w.opts, w.part, 500);
+  assert.strictEqual(opened.cur, 110, '95284 per thousand at 15% is $1.0958 a foot');
+  assert.deepEqual(opened.o.suggestions, [{ label: 'QED list + 15%', cents: 110 }]);
+  // Clear: the line lands with no price of its own, and what it prints is the
+  // very number the keypad was sitting on.
+  opened.o.done(null);
+  assert.strictEqual(B.itemPrice(w.items[0], 15).unit, 110);
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
 });
 
 test('lineSwitchUnit: feet to rolls converts the line, saves it with an exact restore, and says so', () => {

@@ -1358,7 +1358,17 @@ function pickerPriceAction(settings, name) {
 // price of its own: it prints the suggestion when there is one, and $0 with
 // the amber flag (and the banner) when there is not.
 function pickerAskPrice(ps, opts, part, qty) {
-  const probe = { listCents: Number.isInteger(part.lastListCents) ? part.lastListCents : null };
+  // The probe carries the part's whole BASIS, not just its rounded per-unit
+  // list: the unit it is counted in, QED's per-thousand figure and the roll
+  // length. Without them the suggestion on the way in was figured off the
+  // rounded list and the line it created printed a different number the
+  // moment it landed on the walk, because itemPrice reads the exact basis.
+  const probe = {
+    unit: part.unit,
+    listCents: Number.isInteger(part.lastListCents) ? part.lastListCents : null,
+    listPerM: Number.isInteger(part.lastListPerM) ? part.lastListPerM : null,
+    rollFt: Number.isInteger(part.rollFt) && part.rollFt > 0 ? part.rollFt : null,
+  };
   const suggested = BidMath.suggestedUnit(probe, opts.markupPct);
   promptMoney(suggested, {
     label: partPriceLabel(part.name, part.unit || 'ea'),

@@ -498,6 +498,20 @@ test('itemPrice: the markup goes on listCents when the line has one, on costCent
     { unit: 2000, cents: 4000 });
 });
 
+// ONE NUMBER FOR "QED LIST + 15%". A length line keeps QED's exact per-thousand
+// basis, and the price it prints is figured off that, not off the rounded
+// per-foot list. #8 THHN at 95284 per thousand is 95 cents a foot rounded, and
+// 95 × 1.15 = 109.25 → $1.09, where the basis says $1.0958 → $1.10. The walk,
+// the paper and the keypad's suggestion row all read this function, so they
+// all now say $1.10 and the penny a foot stays on his side of the line.
+test('itemPrice: a length line with no price of his own prints the suggestion off the exact basis', () => {
+  assert.deepStrictEqual(B.itemPrice({ unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 95, listPerM: 95284 }, 15),
+    { unit: 110, cents: 55000 });
+  // And nothing else moves: a counted part has no basis to read, so it is the
+  // rounded list times the markup, exactly as in v3.4.
+  assert.strictEqual(B.itemPrice({ unit: 'ea', qty: 2, costCents: null, priceCents: null, listCents: 1800 }, 15).unit, 2070);
+});
+
 // THE LOT. $216.00 for 500 ft is 43.2 cents a foot, which whole cents cannot
 // say, so the line carries the one number the customer pays and no unit at
 // all. The paper prints quantity, a blank unit price, and the amount, the way
@@ -720,6 +734,20 @@ test('suggestedUnit: a length line suggests off the exact basis, feet rounded up
   assert.strictEqual(B.suggestedUnit({ unit: 'roll', listCents: 17267, listPerM: 34534, rollFt: null }, 15), 19857, 'no length: the row\'s own per-roll list');
   assert.strictEqual(B.suggestedUnit({ unit: 'ft', listCents: 35 }, 15), 40, 'no basis: the rounded list, as v3.4');
   assert.strictEqual(B.suggestedUnit({ unit: 'ea', listCents: 1800, listPerM: 34534 }, 15), 2070, 'a basis on a counted part is ignored');
+});
+
+// FLOAT NOISE NEVER COSTS HIM A CENT. Figured the natural way, 50000 × 1.1 /
+// 1000 is 55.00000000000001 and the ceiling reads 56: a cent a foot added to a
+// price that is exactly 55, on every foot of a 2,500 ft pull. The arithmetic
+// is integer-first and the epsilon absorbs the slop, so a basis that lands
+// exactly on a cent stays on it and a real fraction still rounds his way.
+test('suggestedUnit: an exact basis lands on the cent, and a fraction still rounds up', () => {
+  assert.strictEqual(B.suggestedUnit({ unit: 'ft', listPerM: 50000 }, 10), 55, '55.00000000000001 is 55');
+  assert.strictEqual(B.suggestedUnit({ unit: 'ft', listPerM: 40000 }, 15), 46, '46 exactly');
+  assert.strictEqual(B.suggestedUnit({ unit: 'ft', listPerM: 34534 }, 15), 40, '39.71 up to 40');
+  // By the roll it is half UP, and a spool that lands on the half stays there:
+  // 24920 per thousand over 500 ft at 27.5% is 15886.5, which is $158.87.
+  assert.strictEqual(B.suggestedUnit({ unit: 'roll', listPerM: 24920, rollFt: 500 }, 27.5), 15887);
 });
 
 test('convertLineUnit: feet to rolls multiplies the prices and divides the count', () => {
