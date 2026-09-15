@@ -1993,15 +1993,20 @@
       .key { min-height: 60px; }
       .panel-digits {
         font-size: 2.2rem;
-        margin: var(--space-2) 0 var(--space-2);
+        margin: var(--space-2) 0 var(--space-1);
       }
       .panel-keypad { margin-bottom: var(--space-2); }
-      /* The Price keypad can carry two suggestion rows above the digits, and
-         at 48px with the full gap they pushed Done off the bottom of an SE.
-         40px is still a thumb's worth, and the rows are read before they are
-         tapped. */
-      .panel-suggest-row { min-height: 40px; }
-      .panel-suggest { margin-top: var(--space-1); gap: 6px; }
+      /* The worst panel this app opens is the Price keypad on a lot-capable
+         line: a title that wraps to two lines, the "Price the whole line
+         instead" link, and two suggestion rows, all above the digits. At the
+         full sizes that stack ran Done past the bottom of an SE by 3px, so
+         everything above the keys gives back a few: the rows to 36px, the
+         link to 40px with the gap under it closed, and the digits sitting
+         nearer the keys. Each is still a thumb's worth, and every one of them
+         is read before it is tapped. */
+      .panel-suggest-row { min-height: 36px; }
+      .panel-suggest { margin-top: 4px; gap: 4px; }
+      .link-btn.panel-caption-action { min-height: 40px; margin-bottom: 0; }
     }
   </style>
 </head>
