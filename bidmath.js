@@ -136,6 +136,7 @@
   // 39 gives the wire away over a 2,500 ft pull); by the roll rounded to the
   // nearest, off the spool price. Everything else is the line's list, as in
   // v3.4. Only a list makes a suggestion; a cost never does.
+  //
   // The arithmetic is deliberately integer-first: whole cents times whole feet
   // times (100 + markup), divided once at the end. Written the natural way —
   // basis times 1.1, divided by a thousand — a basis of 50000 at 10% comes out
