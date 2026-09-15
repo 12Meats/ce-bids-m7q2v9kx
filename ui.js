@@ -930,8 +930,16 @@ function priceSuggestions(it, part, markupPct) {
 function lineSwitchText(before, after) {
   const count = (it) => numText(it.qty) + ' ' + (it.qty === 1 ? it.unit : (UNIT_PLURAL[it.unit] || it.unit));
   const total = (it) => Math.round(it.priceCents * it.qty);
+  // A LOT HAS NO PRICE PER UNIT, so the banner names none. The priceCents on a
+  // lot line is left over from before the lot was typed; convertLineUnit
+  // carries it through the flip like every other number, and the banner read it
+  // back as "1 roll is now 500 ft at $0.40 a foot." over a row printing $216.00
+  // the lot. The count moved and the lot did not, so the count is the whole
+  // sentence: no price clause, and no totals tail either, because the money on
+  // this line did not move at all.
+  const lot = after.lotCents != null;
   let s = count(before) + ' is now ' + count(after);
-  if (Number.isInteger(after.priceCents)) {
+  if (!lot && Number.isInteger(after.priceCents)) {
     s += ' at ' + BidMath.fmt(after.priceCents) + (after.unit === 'ft' ? ' a foot' : '');
     // Both sides have to HAVE a price for a total to have moved: a line
     // printing the suggestion has no number of his own on either side of the

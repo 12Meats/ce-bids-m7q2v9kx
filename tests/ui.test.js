@@ -1059,6 +1059,12 @@ test('lineSwitchText: what the flip did, in his words', () => {
   assert.equal(lineSwitchText({ unit: 'ft', qty: 500, priceCents: 40 }, { unit: 'roll', qty: 1, priceCents: 20000 }), '500 ft is now 1 roll at $200.00.');
   assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 20000 }, { unit: 'ft', qty: 500, priceCents: 40 }), '1 roll is now 500 ft at $0.40 a foot.');
   assert.equal(lineSwitchText({ unit: 'ft', qty: 750, priceCents: null }, { unit: 'roll', qty: 1.5, priceCents: null }), '750 ft is now 1.5 rolls.');
+  // A LOT LINE NAMES NO PRICE PER FOOT. Its priceCents is left over from before
+  // the lot was typed and the flip converts it like any other number, so the
+  // banner used to read "1 roll is now 500 ft at $0.40 a foot." over a row
+  // printing $216.00 the lot. The count moved; the money did not.
+  assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 20000, lotCents: 21600 }, { unit: 'ft', qty: 500, priceCents: 40, lotCents: 21600 }),
+    '1 roll is now 500 ft.');
 });
 
 // THE TOTAL MOVED, IN BOTH DIRECTIONS. A flip is arithmetic he expects to come
