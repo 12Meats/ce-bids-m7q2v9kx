@@ -654,6 +654,9 @@ test('pickerAskPrice: the keypad opens on the number the line will print', () =>
   const w = world({ name: '#8 THHN', lastListCents: 95, lastListPerM: 95284 });
   let opened = null;
   sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  // The drawer row he tapped to get here promised this very number: it is the
+  // same probe, on purpose.
+  assert.strictEqual(pickerRowValue(w.part, 15), '$1.10 / ft');
   pickerAskPrice(pickerState(), w.opts, w.part, 500);
   assert.strictEqual(opened.cur, 110, '95284 per thousand at 15% is $1.0958 a foot');
   assert.deepEqual(opened.o.suggestions, [{ label: 'QED list + 15%', cents: 110 }]);

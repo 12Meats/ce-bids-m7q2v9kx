@@ -1114,6 +1114,24 @@ function pickerMatches(ps, opts) {
   });
 }
 
+// A PART'S BASIS, shaped like a line so the pure math can read it: the unit it
+// is counted in, QED's list per unit, the exact per-thousand figure behind that
+// list, and the roll length. Everything BidMath.suggestedUnit needs to name the
+// one number this part's price is suggested at.
+//
+// Two callers, and they have to agree to the penny, because one of them is a
+// promise about the other: the number on the drawer row is the number the
+// keypad that row opens will be sitting on. A probe carrying only the rounded
+// per-unit list made #8 THHN promise $1.09 and open on $1.10.
+function partPriceProbe(part) {
+  return {
+    unit: part.unit,
+    listCents: Number.isInteger(part.lastListCents) ? part.lastListCents : null,
+    listPerM: Number.isInteger(part.lastListPerM) ? part.lastListPerM : null,
+    rollFt: Number.isInteger(part.rollFt) && part.rollFt > 0 ? part.rollFt : null,
+  };
+}
+
 // The number on the right of a row in the parts drawer. It is a PROMISE about
 // the next step: the price the keypad behind this row will open on, so what he
 // reads here is what he will see there and Done is one tap. His own last price
@@ -1126,7 +1144,7 @@ function pickerMatches(ps, opts) {
 function pickerRowValue(p, markupPct) {
   const cents = Number.isInteger(p.lastPriceCents)
     ? p.lastPriceCents
-    : BidMath.suggestedUnit({ listCents: p.lastListCents }, markupPct);
+    : BidMath.suggestedUnit(partPriceProbe(p), markupPct);
   return cents == null ? p.unit : BidMath.fmt(cents) + ' / ' + p.unit;
 }
 
@@ -1368,16 +1386,10 @@ function pickerPriceAction(settings, name) {
 // the amber flag (and the banner) when there is not.
 function pickerAskPrice(ps, opts, part, qty) {
   // The probe carries the part's whole BASIS, not just its rounded per-unit
-  // list: the unit it is counted in, QED's per-thousand figure and the roll
-  // length. Without them the suggestion on the way in was figured off the
-  // rounded list and the line it created printed a different number the
+  // list. Without the per-thousand figure the suggestion on the way in was
+  // rounded twice and the line it created printed a different number the
   // moment it landed on the walk, because itemPrice reads the exact basis.
-  const probe = {
-    unit: part.unit,
-    listCents: Number.isInteger(part.lastListCents) ? part.lastListCents : null,
-    listPerM: Number.isInteger(part.lastListPerM) ? part.lastListPerM : null,
-    rollFt: Number.isInteger(part.rollFt) && part.rollFt > 0 ? part.rollFt : null,
-  };
+  const probe = partPriceProbe(part);
   const suggested = BidMath.suggestedUnit(probe, opts.markupPct);
   promptMoney(suggested, {
     label: partPriceLabel(part.name, part.unit || 'ea'),
