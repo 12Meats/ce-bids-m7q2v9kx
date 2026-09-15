@@ -333,10 +333,13 @@ test('plan: returns everything match returns, plus creatable', () => {
   const d = catalogWith([{ name: 'GFCI', sku: '3302434', lastListCents: 3500 }]);
   const rows = [{ sku: '3302434', name: 'Pass & Seymour GFCI', listCents: 3908, per: 'ea' }];
   const m = P.plan(rows, d.catalog);
+  // genericRolls joined the shape in v3.5: the wire parts this file would
+  // give a roll length to, offered the same way creatable is.
   assert.deepStrictEqual(Object.keys(m).sort(),
-    ['creatable', 'duplicates', 'matched', 'mismatched', 'unmatched']);
+    ['creatable', 'duplicates', 'genericRolls', 'matched', 'mismatched', 'unmatched']);
   assert.strictEqual(m.matched.length, 1);
   assert.deepStrictEqual(m.creatable, []);
+  assert.deepStrictEqual(m.genericRolls, []);
 });
 
 // QED sells conduit by the hundred feet and wire by the thousand; he counts
@@ -674,4 +677,163 @@ test('plan: a same-named part in another drawer does not absorb the row', () => 
   assert.deepStrictEqual(again.creatable, []);
   assert.strictEqual(again.matched.length, 1);
   assert.strictEqual(again.matched[0].part, same.catalog[1]);
+});
+
+// ---------------------------------------------------------------------------
+// v3.5: THE ROLL LENGTH OFF QED'S TITLE, AND THE PER-THOUSAND BASIS
+// ---------------------------------------------------------------------------
+// QED puts the spool length in the title of every small wire it sells and
+// prices #8 and bigger per thousand feet. Both halves are read here, so the
+// math a line converts by is QED's own and not a guess.
+test('rollFtOf: the roll length off QED\'s own title', () => {
+  assert.strictEqual(P.rollFtOf('THHN #12 Stranded BLACK Wire, Copper Conductor (500ft Spool)'), 500);
+  assert.strictEqual(P.rollFtOf('THHN #10 Stranded BLACK Wire, Copper Conductor (2500ft Reel)'), 2500);
+  assert.strictEqual(P.rollFtOf("Southwire 58018605 THHN #12 Stranded Copper GRAY Wire (2000' SIMpull Co"), 2000);
+  assert.strictEqual(P.rollFtOf('SOUTHWIRE 10 THHN STRANDED CU GREENSIMPULL COILPAK 1250FT 58025105'), 1250);
+  assert.strictEqual(P.rollFtOf('WIC. THHN 2 STR RED 500R 2 THHN CU BUILDING WIRE RED'), 500);
+  assert.strictEqual(P.rollFtOf('THHN 1/0 Stranded BLACK Wire, Copper Conductor (Cut to Length)'), null);
+  assert.strictEqual(P.rollFtOf('XHHW #2 Stranded RED Copper Wire (Master Reel)'), null);
+  assert.strictEqual(P.rollFtOf('Republic 3/4 in. EMT Conduit 10 ft'), null, 'a stick is not a roll');
+  assert.strictEqual(P.rollFtOf('Siemens B360 60A 3-pole breaker'), null);
+  assert.strictEqual(P.rollFtOf(''), null);
+  assert.strictEqual(P.rollFtOf(null), null);
+});
+
+// QED's R for a reel is also the last letter of a hundred catalog numbers,
+// and the real 9/09 file has one: "Hubbell 1223R Hubbell-PRO 3-Way Toggle
+// Switch" reads as 1223 ft of something. Nothing tells those apart in the
+// title, so the PART settles it: a switch is counted each, it can never be
+// billed by the foot, and a roll length on it would be a number on his
+// Settings row that means nothing.
+test('a roll length is only ever taken for a part counted by the foot or the roll', () => {
+  const d = catalogWith([{ name: '3-way toggle switch', category: 'gear', unit: 'ea', sku: '5150' }]);
+  const rows = [{ sku: '5150', name: 'Hubbell 1223R Hubbell-PRO 3-Way Toggle Switch 20A 120/277V, Red', listCents: 1699, per: 'ea' }];
+  const m = P.match(rows, d.catalog);
+  assert.strictEqual(m.matched.length, 1);
+  assert.strictEqual(m.matched[0].newRollFt, null, 'a catalog number is not a reel');
+  assert.strictEqual(m.matched[0].newPerM, null);
+  P.apply(m.matched, '2026-09-09');
+  assert.strictEqual(d.catalog[0].rollFt, undefined, 'nothing was written where there is no roll');
+  // And the same row creating a part of its own rather than matching one.
+  const made = P.newParts(P.plan(rows, catalogWith([]).catalog).creatable, '2026-09-09', () => 'id');
+  assert.strictEqual(made[0].unit, 'ea');
+  assert.strictEqual(made[0].rollFt, null);
+  assert.strictEqual(made[0].lastListPerM, null);
+});
+
+test('perMOf: cents per thousand feet off any way QED quotes a length', () => {
+  assert.strictEqual(P.perMOf({ per: 'm', listCents: 95284 }, null), 95284);
+  assert.strictEqual(P.perMOf({ per: 'c', listCents: 9528 }, null), 95280);
+  assert.strictEqual(P.perMOf({ per: 'ft', listCents: 96 }, null), 96000);
+  assert.strictEqual(P.perMOf({ per: 'ea', listCents: 17267 }, 500), 34534, 'a spool divided through its length');
+  assert.strictEqual(P.perMOf({ per: 'ea', listCents: 97254 }, 2000), 48627);
+  assert.strictEqual(P.perMOf({ per: 'ea', listCents: 77300 }, 1250), 61840);
+  assert.strictEqual(P.perMOf({ per: 'ea', listCents: 3908 }, null), null, 'an each with no length is not a length');
+  assert.strictEqual(P.perMOf({ per: 'box', listCents: 100 }, 500), null);
+});
+
+test('convertCents: a length crosses units through the roll length', () => {
+  assert.strictEqual(P.convertCents({ per: 'ea', listCents: 17267 }, 'ft', 500), 35, 'a spool on a foot part');
+  assert.strictEqual(P.convertCents({ per: 'ea', listCents: 17267 }, 'ft', null), null, 'without a length it still cannot');
+  assert.strictEqual(P.convertCents({ per: 'm', listCents: 95284 }, 'roll', 500), 47642, 'per thousand on a roll part');
+  assert.strictEqual(P.convertCents({ per: 'm', listCents: 95284 }, 'roll', null), null);
+  assert.strictEqual(P.convertCents({ per: 'ea', listCents: 17267 }, 'roll', null), 17267, 'a spool is a roll, as before');
+  assert.strictEqual(P.convertCents({ per: 'ea', listCents: 17267 }, 'roll', 500), 17267);
+  assert.strictEqual(P.convertCents({ per: 'c', listCents: 9528 }, 'roll', 500), 47640);
+});
+
+test('match: a matched length row carries the basis and the length; apply writes both, never a typed length', () => {
+  const d = S.emptyData();
+  const twelve = d.catalog.find((p) => p.name === '#12 THHN');       // roll, rollFt 500 from the seed
+  twelve.sku = '108';
+  const eight = d.catalog.find((p) => p.name === '#8 THHN');          // ft, no length
+  eight.sku = '165';
+  const ten = d.catalog.find((p) => p.name === '#10 THHN');           // roll, seeded 500, and he typed 1000
+  ten.sku = '39'; ten.rollFt = 1000;
+  const rows = P.parse(file([
+    { sku: '108', name: 'THHN #12 Stranded BLACK Wire, Copper Conductor (500ft Spool)', listCents: 17267, per: 'ea' },
+    { sku: '165', name: 'THHN #8 Stranded BLACK Wire, Copper Conductor (500ft Reel)', listCents: 95284, per: 'm' },
+    { sku: '39', name: 'THHN #10 Stranded BLACK Wire, Copper Conductor (2500ft Reel)', listCents: 128335, per: 'ea' },
+  ])).rows;
+  const m = P.match(rows, d.catalog);
+  assert.strictEqual(m.matched.length, 3);
+  assert.strictEqual(m.mismatched.length, 0, 'a reel priced per thousand on a foot part is not a mismatch');
+  const m12 = m.matched.find((x) => x.part === twelve);
+  assert.strictEqual(m12.newListCents, 17267);
+  assert.strictEqual(m12.newPerM, 34534);
+  assert.strictEqual(m12.newRollFt, 500);
+  const m8 = m.matched.find((x) => x.part === eight);
+  assert.strictEqual(m8.newListCents, 95, 'per foot for a foot part');
+  assert.strictEqual(m8.newPerM, 95284);
+  assert.strictEqual(m8.newRollFt, 500, 'the reel length is on the title even though the price is per thousand');
+  const m10 = m.matched.find((x) => x.part === ten);
+  assert.strictEqual(m10.newRollFt, 2500);
+  assert.strictEqual(m10.newListCents, 128335, 'a spool is a roll: its own price');
+
+  const snap = P.snapshot(m.matched);
+  P.apply(m.matched, '2026-09-14');
+  assert.strictEqual(twelve.lastListPerM, 34534);
+  assert.strictEqual(twelve.rollFt, 500);
+  assert.strictEqual(eight.lastListPerM, 95284);
+  assert.strictEqual(eight.rollFt, 500, 'a part with no length takes the title\'s');
+  assert.strictEqual(ten.rollFt, 1000, 'a length he typed is never overwritten');
+  assert.strictEqual(ten.lastListPerM, Math.round(128335 * 1000 / 2500), 'the basis is off the row\'s own length');
+  P.restore(snap);
+  assert.strictEqual(eight.rollFt, null);
+  assert.strictEqual(eight.lastListPerM, null);
+  assert.strictEqual(twelve.lastListPerM, null);
+});
+
+test('plan/newParts: a new option under a length generic carries the length and the basis', () => {
+  const d = S.emptyData();
+  const rows = P.parse(file([
+    { sku: '108', name: 'THHN #12 Stranded BLACK Wire, Copper Conductor (500ft Spool)', listCents: 17267, per: 'ea', forPart: '#12 THHN', catalogNo: 'B07827' },
+    { sku: '165', name: 'THHN #8 Stranded BLACK Wire, Copper Conductor (500ft Reel)', listCents: 95284, per: 'm', forPart: '#8 THHN', catalogNo: 'B03673' },
+    { sku: '4452789', name: 'THHN 1/0 Stranded BLACK Wire, Copper Conductor (Cut to Length)', listCents: 503477, per: 'm', forPart: '1/0 THHN', catalogNo: 'B08002' },
+  ])).rows;
+  const m = P.plan(rows, d.catalog);
+  assert.strictEqual(m.creatable.length, 3);
+  const parts = P.newParts(m.creatable, '2026-09-14', () => 'id');
+  const twelve = parts.find((p) => p.sku === '108');
+  assert.strictEqual(twelve.unit, 'roll', 'counted the way its generic is');
+  assert.strictEqual(twelve.rollFt, 500);
+  assert.strictEqual(twelve.lastListPerM, 34534);
+  assert.strictEqual(twelve.lastListCents, 17267);
+  const eight = parts.find((p) => p.sku === '165');
+  assert.strictEqual(eight.unit, 'ft');
+  assert.strictEqual(eight.rollFt, 500);
+  assert.strictEqual(eight.lastListPerM, 95284);
+  assert.strictEqual(eight.lastListCents, 95);
+  const cut = parts.find((p) => p.sku === '4452789');
+  assert.strictEqual(cut.rollFt, null, 'cut to length has no roll');
+  assert.strictEqual(cut.lastListPerM, 503477);
+  assert.strictEqual(cut.lastListCents, 503);
+});
+
+test('plan: a generic with no roll length is offered the smallest its new options carry', () => {
+  const d = S.emptyData();
+  const eight = d.catalog.find((p) => p.name === '#8 THHN');          // ft, no length
+  const twelve = d.catalog.find((p) => p.name === '#12 THHN');        // roll, seeded 500
+  const rows = P.parse(file([
+    { sku: '165', name: 'THHN #8 Stranded BLACK Wire, Copper Conductor (500ft Reel)', listCents: 95284, per: 'm', forPart: '#8 THHN', catalogNo: 'B03673' },
+    { sku: '477942', name: 'THHN #8 Stranded WHITE Wire, Copper Conductor (2500ft Reel)', listCents: 95284, per: 'm', forPart: '#8 THHN', catalogNo: 'B03685' },
+    { sku: '108', name: 'THHN #12 Stranded BLACK Wire, Copper Conductor (500ft Spool)', listCents: 17267, per: 'ea', forPart: '#12 THHN', catalogNo: 'B07827' },
+    { sku: '4452789', name: 'THHN 1/0 Stranded BLACK Wire, Copper Conductor (Cut to Length)', listCents: 503477, per: 'm', forPart: '1/0 THHN', catalogNo: 'B08002' },
+  ])).rows;
+  const m = P.plan(rows, d.catalog);
+  assert.deepStrictEqual(m.genericRolls.map((g) => [g.part.name, g.rollFt]), [['#8 THHN', 500]],
+    'the smallest length; #12 already has one; 1/0 has no length to offer');
+  assert.strictEqual(eight.rollFt, null, 'plan decides nothing');
+  assert.strictEqual(twelve.rollFt, 500);
+});
+
+test('summaryText says when wire parts get a roll length', () => {
+  const d = S.emptyData();
+  const eight = d.catalog.find((p) => p.name === '#8 THHN');
+  const text = P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [], creatable: [{ name: '#8 THHN · B03673' }], genericRolls: [{ part: eight, rollFt: 500 }] });
+  assert.match(text, /1 new part will be added: #8 THHN · B03673\./);
+  assert.match(text, /#8 THHN gets a roll length of 500 ft\./);
+  assert.ok(!/—/.test(text));
+  const two = P.summaryText({ matched: [], unmatched: [], mismatched: [], duplicates: [], creatable: [], genericRolls: [{ part: eight, rollFt: 500 }, { part: { name: '#6 THHN' }, rollFt: 1000 }] });
+  assert.match(two, /2 wire parts get a roll length: #8 THHN \(500 ft\), #6 THHN \(1000 ft\)\./);
 });

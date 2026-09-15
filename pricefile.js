@@ -70,16 +70,65 @@
     return { error: null, checkedISO: obj.checkedISO, rows };
   }
 
+  // THE ROLL LENGTH, off QED's own title: "(500ft Spool)", "(2500ft Reel)",
+  // "(2000' SIMpull", "COILPAK 1250FT", "500R". Three to five digits, then
+  // ft, a foot mark, or QED's own R, so a ten-foot stick of pipe and a
+  // catalog number never read as a roll. Null for cut wire and master reels,
+  // which is the truth: they have no roll.
+  const ROLL_RE = /(\d{3,5})\s*(?:ft\b|'|R\b)/i;
+  function rollFtOf(title) {
+    const m = String(title == null ? '' : title).match(ROLL_RE);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return n >= 100 && n <= 10000 ? n : null;
+  }
+
+  // AND ONLY A LENGTH IS ASKED. QED's own R for a reel is also the last letter
+  // of a hundred catalog numbers ("Hubbell 1223R Hubbell-PRO 3-Way Toggle
+  // Switch"), and no reading of a title tells those two apart. What does tell
+  // them apart is the part: a toggle switch is counted each, it cannot be
+  // billed by the foot, and a roll length on it would be a number on his
+  // Settings row that means nothing. So a roll length is only ever taken for
+  // a part counted by the foot or by the roll.
+  function isLengthUnit(unit) { return unit === 'ft' || unit === 'roll'; }
+  function rowRollFt(row, unit, partRollFt) {
+    if (!isLengthUnit(unit)) return null;
+    return rollFtOf(row.name) || (Number.isInteger(partRollFt) && partRollFt > 0 ? partRollFt : null);
+  }
+  function titleRollFt(row, unit) { return isLengthUnit(unit) ? rollFtOf(row.name) : null; }
+
+  // CENTS PER THOUSAND FEET, the exact basis a length keeps, off any way QED
+  // quotes one: per thousand as is, per hundred times ten, per foot times a
+  // thousand, and a spool (per each, with a length in its title) divided
+  // through the length. Null when the row is not a length at all.
+  function perMOf(row, rollFt) {
+    if (row.per === 'm') return row.listCents;
+    if (row.per === 'c') return row.listCents * 10;
+    if (row.per === 'ft') return row.listCents * 1000;
+    if (row.per === 'ea' && Number.isInteger(rollFt) && rollFt > 0) return r(row.listCents * 1000 / rollFt);
+    return null;
+  }
+
   // Cents per HIS unit, or null when the supplier's unit and his cannot be
   // the same thing. The supplier sells by the each, the foot, the hundred (C)
   // or the thousand (M). A roll, a box, a case, a lot and a day are all sold
-  // each. A foot price on a counted part, an each price on a length, or a
-  // roll price on a length (how long is the roll?) is a guess, and a guess is
-  // what the walk's cost keypad is for, not an import.
+  // each. Since v3.5 a LENGTH crosses through the roll length when one is
+  // known (off the title, or off the part): a spool on a foot part is the
+  // spool divided through, and per-thousand on a roll part is the roll's
+  // share. Without a length those two are still a guess, and a guess is
+  // what the walk's keypad is for, not an import.
   const COUNTED = ['ea', 'roll', 'box', 'case', 'lot', 'day'];
-  function convertCents(row, unit) {
+  function convertCents(row, unit, rollFt) {
     const per = row.per;
-    if (per === 'ea') return COUNTED.indexOf(unit) !== -1 ? row.listCents : null;
+    const len = Number.isInteger(rollFt) && rollFt > 0 ? rollFt : null;
+    if (per === 'ea') {
+      if (COUNTED.indexOf(unit) !== -1) return row.listCents;
+      if (unit === 'ft' && len) return Math.max(1, r(row.listCents / len));
+      return null;
+    }
+    if (unit === 'roll' && len && (per === 'ft' || per === 'c' || per === 'm')) {
+      return Math.max(1, r(perMOf(row, len) * len / 1000));
+    }
     if (per === 'ft') return unit === 'ft' ? row.listCents : null;
     // A per-hundred or per-thousand price still clamps to at least a cent: a
     // fraction of a cent is a real cost, not a free part.
@@ -89,7 +138,7 @@
   }
 
   // match(rows, catalog) -> { matched, unmatched, mismatched, duplicates }
-  //   matched:    [{ part, row, newListCents, oldListCents, changePct }]
+  //   matched:    [{ part, row, newListCents, oldListCents, changePct, newPerM, newRollFt }]
   //   unmatched:  rows for parts he never listed (skipped, said out loud)
   //   mismatched: [{ part, row, reason }] units that cannot convert
   //   duplicates: rows that land on a part an earlier row already took
@@ -129,7 +178,11 @@
       if (!part) { out.unmatched.push(row); return; }
       if (seen.has(part.id)) { out.duplicates.push(row); return; }
       seen.add(part.id);
-      const cents = convertCents(row, part.unit);
+      // The length this row is about: QED's title first, and failing that the
+      // one the part already carries. It is what lets a spool row price a
+      // foot part and a per-thousand row price a roll part (v3.5).
+      const rollFt = rowRollFt(row, part.unit, part.rollFt);
+      const cents = convertCents(row, part.unit, rollFt);
       if (cents === null) {
         out.mismatched.push({ part, row, reason: 'QED sells it per ' + row.per + ' and it is counted by the ' + part.unit });
         return;
@@ -138,6 +191,9 @@
       out.matched.push({
         part, row, newListCents: cents, oldListCents: old,
         changePct: old > 0 ? (cents - old) / old * 100 : null,
+        // The exact basis, and the TITLE's length only: apply writes the
+        // length onto a part that has none, and never over one of his.
+        newPerM: perMOf(row, rollFt), newRollFt: titleRollFt(row, part.unit),
       });
     });
     return out;
@@ -145,8 +201,10 @@
 
   // apply(matched, checkedISO) -> { changed, unchanged }
   // Mutates the parts in place; the caller wraps it in persistOr. Writes the
-  // bill-at price, the supplier's name, the part number a part lacked, and
-  // the date. NEVER the cost (his), NEVER a line on a bid (history).
+  // bill-at price, the supplier's name, the part number a part lacked, the
+  // date, and since v3.5 the per-thousand basis and, on a part with no roll
+  // length, the length off the title. NEVER the cost (his), NEVER a length
+  // he typed, NEVER a line on a bid (history).
   function apply(matched, checkedISO) {
     let changed = 0, unchanged = 0;
     matched.forEach((m) => {
@@ -158,19 +216,32 @@
       p.supplierName = m.row.name;
       if (!(typeof p.sku === 'string' && p.sku.trim() !== '')) p.sku = m.row.sku;
       p.priceCheckedISO = checkedISO;
+      if (Number.isInteger(m.newPerM)) p.lastListPerM = m.newPerM;
+      if (!(Number.isInteger(p.rollFt) && p.rollFt > 0) && Number.isInteger(m.newRollFt)) p.rollFt = m.newRollFt;
     });
     return { changed, unchanged };
   }
 
   // What apply is about to touch, remembered first, so a refused save can put
   // every part back exactly as it was. Kept HERE, beside apply, so the list
-  // of fields cannot drift from the list apply writes.
+  // of fields cannot drift from the list apply writes. A key that was ABSENT
+  // comes back absent: undefined is what a part written before v3.5 carries,
+  // and the validator takes it, where a null coerced in its place would be a
+  // field this import invented on a part it was supposed to leave alone.
   function snapshot(matched) {
     return matched.map((m) => ({ p: m.part, lastListCents: m.part.lastListCents, supplierName: m.part.supplierName,
-      sku: m.part.sku, priceCheckedISO: m.part.priceCheckedISO }));
+      sku: m.part.sku, priceCheckedISO: m.part.priceCheckedISO, lastListPerM: m.part.lastListPerM, rollFt: m.part.rollFt }));
   }
   function restore(snap) {
-    snap.forEach((b) => { b.p.lastListCents = b.lastListCents; b.p.supplierName = b.supplierName; b.p.sku = b.sku; b.p.priceCheckedISO = b.priceCheckedISO; });
+    snap.forEach((b) => {
+      b.p.lastListCents = b.lastListCents; b.p.supplierName = b.supplierName; b.p.sku = b.sku; b.p.priceCheckedISO = b.priceCheckedISO;
+      // The two v3.5 fields are the only ones a part can be missing
+      // ALTOGETHER, so they are the only ones put back by deleting: a part off
+      // a backup written before v3.5 has no lastListPerM key, and handing it
+      // one set to undefined is not the part it was.
+      if (b.lastListPerM === undefined) delete b.p.lastListPerM; else b.p.lastListPerM = b.lastListPerM;
+      if (b.rollFt === undefined) delete b.p.rollFt; else b.p.rollFt = b.rollFt;
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -318,7 +389,8 @@
       if (part) {
         if (taken.has(part.id)) { out.duplicates.push(row); return; }
         taken.add(part.id);
-        const cents = convertCents(row, part.unit);
+        const rollFt = rowRollFt(row, part.unit, part.rollFt);
+        const cents = convertCents(row, part.unit, rollFt);
         if (cents === null) {
           out.mismatched.push({ part, row, reason: 'QED sells it per ' + row.per + ' and it is counted by the ' + part.unit });
           return;
@@ -327,6 +399,7 @@
         out.matched.push({
           part, row, newListCents: cents, oldListCents: old,
           changePct: old > 0 ? (cents - old) / old * 100 : null,
+          newPerM: perMOf(row, rollFt), newRollFt: titleRollFt(row, part.unit),
         });
         return;
       }
@@ -334,10 +407,14 @@
       if (claimedSkus.has(row.sku)) { out.duplicates.push(row); return; }
       claimed.add(key);
       claimedSkus.add(row.sku);
+      const unit = unitFor(row, seedPart);
       out.creatable.push({
         row,
         name,
-        unit: unitFor(row, seedPart),
+        // The roll length QED's own title says this option comes in, or null
+        // for cut wire and for anything that is not a length at all (v3.5).
+        rollFt: titleRollFt(row, unit),
+        unit,
         // The drawer the generic sits in, so a variant is filed beside the part
         // it is a variant of. Only a row with nothing to inherit from is read
         // off its own words.
@@ -345,6 +422,19 @@
         seedPart,
       });
     });
+
+    // A GENERIC WITH NO ROLL LENGTH takes the smallest one its new options
+    // carry: the spool he buys, not the master reel. Offered, not written:
+    // the screen applies it with the rest under the same save. A length he
+    // typed is his and is never on this list.
+    const smallest = new Map();
+    out.creatable.forEach((c) => {
+      const g = c.seedPart;
+      if (!g || !Number.isInteger(c.rollFt)) return;
+      if (Number.isInteger(g.rollFt) && g.rollFt > 0) return;
+      if (!smallest.has(g.id) || c.rollFt < smallest.get(g.id).rollFt) smallest.set(g.id, { part: g, rollFt: c.rollFt });
+    });
+    out.genericRolls = Array.from(smallest.values());
     return out;
   }
 
@@ -366,11 +456,14 @@
   // than a null one: absent is how "stands on its own" is spelled everywhere
   // the link is read.
   //
-  // The price is converted into the unit the part is actually counted in. One
-  // QED sells by that cannot cross into his (a 500 ft spool quoted per
-  // thousand feet, on a part he counts by the roll) leaves the part with no
-  // bill-at price rather than a guess, and the walk's keypad is where a guess
-  // belongs. Cost is never written: that is his own number.
+  // The price is converted into the unit the part is actually counted in.
+  // Since v3.5 a LENGTH crosses through the roll length QED's title carries,
+  // so a 500 ft spool on a part counted by the foot comes in per foot and a
+  // per-thousand price on a part counted by the roll comes in per roll; the
+  // part keeps the exact per-thousand basis beside it. Only a length with no
+  // length at all in its title (cut wire on a roll part) is left without a
+  // bill-at price, and the walk's keypad is where that guess belongs. Cost is
+  // never written: that is his own number.
   function newParts(creatable, checkedISO, uid) {
     const list = Array.isArray(creatable) ? creatable : [];
     return list.map((c) => {
@@ -380,7 +473,7 @@
         name: c.name,
         unit: c.unit,
         lastCostCents: null,
-        lastListCents: convertCents(c.row, c.unit),
+        lastListCents: convertCents(c.row, c.unit, c.rollFt),
         uses: 0,
         hidden: false,
         sku: typeof c.row.sku === 'string' && c.row.sku !== '' ? c.row.sku : null,
@@ -390,7 +483,8 @@
         supplierName: Catalog.straighten(c.row.name).slice(0, 120),
         priceCheckedISO: checkedISO,
         lastPriceCents: null, lastPriceISO: null,
-        rollFt: null, lastListPerM: null,
+        rollFt: Number.isInteger(c.rollFt) ? c.rollFt : null,
+        lastListPerM: perMOf(c.row, c.rollFt),
       };
       if (c.seedPart && typeof c.seedPart.id === 'string' && c.seedPart.id !== '') p.variantOf = c.seedPart.id;
       p.source = { kind: 'qed', checkedISO };
@@ -418,14 +512,15 @@
   // the same three sentences however the summary opened.
   function summaryText(m) {
     const creatable = Array.isArray(m.creatable) ? m.creatable : [];
+    const rolls = Array.isArray(m.genericRolls) ? m.genericRolls : [];
     // The "put the part numbers on your parts first" sentence only belongs
     // to a file that found NOTHING: no matches, no mismatches, no duplicates,
-    // and nothing to create either. A file whose only row matched a part but
-    // was skipped for a unit mismatch (or landed on a repeat) is not that
-    // file, and telling him to add part numbers he already added is wrong.
-    // Neither is a file that is about to put 320 parts on his phone: it is
-    // going to write those numbers itself.
-    if (!m.matched.length && !m.mismatched.length && !m.duplicates.length && !creatable.length) {
+    // nothing to create, and no roll length to hand a wire part either. A
+    // file whose only row matched a part but was skipped for a unit mismatch
+    // (or landed on a repeat) is not that file, and telling him to add part
+    // numbers he already added is wrong. Neither is a file that is about to
+    // put 320 parts on his phone: it is going to write those numbers itself.
+    if (!m.matched.length && !m.mismatched.length && !m.duplicates.length && !creatable.length && !rolls.length) {
       return 'None of the rows in that file match a part with a QED part number. Put the part numbers on your parts first.';
     }
     const parts = [];
@@ -445,6 +540,13 @@
       parts.push(n(creatable.length, 'new part', 'new parts') + ' will be added: '
         + namesList(creatable, (c) => c.name) + '.');
     }
+    // And the wire parts that had no roll length until this file gave them
+    // one. Said out loud because it changes what a line of that part can do
+    // afterwards: it can be billed by the roll or by the foot.
+    if (rolls.length === 1) parts.push(rolls[0].part.name + ' gets a roll length of ' + rolls[0].rollFt + ' ft.');
+    else if (rolls.length > 1) {
+      parts.push(rolls.length + ' wire parts get a roll length: ' + namesList(rolls, (g) => g.part.name + ' (' + g.rollFt + ' ft)') + '.');
+    }
     if (m.unmatched.length) parts.push(n(m.unmatched.length, 'row is', 'rows are') + ' not in your catalog and ' + (m.unmatched.length === 1 ? 'is' : 'are') + ' skipped.');
     if (m.mismatched.length) {
       parts.push(n(m.mismatched.length, 'part is', 'parts are') + ' counted differently than QED sells '
@@ -455,5 +557,5 @@
     return parts.join(' ');
   }
 
-  return { parse, convertCents, match, plan, guessCategory, newParts, apply, snapshot, restore, summaryText };
+  return { parse, convertCents, rollFtOf, perMOf, match, plan, guessCategory, newParts, apply, snapshot, restore, summaryText };
 });
