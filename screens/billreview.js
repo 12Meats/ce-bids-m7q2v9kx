@@ -56,9 +56,14 @@ function reviewLineStamp(x) {
   // a rental carries the whole hire, a tool carries its day rate. One line
   // reads all three shapes, because what is being compared is "is this the
   // same line as before", not "what is this line worth".
+  //
+  // priceCents is in here because since v3.4 it is THE number a line bills at
+  // and costCents on a line written since is null: a price he corrected on a
+  // Ready visit would otherwise leave the fingerprint unchanged, the draft on
+  // hand kept, and the old price billed under a real invoice number.
   const count = x.qty === undefined ? x.days : x.qty;
   const money = x.costCents === undefined ? (x.cents === undefined ? x.dayCents : x.cents) : x.costCents;
-  return [x.name, count, money, x.lotCents, x.listCents].join(':');
+  return [x.name, count, money, x.priceCents, x.lotCents, x.listCents].join(':');
 }
 function reviewEntryStamp(e) {
   const crew = (e.crew || []).map((m) => m.crewId + '=' + m.hours).join(',');

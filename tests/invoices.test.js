@@ -82,7 +82,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'invoice.js'), 'utf8'
   { filename: 'invoice.js' });
 
 const { pileRowText, pileEmptyText, invoiceListText, logMissing, logCrewValue, invGroupOn,
-  reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview,
+  reviewCardSub, reviewEntryText, reviewCanSend, billreviewSend, enterBillreview, reviewLineStamp,
   reviewCombine, enterInvoice, invoiceTarget, invoiceCanDelete, invoiceQueueText,
   invoiceRecordPayment, invoiceStatusPill, invoiceShare, invoiceDelete,
   invoiceNoteOpts, noteAdd, billThisJobText, billThisJobConfirm, bidHasInvoices,
@@ -729,6 +729,34 @@ test('an hour corrected on a visit rebuilds the drafts', () => {
   enterBillreview();
   assert.notStrictEqual(reviewDrafts.get()[0], first, 'a different list, different drafts');
   assert.strictEqual(I.billedHours(reviewDrafts.get()[0]), 9, 'and it bills what the visit says now');
+});
+
+// The fingerprint of one line, on its own. Since v3.4 his price is the number
+// the paper prints and the cost on a new line is null, so two lines that
+// differ only in what he charges are two different lines.
+test('a line fingerprint reads his price, the one number v3.4 bills at', () => {
+  const line = { name: '#12 THHN', qty: 2, costCents: null, priceCents: 2200, listCents: 1800 };
+  const dearer = Object.assign({}, line, { priceCents: 3000 });
+  assert.notStrictEqual(reviewLineStamp(line), reviewLineStamp(dearer),
+    'a price changed is a different line');
+  assert.strictEqual(reviewLineStamp(line), reviewLineStamp(Object.assign({}, line)),
+    'and the same line twice is the same fingerprint');
+});
+
+test('a price corrected on a Ready visit rebuilds the drafts', () => {
+  const w = enterWorld();
+  w.d.logs[0].items = [{
+    catalogId: null, name: '#12 THHN', unit: 'roll', qty: 2,
+    costCents: null, priceCents: 2200, listCents: 1800,
+  }];
+  enterBillreview();
+  const first = reviewDrafts.get()[0];
+  // He opened Monday from the pile and put $30.00 on the wire instead of
+  // $22.00. A draft carried across would bill the old price under a real
+  // invoice number, which is a number he cannot take back.
+  w.d.logs[0].items[0].priceCents = 3000;
+  enterBillreview();
+  assert.notStrictEqual(reviewDrafts.get()[0], first, 'a different line, different drafts');
 });
 
 test('a visit moved to another day rebuilds the drafts, in the new order', () => {
