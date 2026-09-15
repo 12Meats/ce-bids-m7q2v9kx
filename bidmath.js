@@ -81,7 +81,15 @@
   // (every line written before the field existed) the markup goes on the cost,
   // which is what those lines always did. materialCost never reads this: what
   // the parts cost him is what they cost him.
-  function itemBillBase(it) { return it.listCents != null ? it.listCents : it.costCents; }
+  //
+  // NEITHER is a real line since v3.4, where a cost may be null or absent
+  // altogether: it prices at nothing, and the screens flag it amber and the
+  // proposal refuses to build. The 0 is what says that. Without it the markup
+  // went on undefined, the line was worth NaN, and BidMath.fmt printed a dash
+  // where a price belonged.
+  function itemBillBase(it) {
+    return it.listCents != null ? it.listCents : (it.costCents != null ? it.costCents : 0);
+  }
 
   // A line priced as a LOT carries one number, the whole line's sell price,
   // and no unit at all. $216.00 for 500 ft is 43.2 cents a foot, which whole
@@ -115,6 +123,10 @@
   // a mistake. Feet keep their abbreviation ("500 FT" on his paper); rolls,
   // boxes, cases and days say the word, plural when there is more than one.
   // A unit the paper has no word for prints as typed.
+  //
+  // Singular or plural is decided by the number that is PRINTED, not by the
+  // raw quantity: 0.9996 of a roll rounds to "1" in the column and read "1
+  // rolls" beside it. ft is its own plural, so it needs no exception here.
   const PAPER_BARE = { ea: true, lot: true };
   const PAPER_MANY = { ft: 'ft', roll: 'rolls', box: 'boxes', case: 'cases', day: 'days' };
   function unitText(it) {
@@ -122,7 +134,7 @@
     if (PAPER_BARE[it.unit]) return n;
     const many = PAPER_MANY[it.unit];
     if (!many) return n + ' ' + it.unit;
-    return n + ' ' + (it.qty === 1 && it.unit !== 'ft' ? it.unit : many);
+    return n + ' ' + (n === '1' ? it.unit : many);
   }
 
   // A file name's one segment: stripped of the characters no filesystem this

@@ -649,7 +649,10 @@ test('materialCost: old lines at cost and new lines at list or price, on one bid
     { qty: 1, unit: 'lot', costCents: null, listCents: null, priceCents: 50000 },   // 50,000
   ] }] };
   assert.strictEqual(B.materialCost(bid), 19000 + 3600 + 50000);
-  assert.strictEqual(B.materialPrice(bid, 15), 500 * B.unitPrice(38, 15) + 4400 + 50000, 'what prints is untouched by the fallback');
+  // The literal, not unitPrice(38, 15): an expectation written in the code it
+  // is checking agrees with a broken rule as readily as a working one. The
+  // unit rounds first, so 38 cents at 15% is 44 cents and 500 ft is $220.00.
+  assert.strictEqual(B.materialPrice(bid, 15), 22000 + 4400 + 50000, 'what prints is untouched by the fallback');
 });
 
 test('suggestedUnit: QED list plus the markup, or nothing', () => {
@@ -674,4 +677,21 @@ test('unitText: bare number for each and lot, feet as ft, the rest pluralized', 
   assert.strictEqual(B.unitText({ qty: 1, unit: 'day' }), '1 day');
   assert.strictEqual(B.unitText({ qty: 2, unit: 'day' }), '2 days');
   assert.strictEqual(B.unitText({ qty: 2, unit: 'stick' }), '2 stick', 'a unit the paper has no word for prints as typed');
+  // The word agrees with the number in the column, not with the raw quantity:
+  // 0.9996 prints as 1, and "1 rolls" beside it is a typo on his paper.
+  assert.strictEqual(B.unitText({ qty: 0.9996, unit: 'roll' }), '1 roll');
+  assert.strictEqual(B.unitText({ qty: 0.9996, unit: 'ft' }), '1 ft');
+});
+
+// A line with no cost AND no list is a real line since v3.4 (validAreaItem
+// takes a costCents that is null or missing altogether). It has to price at
+// nothing, which is what the amber flag and the $0 banner are for. NaN here
+// reached BidMath.fmt, which printed a dash, and a dash in a price column is
+// the one thing that looks deliberate.
+test('a line with neither a cost nor a list prices at nothing, never at NaN', () => {
+  assert.strictEqual(B.itemPrice({ qty: 1, unit: 'lot', priceCents: null }, 15).cents, 0);
+  assert.strictEqual(B.itemPrice({ qty: 1, unit: 'lot', priceCents: null }, 15).unit, 0);
+  assert.strictEqual(B.itemCostCents({ qty: 1, unit: 'lot', priceCents: null }), 0);
+  assert.strictEqual(B.itemPrice({ qty: 3, unit: 'ea', costCents: null, priceCents: null }, 15).cents, 0);
+  assert.strictEqual(B.fmt(B.itemPrice({ qty: 3, unit: 'ea' }, 15).cents), '$0.00');
 });
