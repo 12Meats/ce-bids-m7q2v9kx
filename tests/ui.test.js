@@ -36,7 +36,7 @@ const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
   bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, daysText, detailCaption, itemCountText,
-  itemLineText, priceSuggestions, areaNoteLine, perUnitText,
+  itemLineText, priceSuggestions, areaNoteLine, perUnitText, areaTallyText,
   priceSearchUrl, deferredBanner } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -891,6 +891,31 @@ test('priceSuggestions: QED plus the markup first, then last time with its date'
   assert.deepEqual(priceSuggestions({ listCents: null }, { lastPriceCents: 2200, lastPriceISO: null }, 15), [{ label: 'Last time', cents: 2200 }]);
   assert.deepEqual(priceSuggestions({ listCents: 1800 }, null, 15), [{ label: 'QED list + 15%', cents: 2070 }]);
   assert.deepEqual(priceSuggestions({ listCents: null, costCents: 1800 }, null, 15), [], 'a cost suggests nothing');
+  // He took the one-tap suggestion last time, which wrote that very number
+  // into the catalog. Offering it back underneath itself is one number said
+  // twice, and the second row is what pushes Done off a 667px screen.
+  assert.deepEqual(priceSuggestions({ listCents: 1800 }, { lastPriceCents: 2070, lastPriceISO: '2026-09-03' }, 15),
+    [{ label: 'QED list + 15%', cents: 2070 }]);
+});
+
+// The running strip above the add list. It has to be the same number as the
+// row directly behind it, which since v3.4 is what the line PRINTS: a strip
+// figured off the cost stack disagreed with every row on the screen.
+test('areaTallyText: the count, and what the lines print at this markup', () => {
+  assert.equal(areaTallyText({ items: [
+    { qty: 2, unit: 'roll', costCents: null, priceCents: 19857, listCents: 17267 },
+  ] }, 15), '1 item · $397.14', 'his own price takes no markup');
+  // A line written before v3.4 carries a cost and no price, and prints that
+  // cost plus the markup, exactly as it always did.
+  assert.equal(areaTallyText({ items: [
+    { qty: 2, unit: 'ea', costCents: 1800, priceCents: null },
+  ] }, 15), '1 item · $41.40');
+  assert.equal(areaTallyText({ items: [
+    { qty: 2, unit: 'roll', costCents: null, priceCents: 19857, listCents: 17267 },
+    { qty: 2, unit: 'ea', costCents: 1800, priceCents: null },
+  ] }, 15), '2 items · $438.54');
+  assert.equal(areaTallyText({ items: [] }, 15), '0 items · $0.00');
+  assert.equal(areaTallyText(null, 15), '0 items · $0.00');
 });
 
 // ---------------------------------------------------------------------------

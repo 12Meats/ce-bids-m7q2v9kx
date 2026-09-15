@@ -645,7 +645,7 @@ function renderLogAdd(host, e) {
   renderItemPicker(host, logPicker, {
     title: 'Add to this visit',
     items: e.items,
-    tally: (items) => areaTallyText({ items }),
+    tally: (items, markup) => areaTallyText({ items }, markup),
     // A visit rents lifts as readily as a bid does, so the tile and the rental
     // hits in a search are both offered here.
     allowRentals: true,

@@ -116,21 +116,23 @@ test('searchInput: typing reports the value, once per keystroke', () => {
 // areaTallyText
 // ---------------------------------------------------------------------------
 
-test('areaTallyText: counts the lines and adds up what they cost', () => {
+test('areaTallyText: counts the lines and adds up what they print', () => {
   const area = { id: 'a1', name: 'Warehouse', items: [
     { name: '3/4" EMT', unit: 'ft', qty: 100, costCents: 112, priceCents: null },
     { name: 'LED high bay', unit: 'ea', qty: 4, costCents: 31800, priceCents: null },
   ] };
-  assert.equal(areaTallyText(area), '2 items · $1,384.00');
+  // At no markup a line with only a cost on it prints that cost, which is what
+  // the strip said before v3.4 gave a line a price of its own.
+  assert.equal(areaTallyText(area, 0), '2 items · $1,384.00');
   // One is not "1 items", and an empty room says so rather than showing nothing.
-  assert.equal(areaTallyText({ items: [area.items[0]] }), '1 item · $112.00');
-  assert.equal(areaTallyText({ items: [] }), '0 items · $0.00');
-  assert.equal(areaTallyText(null), '0 items · $0.00');
+  assert.equal(areaTallyText({ items: [area.items[0]] }, 0), '1 item · $112.00');
+  assert.equal(areaTallyText({ items: [] }, 0), '0 items · $0.00');
+  assert.equal(areaTallyText(null, 0), '0 items · $0.00');
 });
 
 test('areaTallyText: fractional counts round the same way the bid does', () => {
-  // 12.5 ft at $1.13 is $14.125 — the line rounds once, here and on the Price
-  // screen, so the strip and the area cost can never differ by a cent.
+  // 12.5 ft at $1.13 is $14.125 — the line rounds once, here and on the walk's
+  // own big number, so the strip and the area total can never differ by a cent.
   const area = { items: [{ name: '3/4" EMT', unit: 'ft', qty: 12.5, costCents: 113, priceCents: null }] };
-  assert.equal(areaTallyText(area), '1 item · $14.13');
+  assert.equal(areaTallyText(area, 0), '1 item · $14.13');
 });

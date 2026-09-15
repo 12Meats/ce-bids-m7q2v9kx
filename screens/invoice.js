@@ -355,7 +355,7 @@ function renderInvoiceAdd(host, inv) {
   renderItemPicker(host, invoicePicker, {
     title: 'Add to this invoice',
     items: inv.items,
-    tally: (items) => areaTallyText({ items }),
+    tally: (items, markup) => areaTallyText({ items }, markup),
     allowRentals: true,
     onRental: (name) => invoiceAddRental(inv, name || ''),
     onDone: () => { invoiceView = 'invoice'; render(); },

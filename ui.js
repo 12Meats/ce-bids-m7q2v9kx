@@ -887,11 +887,16 @@ function itemLineText(it, markupPct) {
 // with its date, so an old habit sits next to today's list and not instead
 // of it. Nothing when the line has neither. it only needs listCents; the
 // add-a-part flow hands in a stand-in built off the catalog's memory.
+//
+// The two rows never say the same number twice. Taking the one-tap suggestion
+// writes that very number into the catalog's memory, so the next line for the
+// part offered it back as "Last time" as well: one number, two rows, and the
+// second of them pushing Done off the bottom of a short phone.
 function priceSuggestions(it, part, markupPct) {
   const out = [];
   const s = BidMath.suggestedUnit(it, markupPct);
   if (s != null) out.push({ label: 'QED list + ' + pctText(markupPct), cents: s });
-  if (part && Number.isInteger(part.lastPriceCents)) {
+  if (part && Number.isInteger(part.lastPriceCents) && part.lastPriceCents !== s) {
     out.push({ label: 'Last time' + (part.lastPriceISO ? ', ' + fmtDate(part.lastPriceISO) : ''), cents: part.lastPriceCents });
   }
   return out;
@@ -1422,17 +1427,20 @@ function areaNoteLine(notes, max) {
   return joined.length <= cap ? joined : joined.slice(0, cap - 1).replace(/\s+$/, '') + '…';
 }
 
-// areaTallyText(area) -> "3 items · $412.00"
+// areaTallyText(area, markupPct) -> "3 items · $412.00"
 //
-// What he has counted in this room so far, at cost. It sits at the top of the
-// add-item list, where it is the only proof an add landed now that adding one
-// no longer throws him back to the area. The money goes through
-// BidMath.materialCost, the same primitive the area footer and the Price
-// screen use, so the running total and the area cost can never disagree.
-function areaTallyText(area) {
+// What he has counted in this room so far, at what the lines PRINT. It sits at
+// the top of the add-item list, where it is the only proof an add landed now
+// that adding one no longer throws him back to the area. The money goes
+// through BidMath.materialPrice, the same primitive the area footer and the
+// walk's big number use, so the strip and the row directly behind it are the
+// same number said twice. It read the COST stack until v3.4 put a price of his
+// own on the line: a strip at cost then disagreed with every row above it.
+function areaTallyText(area, markupPct) {
   const items = (area && area.items) || [];
   const n = items.length;
-  return n + ' ' + (n === 1 ? 'item' : 'items') + ' · ' + BidMath.fmt(BidMath.materialCost({ areas: [area || {}] }));
+  return n + ' ' + (n === 1 ? 'item' : 'items') + ' · '
+    + BidMath.fmt(BidMath.materialPrice({ areas: [area || {}] }, markupPct));
 }
 
 // ---------------------------------------------------------------------------

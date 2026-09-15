@@ -528,8 +528,10 @@ function renderWalkAdd(bid, edit, area, host) {
     title: 'Add to ' + (area.name || 'this area'),
     items: area.items,
     // areaTallyText reads an area, and the picker only knows about a list of
-    // lines, which is the one thing an area is to it.
-    tally: (items) => areaTallyText({ items }),
+    // lines, which is the one thing an area is to it. The markup comes back
+    // from the picker rather than being closed over here, so the strip is
+    // figured at the same one the lines under it are.
+    tally: (items, markup) => areaTallyText({ items }, markup),
     // A change order has no rentals list of its own and must not borrow the
     // bid's, so it gets neither the tile nor the rental hits in a search.
     allowRentals: !co,

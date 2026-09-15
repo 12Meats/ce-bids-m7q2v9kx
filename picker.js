@@ -851,7 +851,7 @@ function notePhrasesPicker(box, notes, opts) {
 //   renderItemPicker(host, ps, opts) draws the whole add flow into host:
 //     opts.title        'Add to Lactose room'      (screenHead, centered)
 //     opts.items        the array a picked part is pushed onto
-//     opts.tally        (items) => string          the running strip text, or null for none
+//     opts.tally        (items, markupPct) => string  the running strip text, or null for none
 //     opts.allowRentals boolean                    the rentals tile and rental hits in search
 //     opts.onRental     (name) => void             TWO calls, and a caller must answer both.
 //                                                  A NAME is a rental picked out of a drawer or
@@ -982,14 +982,16 @@ function pickerBody(ps, opts, host) {
   host.appendChild(box);
 }
 
-// "3 items · $412.00" — the running total of the list he is adding to, at
-// cost. The arithmetic is the caller's (areaTallyText for an area), where it
-// is pure and tested; this only decides whether it flashes, which it does for
-// a second after something is added.
+// "3 items · $412.00" — the running total of the list he is adding to, at what
+// the lines print. The arithmetic is the caller's (areaTallyText for an area),
+// where it is pure and tested; this only decides whether it flashes, which it
+// does for a second after something is added. The markup goes along because
+// what a line prints is figured at one, and the caller's is the right one:
+// a bid's own, an invoice's own, or Settings' on a visit.
 function pickerTallyStrip(ps, opts) {
   const strip = document.createElement('div');
   strip.className = 'walk-tally';
-  strip.textContent = opts.tally(opts.items);
+  strip.textContent = opts.tally(opts.items, opts.markupPct);
   if (ps.highlight) strip.classList.add('walk-row-new');
   return strip;
 }
