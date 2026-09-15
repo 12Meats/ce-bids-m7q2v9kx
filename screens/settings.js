@@ -1993,7 +1993,12 @@ function buildSetCatalogRow(box, p, searching, options) {
           const prev = p.rollFt;
           if (v !== null && !(v > 0)) { showBanner('A roll has to be longer than nothing'); render(); return; }
           p.rollFt = v === null ? null : Math.round(v);
-          settingsSaveAndRender(() => { p.rollFt = prev; });
+          // A part off a backup written before v3.5 has no rollFt key at all,
+          // and a refused save has to leave it that way: putting the key back
+          // set to undefined is a field this screen invented on a part it was
+          // told to leave alone. PriceFile.restore undoes the import's own
+          // writes the same way, for the same reason.
+          settingsSaveAndRender(() => { if (prev === undefined) delete p.rollFt; else p.rollFt = prev; });
         },
       });
     }]);

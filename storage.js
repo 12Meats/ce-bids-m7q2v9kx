@@ -212,6 +212,25 @@
     ]
   );
 
+  // ONE SEED ROW, ONE PART, WHEREVER IT IS BORN. A name off SEED_CATALOG lands
+  // on a phone two ways: emptyData seeds the whole list onto a fresh install,
+  // and addStandardCatalog adds the names a phone in use is missing. Both wrote
+  // this shape out by hand, and the two copies had already drifted: the three
+  // small-wire spools came out of emptyData with the 500 ft roll they come on
+  // and out of addStandardCatalog with no roll at all, so the same #12 THHN was
+  // a part that could be billed by the roll or a part that could not, depending
+  // on which door it came through.
+  //
+  // rollFt: the three small-wire spools are 500 ft, his own habit and QED's.
+  // Everything else has no roll until the import reads one off QED's title or
+  // he types one in Settings, and no roll is the truth for pipe, for a fitting,
+  // and for feeder wire he buys cut to length.
+  function seedCatalogPart(category, name, unit) {
+    return { id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false,
+      sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null,
+      rollFt: (category === 'wire' && unit === 'roll') ? 500 : null, lastListPerM: null };
+  }
+
   // His own tools, by the job they do. A day of one bills at equipment % of
   // what it cost new, so every one of them lands with no cost on it: what a
   // bender cost in 2014 is a number only he has.
@@ -398,11 +417,7 @@
         // restores without it and every PDF simply reads as pending, so the
         // document version does not have to move.
         lastBackupAt: null, pdfsSentThroughMs: null },
-      // rollFt: the three small-wire spools are 500 ft, his own habit and
-      // QED's. Everything else has no roll until the import reads one off
-      // QED's title or he types one in Settings, and no roll is the truth for
-      // pipe, for a fitting, and for feeder wire he buys cut to length.
-      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null, rollFt: (category === 'wire' && unit === 'roll') ? 500 : null, lastListPerM: null })),
+      catalog: SEED_CATALOG.map(([category, name, unit]) => seedCatalogPart(category, name, unit)),
       customers: [], bids: [], projects: [], logs: [], invoices: [] };
   }
 
@@ -1358,7 +1373,7 @@
     SEED_CATALOG.forEach(([category, name, unit]) => {
       if (have.has(Catalog.normalizeName(name))) return;
       have.add(Catalog.normalizeName(name));
-      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null, rollFt: null, lastListPerM: null });
+      d.catalog.push(seedCatalogPart(category, name, unit));
       added += 1;
     });
     return added;

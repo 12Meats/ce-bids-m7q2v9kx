@@ -1030,6 +1030,27 @@ test('addStandardCatalog: parts it adds carry lastListCents like the seeds do', 
   assert.ok(d.catalog.every((p) => p.lastListCents === null));
 });
 
+// THE SAME NAME IS THE SAME PART WHICHEVER DOOR IT CAME THROUGH. A fresh
+// install seeds the three small-wire spools with the 500 ft roll they come on;
+// "Add the standard parts" on a phone in use wrote the same names with no roll
+// at all, so whether his #12 THHN could be billed by the roll came down to
+// which button had put it there. Both build the part in one place now.
+test('addStandardCatalog: a small-wire spool comes back with its roll length', () => {
+  const d = S.emptyData();
+  const i = d.catalog.findIndex((p) => p.name === '#12 THHN');
+  assert.ok(i !== -1);
+  assert.strictEqual(d.catalog[i].rollFt, 500, 'the seed has it');
+  d.catalog.splice(i, 1);
+  assert.strictEqual(S.addStandardCatalog(d), 1);
+  const back = d.catalog.find((p) => p.name === '#12 THHN');
+  assert.strictEqual(back.rollFt, 500);
+  assert.strictEqual(back.unit, 'roll');
+  // And nothing else grew a roll it has no business with: a foot of pipe is
+  // not sold on a spool.
+  assert.strictEqual(d.catalog.find((p) => p.name === '3/4" EMT').rollFt, null);
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});
+
 // A fresh file marks material up 15. A phone that already has Settings keeps
 // its own number: nothing here migrates, and a bid written under 18 carries
 // 18 on its snapshot forever.
