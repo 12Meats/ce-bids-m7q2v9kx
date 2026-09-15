@@ -271,6 +271,15 @@ function lineCatalogPart(it, data) {
   return it.catalogId ? ((data.catalog || []).find((p) => p.id === it.catalogId) || null) : null;
 }
 
+// The roll length a line converts by: its own, copied off the part the day
+// it was added, and failing that the part's today (a line from before v3.5
+// has none of its own). Null is "no roll": no switch on the strip.
+function lineRollFt(it, part) {
+  if (Number.isInteger(it.rollFt) && it.rollFt > 0) return it.rollFt;
+  if (part && Number.isInteger(part.rollFt) && part.rollFt > 0) return part.rollFt;
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // TWO FACTS, ONE OR TWO SAVES
 // ---------------------------------------------------------------------------
@@ -308,7 +317,7 @@ function saveLineAndCatalog(opts, undoLine, undoPart) {
 function saveCatalog(opts, undo) { return (opts.persistCatalog || opts.persistOr)(undo); }
 
 function lineActions(box, lineEl, items, it, opts) {
-  const strip = attachedStrip(lineEl, [
+  const buttons = [
     { label: 'Quantity', onTap: () => {
       promptNumber(it.qty, {
         label: partQtyLabel(it.name, it.unit),
@@ -335,7 +344,21 @@ function lineActions(box, lineEl, items, it, opts) {
       }
       opts.onClose();
     } },
-  ], { cancel: () => opts.onClose() });
+  ];
+
+  // BY THE FOOT OR BY THE ROLL. One button, on a length line that knows its
+  // roll, saying the ACTION the way the rental's markup switch does. It
+  // converts the whole line in one tap (BidMath.convertLineUnit) and the
+  // banner says what it did; nothing converts until he taps.
+  const rollFt = lineRollFt(it, lineCatalogPart(it, opts.data));
+  if (rollFt && (it.unit === 'ft' || it.unit === 'roll')) {
+    buttons.splice(3, 0, {
+      label: it.unit === 'ft' ? 'Bill by the roll' : 'Bill by the foot',
+      onTap: () => lineSwitchUnit(it, opts, rollFt),
+    });
+  }
+
+  const strip = attachedStrip(lineEl, buttons, { cancel: () => opts.onClose() });
   // The row is already in the card, so attachedStrip has placed it. This is the
   // belt-and-braces path for a caller that built the row off-screen.
   if (!strip.parentNode) box.appendChild(strip);
@@ -433,6 +456,22 @@ function lineAskLot(it, opts) {
       opts.onClose();
     },
   });
+}
+
+// THE FLIP. A new line comes back from BidMath.convertLineUnit; it is copied
+// onto the line he tapped field by field, under one save whose restore puts
+// every field back exactly, and the banner says the count it was, the count
+// it is, and the price it landed on. A line that cannot flip (no length, or
+// not a length at all) does nothing rather than half of something.
+function lineSwitchUnit(it, opts, rollFt) {
+  const next = BidMath.convertLineUnit(it, it.unit === 'ft' ? 'roll' : 'ft', rollFt);
+  if (!next) return;
+  const before = Object.assign({}, it);
+  const keys = ['unit', 'qty', 'priceCents', 'costCents', 'listCents', 'rollFt'];
+  keys.forEach((k) => { if (k in next) it[k] = next[k]; });
+  opts.persistOr(() => { keys.forEach((k) => { if (k in before) it[k] = before[k]; else delete it[k]; }); });
+  showBanner(lineSwitchText(before, it));
+  opts.onClose();
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,6 +1364,10 @@ function pickerCommitItem(ps, opts, part, qty, priceCents) {
     costCents: null,
     priceCents: Number.isInteger(priceCents) ? priceCents : null,
     listCents, supplierName,
+    // A length hands the line its roll and QED's basis, so the line can be
+    // flipped between feet and rolls on its own however the catalog changes.
+    rollFt: Number.isInteger(part.rollFt) && part.rollFt > 0 ? part.rollFt : null,
+    listPerM: Number.isInteger(part.lastListPerM) ? part.lastListPerM : null,
   };
   const prevUses = part.uses;
   const prevPrice = part.lastPriceCents;

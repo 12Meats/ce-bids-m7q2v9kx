@@ -54,7 +54,8 @@ const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
   partQtyLabel, partPriceLabel, partListLabel, partLotLabel,
   lineAskPrice, lineAskList,
   rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill,
-  pickerChooserRows, pickerOptionsTag, pickerVariantCounts, pickerRowValue } = sandbox;
+  pickerChooserRows, pickerOptionsTag, pickerVariantCounts, pickerRowValue,
+  lineSwitchUnit, lineRollFt } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -104,7 +105,7 @@ test('pickerCommitItem builds the line, pushes it, and records the price against
   assert.strictEqual(ok, true);
   assert.deepEqual(w.items, [{
     catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null,
-    priceCents: 38, listCents: 71, supplierName: 'Elliott',
+    priceCents: 38, listCents: 71, supplierName: 'Elliott', rollFt: null, listPerM: null,
   }]);
   // The catalog's memory of the part moves with the line: one more use, and
   // the price he just charged is the price the next line starts at.
@@ -123,7 +124,7 @@ test('pickerCommitItem: no second price and no supplier read as null, not undefi
   pickerCommitItem(w.ps, w.opts, w.part, 2, 1200);
   assert.deepEqual(w.items[0], {
     catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 2, costCents: null,
-    priceCents: 1200, listCents: null, supplierName: null,
+    priceCents: 1200, listCents: null, supplierName: null, rollFt: null, listPerM: null,
   });
   // A supplier of whitespace is no supplier.
   const w2 = world({ supplierName: '   ' });
@@ -625,4 +626,71 @@ test('lineAskList: QED\'s price on the line and in the catalog, dated as his own
   assert.strictEqual(w.part.lastListCents, 1900);
   assert.strictEqual(w.part.priceCheckedISO, null, 'typed by hand, not the file');
   sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
+});
+
+// ---------------------------------------------------------------------------
+// v3.5: BY THE FOOT OR BY THE ROLL
+// ---------------------------------------------------------------------------
+test('pickerCommitItem: a length part hands its roll length and basis to the line', () => {
+  const w = world({ unit: 'roll', rollFt: 500, lastListPerM: 34534, lastListCents: 17267 });
+  assert.ok(pickerCommitItem(pickerState(), w.opts, w.part, 2, 19857));
+  const it = w.items[0];
+  assert.strictEqual(it.unit, 'roll');
+  assert.strictEqual(it.rollFt, 500);
+  assert.strictEqual(it.listPerM, 34534);
+  assert.strictEqual(it.listCents, 17267);
+  const w2 = world({});
+  assert.ok(pickerCommitItem(pickerState(), w2.opts, w2.part, 500, 40));
+  assert.strictEqual(w2.items[0].rollFt, null, 'a part with no length hands none');
+  assert.strictEqual(w2.items[0].listPerM, null);
+});
+
+test('lineSwitchUnit: feet to rolls converts the line, saves it with an exact restore, and says so', () => {
+  const w = world({ unit: 'ft', rollFt: 500 });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 750, costCents: null, priceCents: 40, listCents: 35, listPerM: 34534, rollFt: 500 };
+  w.items.push(it);
+  banners.length = 0;
+  const closes = [];
+  const opts = Object.assign({}, w.opts, { markupPct: 15, onClose: () => closes.push(1) });
+  lineSwitchUnit(it, opts, 500);
+  assert.strictEqual(it.unit, 'roll');
+  assert.strictEqual(it.qty, 1.5);
+  assert.strictEqual(it.priceCents, 20000);
+  assert.strictEqual(it.listCents, 17267);
+  assert.deepEqual(banners, ['750 ft is now 1.5 rolls at $200.00.']);
+  assert.strictEqual(closes.length, 1);
+  assert.strictEqual(w.saved.length, 1, 'one save');
+  w.saved[0]();                                   // the restore
+  assert.strictEqual(it.unit, 'ft');
+  assert.strictEqual(it.qty, 750);
+  assert.strictEqual(it.priceCents, 40);
+  assert.strictEqual(it.listCents, 35);
+});
+
+test('lineSwitchUnit: rolls to feet, his price up to the cent; a line with no length does nothing', () => {
+  const w = world({ unit: 'roll', rollFt: 500 });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'roll', qty: 1, costCents: null, priceCents: 19857, listCents: 17267, listPerM: 34534, rollFt: 500 };
+  w.items.push(it);
+  banners.length = 0;
+  lineSwitchUnit(it, Object.assign({}, w.opts, { markupPct: 15 }), 500);
+  assert.strictEqual(it.unit, 'ft');
+  assert.strictEqual(it.qty, 500);
+  assert.strictEqual(it.priceCents, 40);
+  assert.deepEqual(banners, ['1 roll is now 500 ft at $0.40 a foot, rounded up to the cent.']);
+  const stuck = { catalogId: null, name: 'wire', unit: 'ft', qty: 100, costCents: null, priceCents: 40 };
+  const before = JSON.stringify(stuck);
+  lineSwitchUnit(stuck, Object.assign({}, w.opts, { markupPct: 15 }), null);
+  assert.strictEqual(JSON.stringify(stuck), before);
+});
+
+// A line written before v3.5 has no roll length of its own. It borrows the
+// part's, which is what makes the switch turn up on wire he put on a bid last
+// month without anything having to migrate the file.
+test('lineRollFt: the line\'s own length first, then the part\'s', () => {
+  const w = world({ rollFt: 1000 });
+  assert.strictEqual(lineRollFt({ rollFt: 500 }, w.part), 500);
+  assert.strictEqual(lineRollFt({ rollFt: null }, w.part), 1000, 'an older line borrows the part\'s');
+  assert.strictEqual(lineRollFt({}, w.part), 1000);
+  assert.strictEqual(lineRollFt({}, null), null);
+  assert.strictEqual(lineRollFt({ rollFt: 0 }, { rollFt: 0 }), null);
 });
