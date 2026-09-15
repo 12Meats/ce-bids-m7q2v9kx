@@ -497,10 +497,33 @@ function lineSwitchUnit(it, opts, rollFt) {
   const before = Object.assign({}, it);
   const keys = ['unit', 'qty', 'priceCents', 'costCents', 'listCents', 'rollFt'];
   keys.forEach((k) => { if (k in next) it[k] = next[k]; });
+  // AND THE PART REMEMBERS THE PRICE THE FLIP LANDED ON, when the flip lands in
+  // the unit the part itself is counted in. The memory is per the PART's own
+  // unit, so a roll part flipped out to feet and back has to come home with the
+  // number the flip made: $198.57 a roll out to $0.40 a foot and back is
+  // $200.00 a roll, and a memory still holding $198.57 offers "Last time" a
+  // price no line has any more — or, when it equals QED's row, offers nothing
+  // at all, because the two rows never say the same number twice.
+  //
+  // Flipped the OTHER way the memory is left alone: per-foot money written
+  // against a part counted in rolls comes back as a suggestion five hundred
+  // times too small. A lot line has no price per unit to remember (the lot
+  // wins, and it did not move), and a line printing the suggestion has no
+  // price of its own to write down.
+  const part = lineCatalogPart(it, opts.data);
+  const remembers = !!part && it.unit === part.unit && Number.isInteger(it.priceCents) && it.lotCents == null;
+  const prevLast = part ? part.lastPriceCents : undefined;
+  const prevISO = part ? part.lastPriceISO : undefined;
+  if (remembers) Store.rememberPrice(opts.data, part.id, it.priceCents, Store.todayISO());
   // The banner only on a save that took. A refused save has already put the
   // line back and said "Couldn't save"; announcing the flip underneath that
   // would be the app claiming a change that is not on the line or the disk.
-  if (opts.persistOr(() => { keys.forEach((k) => { if (k in before) it[k] = before[k]; else delete it[k]; }); })) {
+  // saveLineAndCatalog hands back the LINE save's answer, which is the one that
+  // decides that: on a draft the catalog fact goes to disk on its own save and
+  // says nothing about whether the line got there.
+  if (saveLineAndCatalog(opts,
+    () => { keys.forEach((k) => { if (k in before) it[k] = before[k]; else delete it[k]; }); },
+    remembers ? () => { part.lastPriceCents = prevLast; part.lastPriceISO = prevISO; } : null)) {
     showBanner(lineSwitchText(before, it));
   }
   opts.onClose();

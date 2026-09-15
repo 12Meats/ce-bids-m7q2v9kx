@@ -740,6 +740,74 @@ test('lineSwitchUnit: a refused save puts the line back and claims nothing', () 
   assert.deepEqual(banners, []);
 });
 
+// A FLIP IS A PRICE HE JUST SET, so the part has to remember it. "1 roll at
+// $198.57" out to feet and back is "1 roll at $200.00" — the round trip does
+// not come home, because his price rounds UP to the cent on the way out — and a
+// part still remembering $198.57 offered it back as "Last time" for a price no
+// line has any more. Worse than stale: $198.57 is exactly what QED's basis
+// suggests at 15%, and the two rows never say the same number twice, so the
+// keypad showed no Last time row at all and the flip looked like it had been
+// forgotten.
+//
+// The memory is per the PART's own unit, so only a flip that LANDS in the unit
+// the part is counted in writes it. priceSuggestions is ui.js's, read off the
+// sandbox both files share: the row on the glass is the thing this fixes.
+test('lineSwitchUnit: a flip into the part\'s own unit refreshes what it remembers', () => {
+  const w = world({ unit: 'roll', rollFt: 500, lastListPerM: 34534, lastListCents: 17267, lastPriceCents: 19857, lastPriceISO: '2026-09-01' });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'roll', qty: 1, costCents: null, priceCents: 19857, listCents: 17267, listPerM: 34534, rollFt: 500 };
+  w.items.push(it);
+  // The symptom: one number, two rows, so the keypad could only show one.
+  assert.deepEqual(sandbox.priceSuggestions(it, w.part, 15).map((s) => s.cents), [19857]);
+  const opts = Object.assign({}, w.opts, { markupPct: 15 });
+  // Out to feet first. Per-foot money written against a part counted in rolls
+  // would come back five hundred times too small, so the memory is left alone.
+  lineSwitchUnit(it, opts, 500);
+  assert.strictEqual(it.unit, 'ft');
+  assert.strictEqual(it.priceCents, 40);
+  assert.strictEqual(w.part.lastPriceCents, 19857, 'the other unit never touches the memory');
+  assert.strictEqual(w.part.lastPriceISO, '2026-09-01');
+  // And back: 500 ft at 40 cents is $200.00 a roll, which is what he charges
+  // for a roll of it now, dated today.
+  lineSwitchUnit(it, opts, 500);
+  assert.strictEqual(it.unit, 'roll');
+  assert.strictEqual(it.priceCents, 20000);
+  assert.strictEqual(w.part.lastPriceCents, 20000);
+  assert.strictEqual(w.part.lastPriceISO, S.todayISO());
+  assert.deepEqual(sandbox.priceSuggestions(it, w.part, 15).map((s) => s.cents), [19857, 20000],
+    'QED\'s row and his own, two different numbers again');
+});
+
+test('lineSwitchUnit: a refused save puts the part\'s memory back too', () => {
+  const w = world({ unit: 'roll', rollFt: 500, lastPriceCents: 19857, lastPriceISO: '2026-09-01' });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: 40, listCents: 35, listPerM: 34534, rollFt: 500 };
+  w.items.push(it);
+  banners.length = 0;
+  lineSwitchUnit(it, Object.assign({}, w.opts, { markupPct: 15, persistOr: (restore) => { restore(); return false; } }), 500);
+  assert.strictEqual(it.unit, 'ft', 'the line came back');
+  assert.strictEqual(it.priceCents, 40);
+  assert.strictEqual(w.part.lastPriceCents, 19857, 'and the memory came back with it');
+  assert.strictEqual(w.part.lastPriceISO, '2026-09-01');
+  assert.deepEqual(banners, []);
+});
+
+// A LOT IS NOT A PRICE PER ROLL. The priceCents on a lot line is left over from
+// before the lot was typed and the flip converts it like every other number,
+// but nothing on the paper prints it, so nothing about it is his price for the
+// part. The banner leaves it out for the same reason.
+test('lineSwitchUnit: a lot line flips into the part\'s unit and the memory stands', () => {
+  const w = world({ unit: 'roll', rollFt: 500, lastPriceCents: 19857, lastPriceISO: '2026-09-01' });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: 40, listCents: 35, listPerM: 34534, rollFt: 500, lotCents: 21600 };
+  w.items.push(it);
+  banners.length = 0;
+  lineSwitchUnit(it, Object.assign({}, w.opts, { markupPct: 15 }), 500);
+  assert.strictEqual(it.unit, 'roll');
+  assert.strictEqual(it.qty, 1);
+  assert.strictEqual(it.lotCents, 21600, 'the lot did not move');
+  assert.strictEqual(w.part.lastPriceCents, 19857);
+  assert.strictEqual(w.part.lastPriceISO, '2026-09-01');
+  assert.deepEqual(banners, ['500 ft is now 1 roll.'], 'no price a foot over a row printing the lot');
+});
+
 // QED'S BASIS IS QED'S. A list he types by hand on the line replaces it, the
 // same way it already takes the import's checked-on date off the part. Left
 // standing, the basis won the next flip and quietly put the number the import
