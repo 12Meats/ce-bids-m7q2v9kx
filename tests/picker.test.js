@@ -435,7 +435,7 @@ function optionWorld() {
 
 test('pickerChooserRows: the options, then Just the generic', () => {
   const w = optionWorld();
-  const rows = pickerChooserRows(w.d.catalog, w.generic.id);
+  const rows = pickerChooserRows(w.d.catalog, w.generic.id, 15);
   assert.deepStrictEqual(rows.map((r) => r.title), [
     '60 A 3-pole breaker · QO360',
     '60 A 3-pole breaker · B360',
@@ -448,20 +448,37 @@ test('pickerChooserRows: the options, then Just the generic', () => {
 // The second line is what tells two breakers apart: whose it is, and what it
 // bills at. A part with no price yet says who makes it and nothing else,
 // rather than a dollar sign with nothing after it.
-test('pickerChooserRows: the sub says whose it is and what it bills at', () => {
+//
+// The money is pickerRowValue's, to the penny. The same variant is reachable
+// two ways — browsed, it comes up in here; searched, it comes up as a plain
+// row — and until v3.4 this line printed QED's bare list while the row printed
+// the list plus the markup, so one part showed two unlabelled prices.
+test('pickerChooserRows: the sub says whose it is and the number the row promises', () => {
   const w = optionWorld();
-  const rows = pickerChooserRows(w.d.catalog, w.generic.id);
+  const rows = pickerChooserRows(w.d.catalog, w.generic.id, 15);
   const byTitle = (t) => rows.find((r) => r.title === t);
   assert.strictEqual(byTitle('60 A 3-pole breaker · B360').sub,
-    'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker · $99.00 / ea');
+    'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker · $113.85 / ea',
+    'QED lists it at $99.00 and the drawer row promises $113.85');
+  assert.strictEqual(pickerRowValue(w.a, 15), '$113.85 / ea', 'the row it has to match');
   assert.strictEqual(byTitle('60 A 3-pole breaker · QO360').sub,
-    'Square D QO360 3-Pole 60 Amp Breaker');
+    'Square D QO360 3-Pole 60 Amp Breaker', 'no list and no price of his own is no money');
+});
+
+// His own last price beats the suggestion here exactly as it does on the row.
+test('pickerChooserRows: the sub says his price once he has made one', () => {
+  const w = optionWorld();
+  w.a.lastPriceCents = 12000;
+  const sub = pickerChooserRows(w.d.catalog, w.generic.id, 15)
+    .find((r) => r.title === '60 A 3-pole breaker · B360').sub;
+  assert.strictEqual(sub, 'Siemens B360 3-Pole 60 Amp 240 Volt 10 K Circuit Breaker · $120.00 / ea');
+  assert.strictEqual(pickerRowValue(w.a, 15), '$120.00 / ea');
 });
 
 test('pickerChooserRows: a generic that is not there has nothing to choose from', () => {
   const w = optionWorld();
-  assert.strictEqual(pickerChooserRows(w.d.catalog, 'nobody').length, 0);
-  assert.strictEqual(pickerChooserRows(null, w.generic.id).length, 0);
+  assert.strictEqual(pickerChooserRows(w.d.catalog, 'nobody', 15).length, 0);
+  assert.strictEqual(pickerChooserRows(null, w.generic.id, 15).length, 0);
 });
 
 test('pickerOptionsTag counts in words he would say', () => {

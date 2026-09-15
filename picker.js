@@ -414,9 +414,9 @@ function lineAskList(it, opts) {
   });
 }
 
-// THE LOT. $216.00 for 500 ft of #12 is 43.2 cents a foot, which the cost
-// keypad cannot take, so the line takes one number instead: what the customer
-// pays for all of it, markup included. The paper prints the quantity, a blank
+// THE LOT. $216.00 for 500 ft of #12 is 43.2 cents a foot, which a keypad
+// that stops at cents cannot take, so the line takes one number instead: what
+// the customer pays for all of it. The paper prints the quantity, a blank
 // unit price and the amount, which is how his own invoices do a roll of wire.
 // Clear takes the line back to per-unit pricing. A lot does not follow the
 // quantity: change the count and the lot is still the lot, and the row says
@@ -425,7 +425,7 @@ function lineAskLot(it, opts) {
   const per = perUnitText(it.unit);             // ' per foot' / ' each'
   promptMoney(it.lotCents != null ? it.lotCents : null, {
     label: partLotLabel(it.name, it.qty, it.unit),
-    caption: 'The whole line, markup included. No price' + per + ' prints. Clear to price it' + per + ' again.',
+    caption: 'The whole line, one number. No price' + per + ' prints. Clear to price it' + per + ' again.',
     done: (cents) => {
       const prev = it.lotCents;
       it.lotCents = cents;
@@ -1143,23 +1143,32 @@ function pickerVariantCounts(catalog) {
 // pair is the whole reason the chooser exists — three rows whose names differ
 // only in the number on the end are told apart by the brand and the price. A
 // part with no bill-at price yet says who makes it and stops there.
-function pickerChooserSub(p) {
+//
+// The money is pickerRowValue's, the same number the drawer's own rows print,
+// because the same variant is reachable both ways: browsed, it comes up in
+// here; searched, it comes up as a plain row. Until v3.4 this line printed
+// QED's bare list instead, so one part showed him two different unlabelled
+// prices depending on how he had found it.
+function pickerChooserSub(p, markupPct) {
   const supplier = typeof p.supplierName === 'string' && p.supplierName.trim() !== '' ? p.supplierName : '';
-  const price = Number.isInteger(p.lastListCents)
-    ? BidMath.fmt(p.lastListCents) + ' / ' + (p.unit || 'ea') : '';
+  // pickerRowValue falls back to the bare unit for a part with no price at
+  // all, which is a right-hand column answering "per what". In a sentence
+  // after the brand it would be a stray "ft", so no price stays no price.
+  const value = pickerRowValue(p, markupPct);
+  const price = value === p.unit ? '' : value;
   if (supplier && price) return supplier + ' · ' + price;
   return supplier || price;
 }
 
-// pickerChooserRows(catalog, genericId) -> [{ part, title, sub }]
+// pickerChooserRows(catalog, genericId, markupPct) -> [{ part, title, sub }]
 // The options in the order the list would have offered them, then the generic
 // itself. Pure, so what the chooser says is tested without a browser.
-function pickerChooserRows(catalog, genericId) {
+function pickerChooserRows(catalog, genericId, markupPct) {
   const list = Array.isArray(catalog) ? catalog : [];
   const generic = list.find((p) => p && p.id === genericId) || null;
   if (!generic) return [];
   const rows = Catalog.variantsOf(list, genericId)
-    .map((p) => ({ part: p, title: p.name, sub: pickerChooserSub(p) }));
+    .map((p) => ({ part: p, title: p.name, sub: pickerChooserSub(p, markupPct) }));
   // "Just the breaker" is the way out that is not Back: he wants the line on
   // the bid and he will sort out whose breaker it is at the counter. It adds
   // the generic exactly as tapping it did before there were any options.
@@ -1169,7 +1178,7 @@ function pickerChooserRows(catalog, genericId) {
 
 function pickerChooser(ps, opts, box) {
   box.textContent = '';
-  const rows = pickerChooserRows(opts.data.catalog, ps.choose);
+  const rows = pickerChooserRows(opts.data.catalog, ps.choose, opts.markupPct);
   // A generic that went away under him (a restore, another screen) leaves
   // nothing to choose from; the chooser closes rather than standing empty.
   if (!rows.length) { ps.choose = null; pickerList(ps, opts, box); return; }
