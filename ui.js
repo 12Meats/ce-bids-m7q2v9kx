@@ -884,7 +884,11 @@ function itemLineText(it, markupPct) {
   if (roll && it.unit === 'roll') other = ' · ' + numText(it.qty * roll) + ' ft';
   else if (roll && it.unit === 'ft') {
     const n = Math.round(it.qty / roll * 1000) / 1000;
-    other = ' · ' + numText(n) + (n === 1 ? ' roll' : ' rolls');
+    // A foot off a 2,500 ft reel is 0.0004 of a reel, which the three decimals
+    // the count keeps read as nothing at all. "0 rolls" beside it says the
+    // line holds no wire, and the flip that would make it true is refused for
+    // exactly that reason, so the clause is left off instead.
+    if (n > 0) other = ' · ' + numText(n) + (n === 1 ? ' roll' : ' rolls');
   }
   if (p.unit == null) return count + ' · ' + BidMath.fmt(p.cents) + ' the lot' + other + qed;
   if (!(p.unit > 0)) return count + ', no price yet' + other + qed;
@@ -913,17 +917,28 @@ function priceSuggestions(it, part, markupPct) {
 }
 
 // The banner after a flip between feet and rolls: the count it was, the count
-// it is, and the price per unit it landed on. Says when the trip to feet
-// rounded his price up to the cent, because that is the one moment the
-// line's total moved without him typing anything.
+// it is, and the price per unit it landed on. And when the line's total MOVED,
+// both numbers, because that is money changing on a tap he made expecting an
+// arithmetic conversion.
+//
+// It used to say "rounded up to the cent", which named the cause of the move
+// on the way to feet and nothing else. Two problems with that: it left the
+// other direction silent, where a fraction of a roll multiplies a per-foot
+// price into a per-roll one and lands somewhere else again (2 ft at 40 cents
+// is $0.80, and 0.001 of a $1,000 roll is $1.00), and it told him about the
+// rounding rule rather than about his money. The totals say both at once.
 function lineSwitchText(before, after) {
   const count = (it) => numText(it.qty) + ' ' + (it.qty === 1 ? it.unit : (UNIT_PLURAL[it.unit] || it.unit));
+  const total = (it) => Math.round(it.priceCents * it.qty);
   let s = count(before) + ' is now ' + count(after);
   if (Number.isInteger(after.priceCents)) {
     s += ' at ' + BidMath.fmt(after.priceCents) + (after.unit === 'ft' ? ' a foot' : '');
-    const rounded = after.unit === 'ft' && Number.isInteger(before.priceCents)
-      && Math.round(after.priceCents * after.qty) !== Math.round(before.priceCents * before.qty);
-    if (rounded) s += ', rounded up to the cent';
+    // Both sides have to HAVE a price for a total to have moved: a line
+    // printing the suggestion has no number of his own on either side of the
+    // flip, and there is nothing to report about it.
+    if (Number.isInteger(before.priceCents) && total(after) !== total(before)) {
+      s += ', the total moved from ' + BidMath.fmt(total(before)) + ' to ' + BidMath.fmt(total(after));
+    }
   }
   return s + '.';
 }

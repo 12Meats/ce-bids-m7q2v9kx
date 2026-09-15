@@ -695,11 +695,30 @@ test('lineSwitchUnit: rolls to feet, his price up to the cent; a line with no le
   assert.strictEqual(it.unit, 'ft');
   assert.strictEqual(it.qty, 500);
   assert.strictEqual(it.priceCents, 40);
-  assert.deepEqual(banners, ['1 roll is now 500 ft at $0.40 a foot, rounded up to the cent.']);
+  assert.deepEqual(banners, ['1 roll is now 500 ft at $0.40 a foot, the total moved from $198.57 to $200.00.']);
   const stuck = { catalogId: null, name: 'wire', unit: 'ft', qty: 100, costCents: null, priceCents: 40 };
   const before = JSON.stringify(stuck);
   lineSwitchUnit(stuck, Object.assign({}, w.opts, { markupPct: 15 }), null);
   assert.strictEqual(JSON.stringify(stuck), before);
+});
+
+// A TAP THAT CANNOT WORK STILL HAS TO ANSWER. One foot off a 2,500 ft reel is
+// 0.0004 of a reel, which rounds away to nothing, so convertLineUnit refuses
+// rather than hand back a line holding no wire. The refusal was swallowed: no
+// banner, no close, the strip sitting open under a button that read as broken.
+test('lineSwitchUnit: a line shorter than a thousandth of a roll says so and stays put', () => {
+  const w = world({ unit: 'ft', rollFt: 2500 });
+  const it = { catalogId: w.part.id, name: '#8 THHN', unit: 'ft', qty: 1, costCents: null, priceCents: 110, listCents: 95, listPerM: 95284, rollFt: 2500 };
+  w.items.push(it);
+  banners.length = 0;
+  const closes = [];
+  lineSwitchUnit(it, Object.assign({}, w.opts, { markupPct: 15, onClose: () => closes.push(1) }), 2500);
+  assert.strictEqual(it.unit, 'ft', 'the line is exactly as it was');
+  assert.strictEqual(it.qty, 1);
+  assert.strictEqual(it.priceCents, 110);
+  assert.deepEqual(banners, ['Less than a thousandth of a roll, so it stays by the foot.']);
+  assert.strictEqual(closes.length, 1, 'the strip is answered and closes');
+  assert.strictEqual(w.saved.length, 0, 'nothing to save, so nothing was saved');
 });
 
 // persist() has already put "Couldn't save" on the glass. A second banner

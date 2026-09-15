@@ -1049,11 +1049,26 @@ test('itemLineText: a length line with a roll length says the other unit too', (
   assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: 40, listCents: 35, rollFt: 500 }, 15), '500 ft at $0.40 · 1 roll · QED $0.35');
   assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: 40, listCents: 35 }, 15), '500 ft at $0.40 · QED $0.35', 'no length, no second unit');
   assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 35, lotCents: 21600, rollFt: 500 }, 15), '500 ft · $216.00 the lot · 1 roll · QED $0.35');
+  // A foot off a 2,500 ft reel is 0.0004 of a reel, and the three decimals the
+  // count keeps read that as nothing. "0 rolls" would say the line holds no
+  // wire, so the second unit is simply not said.
+  assert.equal(itemLineText({ unit: 'ft', qty: 1, costCents: null, priceCents: 40, listCents: 35, rollFt: 2500 }, 15), '1 ft at $0.40 · QED $0.35', 'never 0 rolls');
 });
 
 test('lineSwitchText: what the flip did, in his words', () => {
   assert.equal(lineSwitchText({ unit: 'ft', qty: 500, priceCents: 40 }, { unit: 'roll', qty: 1, priceCents: 20000 }), '500 ft is now 1 roll at $200.00.');
-  assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 19857 }, { unit: 'ft', qty: 500, priceCents: 40 }), '1 roll is now 500 ft at $0.40 a foot, rounded up to the cent.');
   assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 20000 }, { unit: 'ft', qty: 500, priceCents: 40 }), '1 roll is now 500 ft at $0.40 a foot.');
   assert.equal(lineSwitchText({ unit: 'ft', qty: 750, priceCents: null }, { unit: 'roll', qty: 1.5, priceCents: null }), '750 ft is now 1.5 rolls.');
+});
+
+// THE TOTAL MOVED, IN BOTH DIRECTIONS. A flip is arithmetic he expects to come
+// out even, so the one thing worth saying is when it did not. The old sentence
+// said "rounded up to the cent", which named the cause on the way to feet and
+// left the way back silent: a fraction of a roll multiplies a per-foot price
+// into a per-roll one and lands somewhere else again.
+test('lineSwitchText: when the total moves, it says both numbers', () => {
+  assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 19857 }, { unit: 'ft', qty: 500, priceCents: 40 }),
+    '1 roll is now 500 ft at $0.40 a foot, the total moved from $198.57 to $200.00.');
+  assert.equal(lineSwitchText({ unit: 'ft', qty: 2, priceCents: 40 }, { unit: 'roll', qty: 0.001, priceCents: 100000 }),
+    '2 ft is now 0.001 rolls at $1,000.00, the total moved from $0.80 to $1.00.');
 });

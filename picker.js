@@ -480,11 +480,20 @@ function lineAskLot(it, opts) {
 // THE FLIP. A new line comes back from BidMath.convertLineUnit; it is copied
 // onto the line he tapped field by field, under one save whose restore puts
 // every field back exactly, and the banner says the count it was, the count
-// it is, and the price it landed on. A line that cannot flip (no length, or
-// not a length at all) does nothing rather than half of something.
+// it is, and the price it landed on.
+//
+// A LINE SHORTER THAN A THOUSANDTH OF A ROLL CANNOT FLIP, and it has to SAY
+// so. One foot off a 2,500 ft reel is 0.0004 of a reel, which rounds away to
+// nothing, and convertLineUnit refuses rather than hand back a line of no
+// wire. Swallowing that refusal left the strip sitting open under a tap that
+// did nothing at all, which on a phone reads as a broken button.
 function lineSwitchUnit(it, opts, rollFt) {
   const next = BidMath.convertLineUnit(it, it.unit === 'ft' ? 'roll' : 'ft', rollFt);
-  if (!next) return;
+  if (!next) {
+    showBanner('Less than a thousandth of a roll, so it stays by the foot.');
+    opts.onClose();
+    return;
+  }
   const before = Object.assign({}, it);
   const keys = ['unit', 'qty', 'priceCents', 'costCents', 'listCents', 'rollFt'];
   keys.forEach((k) => { if (k in next) it[k] = next[k]; });
