@@ -503,6 +503,9 @@ test('newParts builds a catalog part, stamped and linked', () => {
     priceCheckedISO: '2026-09-09',
     lastPriceCents: null,
     lastPriceISO: null,
+    // A breaker is not a length: no roll, and no per-thousand basis (v3.5).
+    rollFt: null,
+    lastListPerM: null,
     variantOf: 'g1',
     source: { kind: 'qed', checkedISO: '2026-09-09' },
   });

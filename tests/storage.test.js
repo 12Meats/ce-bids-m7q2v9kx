@@ -1493,3 +1493,49 @@ test('recordCatalogUse leaves the cost memory alone when not given one; remember
   S.rememberPrice(d, 'nope', 1, '2026-09-14');   // an unknown part is ignored, not thrown
   assert.ok(S.validateImport(JSON.stringify(d)), 'what the app wrote, the app loads');
 });
+
+// ---------------------------------------------------------------------------
+// v3.5: THE ROLL LENGTH AND QED'S PER-THOUSAND BASIS
+// ---------------------------------------------------------------------------
+// Both optional on a part and both optional on a line, so every backup written
+// before v3.5 loads exactly as it always did. A roll of no length is refused
+// because it is not a length: everything that reads it would divide by nothing.
+test('validateImport: a part may carry a roll length and QED\'s per-thousand basis (v3.5)', () => {
+  const { d } = buildFullData();
+  const base = JSON.stringify(d);
+  const ok = JSON.parse(base); ok.catalog[0].rollFt = 500; ok.catalog[0].lastListPerM = 34534;
+  assert.ok(S.validateImport(JSON.stringify(ok)));
+  const nulls = JSON.parse(base); nulls.catalog[0].rollFt = null; nulls.catalog[0].lastListPerM = null;
+  assert.ok(S.validateImport(JSON.stringify(nulls)));
+  const zero = JSON.parse(base); zero.catalog[0].rollFt = 0;
+  assert.strictEqual(S.validateImport(JSON.stringify(zero)), null, 'a roll of no length is not a length');
+  const frac = JSON.parse(base); frac.catalog[0].rollFt = 500.5;
+  assert.strictEqual(S.validateImport(JSON.stringify(frac)), null);
+  const neg = JSON.parse(base); neg.catalog[0].lastListPerM = -1;
+  assert.strictEqual(S.validateImport(JSON.stringify(neg)), null);
+});
+
+test('validateImport: a line may carry its roll length and basis too (v3.5)', () => {
+  const { d } = buildFullData();
+  const base = JSON.stringify(d);
+  const ok = JSON.parse(base); ok.bids[0].areas[0].items[0].rollFt = 500; ok.bids[0].areas[0].items[0].listPerM = 34534;
+  assert.ok(S.validateImport(JSON.stringify(ok)));
+  const nulls = JSON.parse(base); nulls.bids[0].areas[0].items[0].rollFt = null; nulls.bids[0].areas[0].items[0].listPerM = null;
+  assert.ok(S.validateImport(JSON.stringify(nulls)));
+  const bad = JSON.parse(base); bad.bids[0].areas[0].items[0].rollFt = '500';
+  assert.strictEqual(S.validateImport(JSON.stringify(bad)), null);
+});
+
+test('seed: the three small-wire parts come by the roll with a 500 ft roll length; the rest have none', () => {
+  const d = S.emptyData();
+  const twelve = d.catalog.find((p) => p.name === '#12 THHN');
+  assert.strictEqual(twelve.unit, 'roll');
+  assert.strictEqual(twelve.rollFt, 500);
+  assert.strictEqual(twelve.lastListPerM, null);
+  const eight = d.catalog.find((p) => p.name === '#8 THHN');
+  assert.strictEqual(eight.unit, 'ft');
+  assert.strictEqual(eight.rollFt, null);
+  const emt = d.catalog.find((p) => p.name === '3/4" EMT');
+  assert.strictEqual(emt.rollFt, null);
+  assert.ok(S.validateImport(JSON.stringify(d)));
+});

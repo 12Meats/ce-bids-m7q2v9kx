@@ -398,7 +398,11 @@
         // restores without it and every PDF simply reads as pending, so the
         // document version does not have to move.
         lastBackupAt: null, pdfsSentThroughMs: null },
-      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null })),
+      // rollFt: the three small-wire spools are 500 ft, his own habit and
+      // QED's. Everything else has no roll until the import reads one off
+      // QED's title or he types one in Settings, and no roll is the truth for
+      // pipe, for a fitting, and for feeder wire he buys cut to length.
+      catalog: SEED_CATALOG.map(([category, name, unit]) => ({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null, rollFt: (category === 'wire' && unit === 'roll') ? 500 : null, lastListPerM: null })),
       customers: [], bids: [], projects: [], logs: [], invoices: [] };
   }
 
@@ -408,6 +412,7 @@
 
   function isIntGte0(v) { return Number.isInteger(v) && v >= 0; }
   function isIntGte0OrNull(v) { return v === null || isIntGte0(v); }
+  function isIntGt0OrNull(v) { return v === null || (Number.isInteger(v) && v > 0); }
   function isPct(v) { return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 100; }
   function isFiniteNum(v) { return typeof v === 'number' && isFinite(v); }
   function isFiniteGte0(v) { return isFiniteNum(v) && v >= 0; }
@@ -576,6 +581,13 @@
         // carries the date so a stale habit sits next to QED's number, dated.
         if (p.lastPriceCents !== undefined && !isIntGte0OrNull(p.lastPriceCents)) return null;
         if (p.lastPriceISO !== undefined && p.lastPriceISO !== null && !isISO(p.lastPriceISO)) return null;
+        // OPTIONAL, both new in v3.5, for wire, cable and cord. rollFt is the
+        // length QED sells it in (500 for the small spools), off the title at
+        // import or typed once in Settings; a length of nothing is not a
+        // length. lastListPerM is QED's price per thousand feet, the exact
+        // basis per foot and per roll are both read off (BidMath.listForUnit).
+        if (p.rollFt !== undefined && !isIntGt0OrNull(p.rollFt)) return null;
+        if (p.lastListPerM !== undefined && !isIntGte0OrNull(p.lastListPerM)) return null;
         // OPTIONAL, the supplier's handle on the part: QED's part number, QED's
         // own name, and the day a price file last touched it. Absent on every
         // file older than v2.4. A number where a name goes is refused, so a
@@ -641,6 +653,12 @@
         // Absent on every line written before v2.3; null means "not set" too.
         if (it.listCents !== undefined && !isIntGte0OrNull(it.listCents)) return false;
         if (it.lotCents !== undefined && !isIntGte0OrNull(it.lotCents)) return false;
+        // OPTIONAL, both new in v3.5: the roll length and QED's per-thousand
+        // basis, copied off the part the day the line was added so the line
+        // can be flipped between feet and rolls on its own later, whatever
+        // the catalog says by then.
+        if (it.rollFt !== undefined && !isIntGt0OrNull(it.rollFt)) return false;
+        if (it.listPerM !== undefined && !isIntGte0OrNull(it.listPerM)) return false;
         // OPTIONAL: the supplier's name for the part, remembered on the line
         // the day it was added so the paper prints the specific product and
         // a later import never rewrites paper already out. Capped at 120, the
@@ -1269,7 +1287,7 @@
     const nm = Catalog.straighten(name);
     if (!nm) return null;
     const un = String(unit || '');
-    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null };
+    const p = { id: uid(), category: cat, name: nm, unit: un, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null, rollFt: null, lastListPerM: null };
     d.catalog.push(p); return p;
   }
   // A tool he owns, added from Settings or from the price screen's picker.
@@ -1340,7 +1358,7 @@
     SEED_CATALOG.forEach(([category, name, unit]) => {
       if (have.has(Catalog.normalizeName(name))) return;
       have.add(Catalog.normalizeName(name));
-      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null });
+      d.catalog.push({ id: uid(), category, name, unit, lastCostCents: null, lastListCents: null, uses: 0, hidden: false, sku: null, supplierName: null, priceCheckedISO: null, lastPriceCents: null, lastPriceISO: null, rollFt: null, lastListPerM: null });
       added += 1;
     });
     return added;
