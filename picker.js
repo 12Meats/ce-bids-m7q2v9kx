@@ -357,17 +357,23 @@ function lineAskPrice(it, opts) {
   const part = lineCatalogPart(it, opts.data);
   const lot = it.lotCents != null;
   const printed = BidMath.itemPrice(it, opts.markupPct);
+  // The caption is what the suggestion rows have room to push off the screen.
+  // On a 375x667 phone two lines of it over two rows put Done below the fold,
+  // and the rows say the same thing better: a suggestion on the glass names
+  // itself, so the sentence goes. With no suggestion there is none to go back
+  // to either, so what is left of the sentence does not mention one.
+  const sugg = lot ? [] : priceSuggestions(it, part, opts.markupPct);
   promptMoney(!lot && printed.unit > 0 ? printed.unit : null, {
     label: partPriceLabel(it.name, it.unit),
     caption: lot
       ? 'This line is priced as a lot at ' + moneyText(it.lotCents) + '. The lot wins until you clear it.'
-      : 'What the paper prints, to the penny. Clear to go back to the suggestion.',
+      : (sugg.length > 0 ? '' : 'What the paper prints, to the penny.'),
     captionAction: {
       label: lot ? "Change the whole line's price" : 'Price the whole line instead',
       closes: true,
       onTap: () => lineAskLot(it, opts),
     },
-    suggestions: lot ? [] : priceSuggestions(it, part, opts.markupPct),
+    suggestions: sugg,
     done: (cents) => {
       const prev = it.priceCents;
       const prevLast = part ? part.lastPriceCents : undefined;
@@ -1037,6 +1043,22 @@ function pickerMatches(ps, opts) {
   });
 }
 
+// The number on the right of a row in the parts drawer. It is a PROMISE about
+// the next step: the price the keypad behind this row will open on, so what he
+// reads here is what he will see there and Done is one tap. His own last price
+// first, then QED's list plus the markup, and the bare unit when the part has
+// neither and the keypad opens empty.
+//
+// It printed p.lastCostCents until v3.4, which is what he PAID, a number no
+// screen shows him any more and one nothing has written since the Cost keypad
+// was retired: every part added since read "ea" where a price belonged.
+function pickerRowValue(p, markupPct) {
+  const cents = Number.isInteger(p.lastPriceCents)
+    ? p.lastPriceCents
+    : BidMath.suggestedUnit({ listCents: p.lastListCents }, markupPct);
+  return cents == null ? p.unit : BidMath.fmt(cents) + ' / ' + p.unit;
+}
+
 function pickerList(ps, opts, box) {
   box.textContent = '';
   const searching = ps.search.trim() !== '';
@@ -1065,9 +1087,7 @@ function pickerList(ps, opts, box) {
       const options = counts.get(p.id) || 0;
       if (options) bits.push(pickerOptionsTag(options));
       const sub = bits.join(' · ');
-      const value = p.lastCostCents === null
-        ? p.unit
-        : BidMath.fmt(p.lastCostCents) + ' / ' + p.unit;
+      const value = pickerRowValue(p, opts.markupPct);
       // A generic with options takes a chevron, because the tap opens
       // something; a plain part keeps the keypad look it always had.
       box.appendChild(lineRow(p.name, sub, value, () => {

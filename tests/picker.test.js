@@ -54,7 +54,7 @@ const { pickerState, pickerCommitItem, pickerBackStep, renderItemPicker,
   partQtyLabel, partPriceLabel, partListLabel, partLotLabel,
   lineAskPrice, lineAskList,
   rentalSubText, equipSubText, addEquipment, pushEquipment, entryStatusPill,
-  pickerChooserRows, pickerOptionsTag, pickerVariantCounts } = sandbox;
+  pickerChooserRows, pickerOptionsTag, pickerVariantCounts, pickerRowValue } = sandbox;
 
 // A world with one part in the catalog and one list to push onto: the log
 // entry's items and an area's items are the same array to this code, which is
@@ -520,6 +520,21 @@ test('pickerState starts with no chooser open', () => {
   assert.strictEqual(pickerState().choose, null);
 });
 
+// The number on the right of every row in the parts drawer: a promise about
+// the next step, which is the keypad this row opens. It printed what he PAID
+// until v3.4 retired that keypad, and nothing has written the field since.
+test('pickerRowValue promises the number the Price keypad will open on', () => {
+  assert.equal(pickerRowValue({ unit: 'roll', lastPriceCents: 20000, lastListCents: 17267 }, 15),
+    '$200.00 / roll', 'his own price first: it is what the keypad opens on');
+  assert.equal(pickerRowValue({ unit: 'roll', lastPriceCents: null, lastListCents: 17267 }, 15),
+    '$198.57 / roll', 'no price of his: QED plus the markup, the one-tap suggestion');
+  assert.equal(pickerRowValue({ unit: 'roll', lastPriceCents: null, lastListCents: null }, 15),
+    'roll', 'neither: the keypad opens empty, so the row promises nothing');
+  assert.equal(pickerRowValue({ unit: 'ea' }, 15), 'ea', 'a part from before either field');
+  assert.equal(pickerRowValue({ unit: 'ea', lastPriceCents: 0, lastListCents: 1800 }, 15),
+    '$0.00 / ea', 'a price of nothing is a price he typed');
+});
+
 test('lineAskPrice: writes his price on the line and into the catalog, Clear takes both off', () => {
   const w = world({ lastListCents: 1800 });
   const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 1800 };
@@ -530,6 +545,9 @@ test('lineAskPrice: writes his price on the line and into the catalog, Clear tak
   assert.strictEqual(opened.cur, 2070, 'opens on what the line prints today, the suggestion');
   assert.equal(opened.o.label, '#12 THHN, price per foot');
   assert.deepEqual(opened.o.suggestions, [{ label: 'QED list + 15%', cents: 2070 }]);
+  // No caption over a suggestion row: the row says it, and the sentence over
+  // it is what put Done below the fold on a 375x667 phone. The link stays.
+  assert.equal(opened.o.caption, '');
   assert.equal(opened.o.captionAction.label, 'Price the whole line instead');
   opened.o.done(2500);
   assert.strictEqual(it.priceCents, 2500);
@@ -543,6 +561,20 @@ test('lineAskPrice: writes his price on the line and into the catalog, Clear tak
   assert.strictEqual(it.priceCents, null, 'Clear: back to the suggestion');
   assert.strictEqual(w.part.lastPriceCents, null);
   assert.strictEqual(w.part.lastPriceISO, null);
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
+});
+
+test('lineAskPrice with nothing to suggest keeps a caption, and it names no suggestion', () => {
+  const w = world({});
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: null };
+  w.items.push(it);
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  lineAskPrice(it, Object.assign({ markupPct: 15 }, w.opts));
+  assert.deepEqual(opened.o.suggestions, []);
+  // Nothing to go back TO, so the old "Clear to go back to the suggestion"
+  // half of this sentence would have been a lie as well as a line of height.
+  assert.equal(opened.o.caption, 'What the paper prints, to the penny.');
   sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
 });
 

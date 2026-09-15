@@ -1996,6 +1996,12 @@
         margin: var(--space-2) 0 var(--space-2);
       }
       .panel-keypad { margin-bottom: var(--space-2); }
+      /* The Price keypad can carry two suggestion rows above the digits, and
+         at 48px with the full gap they pushed Done off the bottom of an SE.
+         40px is still a thumb's worth, and the rows are read before they are
+         tapped. */
+      .panel-suggest-row { min-height: 40px; }
+      .panel-suggest { margin-top: var(--space-1); gap: 6px; }
     }
   </style>
 </head>
