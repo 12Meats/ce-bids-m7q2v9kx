@@ -206,7 +206,9 @@ function renderWalkAreas(bid, edit, host) {
   // paper will print, with the rooms it came out of underneath it.
   host.appendChild(bigNumber(
     BidMath.fmt(areas.reduce((s, a) => s + walkAreaTotal(a, markup), 0)),
-    walkPlural(areas.length, 'area', 'areas') + ' · what the parts print'
+    // "what the parts print" read as the parts doing the printing. What is
+    // meant is the total, so the caption says what it comes to.
+    walkPlural(areas.length, 'area', 'areas') + ' · what the parts come to'
   ));
 
   // ONE SECTION, not a heading and then some loose cards and then a button

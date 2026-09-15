@@ -279,7 +279,10 @@ function buildEstimatingCard(stats) {
     pctText(stats.margin.weightedNowPct), null, reportsMarginSays(stats.margin),
     onTrack ? 'rep-good' : 'rep-bad');
   marginWrap.appendChild(caption(reportsMarginMeanSays(stats.margin)));
-  marginWrap.appendChild(caption("Parts with no cost typed count at QED's list price, so these margins are a floor."));
+  // Both fallbacks, because there are two: a part with a QED list counts at
+  // the list, and one with neither a cost nor a list counts at what he charges
+  // for it. Naming only the first left the second looking like a gap.
+  marginWrap.appendChild(caption("Parts with no cost typed count at QED's list price, or at your price, so these margins are a floor."));
 
   return box;
 }

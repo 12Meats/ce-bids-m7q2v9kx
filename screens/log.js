@@ -799,7 +799,10 @@ function renderLogBilled(host, e, inv) {
     if (m) box.appendChild(row(c.name, logCrewValue(e, c.id), null));
   });
   (e.items || []).forEach((it) => {
-    box.appendChild(lineRow(it.name, itemLineText(it, logMarkup()), null, null));
+    // The INVOICE's markup, snapshotted the day it was drafted, not Settings'
+    // today. These rows say what was billed, and a rate he raised last week
+    // would otherwise re-figure a line on paper that is already in the post.
+    box.appendChild(lineRow(it.name, itemLineText(it, inv.markupPct), null, null));
   });
   (e.rentals || []).forEach((x) => box.appendChild(lineRow(x.name || 'Rental', rentalSubText(x), null, null)));
   (e.equipment || []).forEach((x) => box.appendChild(lineRow(x.name || 'Equipment', equipSubText(x), null, null)));
