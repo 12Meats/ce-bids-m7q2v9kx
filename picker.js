@@ -425,13 +425,32 @@ function lineAskList(it, opts) {
     captionAction: pickerPriceAction(opts.data.settings, it.name),
     done: (cents) => {
       const prev = it.listCents;
+      const prevPerM = it.listPerM;
       const prevLast = part ? part.lastListCents : undefined;
       const prevChecked = part ? part.priceCheckedISO : undefined;
+      const prevPartPerM = part ? part.lastListPerM : undefined;
       it.listCents = cents;                        // null is "no list on this line"
-      if (part) { part.lastListCents = cents; part.priceCheckedISO = null; }
+      // AND QED'S PER-THOUSAND BASIS COMES OFF WITH THE DATE (v3.5). The basis
+      // is the import's number; the one he just typed is his. Left standing it
+      // would win the next flip between feet and rolls and put the file's
+      // number back on the line in place of his, silently. Only written when
+      // there is a basis to drop, so a line that never had one keeps no key.
+      if (Number.isInteger(it.listPerM)) it.listPerM = null;
+      if (part) {
+        part.lastListCents = cents;
+        part.priceCheckedISO = null;
+        if (Number.isInteger(part.lastListPerM)) part.lastListPerM = null;
+      }
       saveLineAndCatalog(opts,
-        () => { it.listCents = prev; },
-        part ? () => { part.lastListCents = prevLast; part.priceCheckedISO = prevChecked; } : null);
+        () => {
+          it.listCents = prev;
+          if (prevPerM === undefined) delete it.listPerM; else it.listPerM = prevPerM;
+        },
+        part ? () => {
+          part.lastListCents = prevLast;
+          part.priceCheckedISO = prevChecked;
+          if (prevPartPerM === undefined) delete part.lastListPerM; else part.lastListPerM = prevPartPerM;
+        } : null);
       opts.onClose();
     },
   });
@@ -469,8 +488,12 @@ function lineSwitchUnit(it, opts, rollFt) {
   const before = Object.assign({}, it);
   const keys = ['unit', 'qty', 'priceCents', 'costCents', 'listCents', 'rollFt'];
   keys.forEach((k) => { if (k in next) it[k] = next[k]; });
-  opts.persistOr(() => { keys.forEach((k) => { if (k in before) it[k] = before[k]; else delete it[k]; }); });
-  showBanner(lineSwitchText(before, it));
+  // The banner only on a save that took. A refused save has already put the
+  // line back and said "Couldn't save"; announcing the flip underneath that
+  // would be the app claiming a change that is not on the line or the disk.
+  if (opts.persistOr(() => { keys.forEach((k) => { if (k in before) it[k] = before[k]; else delete it[k]; }); })) {
+    showBanner(lineSwitchText(before, it));
+  }
   opts.onClose();
 }
 

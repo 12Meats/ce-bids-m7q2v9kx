@@ -744,6 +744,16 @@ test('convertLineUnit: rolls to feet divides, his price rounded up to the cent',
   assert.strictEqual(noBasis.rollFt, 500, 'the length rides on the line from now on');
 });
 
+// A count keeps three decimals, and 1 ft off a 2,500 ft reel is 0.0004 of a
+// reel, which is nothing at three decimals. A line of no wire is not the same
+// wire as a line of one foot, and a quantity of zero would not even pass the
+// validator, so the flip does not happen at all rather than happening wrong.
+test('convertLineUnit: a count that would round away to nothing is refused', () => {
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 1, priceCents: 40 }, 'roll', 2500), null);
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 2, priceCents: 40 }, 'roll', 2500).qty, 0.001, 'two feet still rounds to something');
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 1, priceCents: 40 }, 'roll', 500).qty, 0.002);
+});
+
 test('convertLineUnit: a lot keeps its lot; nothing converts without a length or between other units', () => {
   const lot = B.convertLineUnit({ unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 35, lotCents: 21600 }, 'roll', 500);
   assert.strictEqual(lot.lotCents, 21600);

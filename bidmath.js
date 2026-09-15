@@ -147,8 +147,13 @@
     const toRoll = toUnit === 'roll';
     const q3 = (x) => Math.round(x * 1000) / 1000;
     const scale = (cents, up) => (toRoll ? r(cents * rollFt) : (up ? Math.ceil(cents / rollFt) : r(cents / rollFt)));
+    const qty = toRoll ? q3(it.qty / rollFt) : q3(it.qty * rollFt);
+    // A count that rounds away to nothing is not this line in another unit: a
+    // foot off a 2,500 ft reel is 0.0004 of a reel, and a line of no wire is
+    // not a line of one foot. It would not pass the validator either.
+    if (!(qty > 0)) return null;
     const out = Object.assign({}, it, { unit: toUnit, rollFt });
-    out.qty = toRoll ? q3(it.qty / rollFt) : q3(it.qty * rollFt);
+    out.qty = qty;
     if (Number.isInteger(it.priceCents)) out.priceCents = scale(it.priceCents, true);
     if (Number.isInteger(it.costCents)) out.costCents = scale(it.costCents, false);
     const exact = listForUnit(it.listPerM, toUnit, rollFt);

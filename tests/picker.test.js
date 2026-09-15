@@ -683,6 +683,61 @@ test('lineSwitchUnit: rolls to feet, his price up to the cent; a line with no le
   assert.strictEqual(JSON.stringify(stuck), before);
 });
 
+// persist() has already put "Couldn't save" on the glass. A second banner
+// underneath it saying the line is now 1.5 rolls would be the app announcing
+// a flip that was rolled back a line earlier.
+test('lineSwitchUnit: a refused save puts the line back and claims nothing', () => {
+  const w = world({ unit: 'ft', rollFt: 500 });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 750, costCents: null, priceCents: 40, listCents: 35, listPerM: 34534, rollFt: 500 };
+  w.items.push(it);
+  banners.length = 0;
+  lineSwitchUnit(it, Object.assign({}, w.opts, { markupPct: 15, persistOr: (restore) => { restore(); return false; } }), 500);
+  assert.strictEqual(it.unit, 'ft');
+  assert.strictEqual(it.qty, 750);
+  assert.strictEqual(it.priceCents, 40);
+  assert.strictEqual(it.listCents, 35);
+  assert.deepEqual(banners, []);
+});
+
+// QED'S BASIS IS QED'S. A list he types by hand on the line replaces it, the
+// same way it already takes the import's checked-on date off the part. Left
+// standing, the basis won the next flip and quietly put the number the import
+// left behind back on the line in place of the one he typed.
+test('lineAskList: a list he types drops QED\'s per-thousand basis, and the flip follows his number', () => {
+  const w = world({ unit: 'ft', rollFt: 500, lastListCents: 35, lastListPerM: 34534 });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 35, listPerM: 34534, rollFt: 500 };
+  w.items.push(it);
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  lineAskList(it, Object.assign({}, w.opts, { markupPct: 15 }));
+  opened.o.done(50);
+  assert.strictEqual(it.listCents, 50);
+  assert.strictEqual(it.listPerM, null, 'his reading, not the file\'s');
+  assert.strictEqual(w.part.lastListPerM, null);
+  // 500 ft at 50 cents is $250.00 a roll, not the $172.67 the import's basis
+  // would have handed back.
+  lineSwitchUnit(it, Object.assign({}, w.opts, { markupPct: 15 }), 500);
+  assert.strictEqual(it.listCents, 25000);
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
+});
+
+// And a refused save puts both back, including a basis on a line that never
+// had the key at all: a line written before v3.5 has no listPerM, and one set
+// to undefined is not the line it was.
+test('lineAskList: a refused save leaves the line and the part exactly as they were', () => {
+  const w = world({ unit: 'ft', lastListCents: 35 });
+  const it = { catalogId: w.part.id, name: '#12 THHN', unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 35 };
+  w.items.push(it);
+  let opened = null;
+  sandbox.promptMoney = (cur, o) => { opened = { cur, o }; };
+  const opts = Object.assign({}, w.opts, { markupPct: 15, persistOr: (restore) => { restore(); return false; } });
+  lineAskList(it, opts);
+  opened.o.done(50);
+  assert.strictEqual(it.listCents, 35);
+  assert.strictEqual('listPerM' in it, false, 'a key it never had is a key it still does not have');
+  sandbox.promptMoney = () => { throw new Error('promptMoney should not be reached here'); };
+});
+
 // A line written before v3.5 has no roll length of its own. It borrows the
 // part's, which is what makes the switch turn up on wire he put on a bid last
 // month without anything having to migrate the file.
