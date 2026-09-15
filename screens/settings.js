@@ -1846,11 +1846,14 @@ function settingsImportPrices(file) {
     const changing = settingsImportChanging(m.matched);
     const right = settingsImportRightText(m.matched.length, changing, m.creatable.length);
     const summary = PriceFile.summaryText(m) + (right ? ' ' + right : '');
-    // Nothing to update AND nothing to create: there is no question to ask, so
-    // the summary is simply said and the screen stays where it is. A file that
-    // matched three hundred parts and would move none of them is that file,
-    // however many rows it read.
-    if (!changing && !m.creatable.length) { showBanner(summary); render(); return; }
+    // Nothing to update AND nothing to create AND no wire part to hand a roll
+    // length to: there is no question to ask, so the summary is simply said
+    // and the screen stays where it is. A file that matched three hundred
+    // parts and would move none of them is that file, however many rows it
+    // read. The button's two halves still describe the whole deal, because a
+    // roll length only ever rides in with the new options that carry it.
+    const rolls = (m.genericRolls || []).length;
+    if (!changing && !m.creatable.length && !rolls) { showBanner(summary); render(); return; }
     // confirmPanel refuses to open over another open panel; asking anyway
     // would look like the button did nothing, so say why instead.
     if (anyPanelOpen()) { showBanner('Finish what you were doing, then try the import again.'); render(); return; }
@@ -1863,9 +1866,15 @@ function settingsImportPrices(file) {
       // because splicing by index would be wrong the moment anything else on
       // this phone touched the catalog in between.
       const snap = PriceFile.snapshot(m.matched);
+      // And the wire parts about to be handed a roll length, remembered the
+      // same way and before anything is written. A part that never had the
+      // key comes back without it, not with an undefined one: a backup from
+      // before v3.5 carries no rollFt at all.
+      const rollsPrev = (m.genericRolls || []).map((g) => ({ p: g.part, rollFt: g.part.rollFt }));
       let added = [];
       const undo = () => {
         PriceFile.restore(snap);
+        rollsPrev.forEach((b) => { if (b.rollFt === undefined) delete b.p.rollFt; else b.p.rollFt = b.rollFt; });
         if (!added.length) return;
         const ids = new Set(added.map((p) => p.id));
         for (let i = state.data.catalog.length - 1; i >= 0; i -= 1) {
@@ -1880,6 +1889,12 @@ function settingsImportPrices(file) {
       // if his file were the problem.
       try {
         const out = PriceFile.apply(m.matched, parsed.checkedISO);
+        // AFTER apply, on purpose. apply writes the length off the title of
+        // the one row that matched the generic, which can be the master reel;
+        // this is the SMALLEST length its new options carry, which is the
+        // spool he actually buys, and it is the number the confirm he just
+        // read named out loud.
+        (m.genericRolls || []).forEach((g) => { g.part.rollFt = g.rollFt; });
         added = PriceFile.newParts(m.creatable, parsed.checkedISO, Store.uid);
         added.forEach((p) => state.data.catalog.push(p));
         // ONE save for both halves. Two saves would leave a phone that took
@@ -1963,6 +1978,27 @@ function buildSetCatalogRow(box, p, searching, options) {
     }],
   ];
 
+  // FEET ON A ROLL, for wire, cable and cord: the length QED sells it in, so
+  // a line of it can be billed by the roll or by the foot and the app does
+  // the arithmetic. The import fills it off QED's title; this is the door
+  // for a part QED did not, and the correction when he buys a longer reel.
+  // Clear is "it comes cut to length": no roll, no switch.
+  if (p.unit === 'ft' || p.unit === 'roll') {
+    actions.push(['Roll length', '', () => {
+      promptNumber(Number.isInteger(p.rollFt) && p.rollFt > 0 ? p.rollFt : null, {
+        label: (p.name || 'This part') + ', feet on a roll',
+        caption: 'The length QED sells it in. Clear if it comes cut to length.',
+        maxChars: 5,
+        done: (v) => {
+          const prev = p.rollFt;
+          if (v !== null && !(v > 0)) { showBanner('A roll has to be longer than nothing'); render(); return; }
+          p.rollFt = v === null ? null : Math.round(v);
+          settingsSaveAndRender(() => { p.rollFt = prev; });
+        },
+      });
+    }]);
+  }
+
   // WHICH GENERIC THIS PART RIDES UNDER. Offered on every part except one that
   // already has options of its own: a generic that became an option of
   // something else would be a chooser inside a chooser. This is the door his
@@ -1996,6 +2032,10 @@ function settingsCatalogSub(p, searching, options) {
     bits.push('list ' + moneyText(p.lastListCents) + (p.priceCheckedISO ? ', ' + fmtDate(p.priceCheckedISO) : ''));
   }
   if (Number.isInteger(p.lastPriceCents)) bits.push('yours ' + moneyText(p.lastPriceCents));
+  // How long a roll of it is, when the part is a length that comes on one. It
+  // is what decides whether a line of this part gets the foot/roll switch, so
+  // the row says it rather than making him open the strip to find out.
+  if (Number.isInteger(p.rollFt) && p.rollFt > 0) bits.push(p.rollFt + ' ft rolls');
   // Where the ROW came from, which is not the same fact as the part number
   // above it: he can type a QED number onto a part of his own, and that part
   // is still one he typed. This is what the filter chips are filtering on.

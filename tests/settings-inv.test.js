@@ -375,6 +375,14 @@ test('settingsCatalogSub says where a part came from and how many options it has
   // beside it (v3.4), so the two numbers sit together where he compares them.
   const byHand = catPart('60 A 3-pole breaker · B360', { lastListCents: 9900, lastPriceCents: 11400 });
   assert.strictEqual(settingsCatalogSub(byHand, false, 0), 'list $99.00 · yours $114.00');
+
+  // How long a roll of it is (v3.5), last of the part's own facts, because it
+  // is what decides whether a line of it can be billed the other way. A part
+  // that comes cut to length says nothing about rolls at all.
+  const wire = catPart('#12 THHN', { category: 'wire', unit: 'roll', lastListCents: 17267, rollFt: 500 });
+  assert.strictEqual(settingsCatalogSub(wire, false, 0), 'list $172.67 · 500 ft rolls');
+  const cut = catPart('1/0 THHN', { category: 'wire', unit: 'ft', lastListCents: 503, rollFt: null });
+  assert.strictEqual(settingsCatalogSub(cut, false, 0), 'list $5.03');
 });
 
 // Only the parts that could actually hold an option: same drawer, still on the
