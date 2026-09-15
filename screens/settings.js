@@ -271,13 +271,21 @@ function settingsVisibleNamesake(entry, list) {
 // take anything out of it. So each row asks Store first:
 //
 //   nothing points at it   — Hide AND Delete, and Delete really splices it out
-//   something points at it — Hide only, and the caption says how many bids
+//   something points at it — Hide only, and the caption says how many records
 //
 // Hide is on both sides of that line. A tool he put away by mistake must not be
 // reachable only through deleting it, and a tool he wants out of the picker
 // until spring must not have to be deleted to get there.
+//
+// The count is not a count of bids. Store.catalogInUse and equipmentInUse add
+// up bids, visits and invoices, because a part or a tool is named by all three
+// now, and the sentence said "On 3 bids" over a number that was two visits and
+// an invoice. One number over the three kinds it could have come from is
+// honest and costs him no second count to read.
 function settingsInUseText(uses) {
-  return 'On ' + uses + ' bid' + (uses === 1 ? '' : 's') + ', so it can be hidden but not deleted.';
+  return uses === 1
+    ? 'In use on 1 bid, visit or invoice, so it can be hidden but not deleted.'
+    : 'In use on ' + uses + ' bids, visits or invoices, so it can be hidden but not deleted.';
 }
 
 // Muted text, last in the strip, and the red is left to the confirm panel it

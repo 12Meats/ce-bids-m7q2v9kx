@@ -64,7 +64,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'picker.js'), 'utf8'), sandbox, 
 vm.runInContext(fs.readFileSync(path.join(root, 'screens', 'settings.js'), 'utf8'), sandbox,
   { filename: 'settings.js' });
 
-const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption,
+const { settingsInvoiceNumberRefusal, settingsCustomerUseCaption, settingsInUseText,
   settingsCustomerValue, settingsAddressValue, settingsBackupPdfName,
   settingsPriceSearchIsDefault, settingsPriceSearchValue,
   settingsWageLabel, settingsRateLabel,
@@ -138,6 +138,18 @@ test('the caption names every kind that points at the customer, singular and plu
 
 test('nothing pointing at it is not a sentence: that is where Delete turns up', () => {
   assert.strictEqual(settingsCustomerUseCaption({ bids: 0, projects: 0, logs: 0, invoices: 0 }), null);
+});
+
+// The same caption for the other four lists, which have one number and not a
+// breakdown. It used to call that number bids. Store.catalogInUse and
+// equipmentInUse add up bids, visits and invoices, so "On 3 bids" over two
+// visits and an invoice sent him looking through the bids for a part that was
+// not on any of them.
+test('the one-number caption names all three kinds the number could have come from', () => {
+  assert.strictEqual(settingsInUseText(3),
+    'In use on 3 bids, visits or invoices, so it can be hidden but not deleted.');
+  assert.strictEqual(settingsInUseText(1),
+    'In use on 1 bid, visit or invoice, so it can be hidden but not deleted.');
 });
 
 test('the counts it is handed are the ones storage keeps', () => {

@@ -557,8 +557,8 @@ test('load of corrupt text stashes the raw value and reports loadProblem "corrup
 // WHAT IS STILL POINTED AT
 // ---------------------------------------------------------------------------
 // The four questions Settings asks before it offers a real Delete. Each one
-// counts BIDS, not references: the caption says "On 2 bids", and a tool on
-// three lines of one bid is still one bid.
+// counts RECORDS, not references: the caption says "In use on 2 bids, visits
+// or invoices", and a tool on three lines of one bid is still one bid.
 
 test('equipmentInUse counts the bids whose lines point at a tool, and nothing else', () => {
   const { d } = buildFullData();
