@@ -36,7 +36,7 @@ const { bidPdfParse, bidPdfPrefix, invoicePdfParse, invoicePdfPrefix,
   bidPhotoIds, isEmailAddress, unpricedLines, unpricedBlockText,
   unpricedTarget, navTarget, bidStepDone,
   crewDaysText, daysText, detailCaption, itemCountText,
-  itemLineText, priceSuggestions, areaNoteLine, perUnitText, areaTallyText,
+  itemLineText, priceSuggestions, lineSwitchText, areaNoteLine, perUnitText, areaTallyText,
   priceSearchUrl, deferredBanner } = sandbox;
 // A top-level const is lexical, not a property of the context object, so the
 // shared strings are read back the way the file itself would read them.
@@ -1037,4 +1037,23 @@ test('invoicePdfIds keeps the PDFs of invoices still on the file and nothing els
   assert.deepEqual(invoicePdfIds({}, ids), []);
   assert.deepEqual(invoicePdfIds(data, null), []);
   assert.deepEqual(invoicePdfIds(null, ids), []);
+});
+
+// ---------------------------------------------------------------------------
+// v3.5: THE ROW SAYS BOTH UNITS, AND THE FLIP SAYS WHAT IT DID
+// ---------------------------------------------------------------------------
+test('itemLineText: a length line with a roll length says the other unit too', () => {
+  assert.equal(itemLineText({ unit: 'roll', qty: 1, costCents: null, priceCents: 19857, listCents: 17267, rollFt: 500 }, 15), '1 roll at $198.57 · 500 ft · QED $172.67');
+  assert.equal(itemLineText({ unit: 'roll', qty: 1.5, costCents: null, priceCents: null, listCents: 17267, rollFt: 500 }, 15), '1.5 rolls at $198.57 suggested · 750 ft · QED $172.67');
+  assert.equal(itemLineText({ unit: 'ft', qty: 750, costCents: null, priceCents: 40, listCents: 35, rollFt: 500 }, 15), '750 ft at $0.40 · 1.5 rolls · QED $0.35');
+  assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: 40, listCents: 35, rollFt: 500 }, 15), '500 ft at $0.40 · 1 roll · QED $0.35');
+  assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: 40, listCents: 35 }, 15), '500 ft at $0.40 · QED $0.35', 'no length, no second unit');
+  assert.equal(itemLineText({ unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 35, lotCents: 21600, rollFt: 500 }, 15), '500 ft · $216.00 the lot · 1 roll · QED $0.35');
+});
+
+test('lineSwitchText: what the flip did, in his words', () => {
+  assert.equal(lineSwitchText({ unit: 'ft', qty: 500, priceCents: 40 }, { unit: 'roll', qty: 1, priceCents: 20000 }), '500 ft is now 1 roll at $200.00.');
+  assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 19857 }, { unit: 'ft', qty: 500, priceCents: 40 }), '1 roll is now 500 ft at $0.40 a foot, rounded up to the cent.');
+  assert.equal(lineSwitchText({ unit: 'roll', qty: 1, priceCents: 20000 }, { unit: 'ft', qty: 500, priceCents: 40 }), '1 roll is now 500 ft at $0.40 a foot.');
+  assert.equal(lineSwitchText({ unit: 'ft', qty: 750, priceCents: null }, { unit: 'roll', qty: 1.5, priceCents: null }), '750 ft is now 1.5 rolls.');
 });

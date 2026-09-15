@@ -876,10 +876,20 @@ function itemLineText(it, markupPct) {
   const p = BidMath.itemPrice(it, markupPct);
   const count = numText(it.qty) + ' ' + (it.qty === 1 ? it.unit : (UNIT_PLURAL[it.unit] || it.unit));
   const qed = Number.isInteger(it.listCents) && it.listCents > 0 ? ' · QED ' + BidMath.fmt(it.listCents) : '';
-  if (p.unit == null) return count + ' · ' + BidMath.fmt(p.cents) + ' the lot' + qed;
-  if (!(p.unit > 0)) return count + ', no price yet' + qed;
+  // The other way of counting a length, when the line knows its roll: "500
+  // ft" beside a roll, "1.5 rolls" beside feet, so a flip is never a
+  // surprise and a count in either unit reads as the same wire.
+  const roll = Number.isInteger(it.rollFt) && it.rollFt > 0 ? it.rollFt : null;
+  let other = '';
+  if (roll && it.unit === 'roll') other = ' · ' + numText(it.qty * roll) + ' ft';
+  else if (roll && it.unit === 'ft') {
+    const n = Math.round(it.qty / roll * 1000) / 1000;
+    other = ' · ' + numText(n) + (n === 1 ? ' roll' : ' rolls');
+  }
+  if (p.unit == null) return count + ' · ' + BidMath.fmt(p.cents) + ' the lot' + other + qed;
+  if (!(p.unit > 0)) return count + ', no price yet' + other + qed;
   const own = Number.isInteger(it.priceCents);
-  return count + ' at ' + BidMath.fmt(p.unit) + (own ? '' : ' suggested') + qed;
+  return count + ' at ' + BidMath.fmt(p.unit) + (own ? '' : ' suggested') + other + qed;
 }
 
 // The rows above the Price keypad's digits: QED's list plus the markup first
@@ -900,6 +910,22 @@ function priceSuggestions(it, part, markupPct) {
     out.push({ label: 'Last time' + (part.lastPriceISO ? ', ' + fmtDate(part.lastPriceISO) : ''), cents: part.lastPriceCents });
   }
   return out;
+}
+
+// The banner after a flip between feet and rolls: the count it was, the count
+// it is, and the price per unit it landed on. Says when the trip to feet
+// rounded his price up to the cent, because that is the one moment the
+// line's total moved without him typing anything.
+function lineSwitchText(before, after) {
+  const count = (it) => numText(it.qty) + ' ' + (it.qty === 1 ? it.unit : (UNIT_PLURAL[it.unit] || it.unit));
+  let s = count(before) + ' is now ' + count(after);
+  if (Number.isInteger(after.priceCents)) {
+    s += ' at ' + BidMath.fmt(after.priceCents) + (after.unit === 'ft' ? ' a foot' : '');
+    const rounded = after.unit === 'ft' && Number.isInteger(before.priceCents)
+      && Math.round(after.priceCents * after.qty) !== Math.round(before.priceCents * before.qty);
+    if (rounded) s += ', rounded up to the cent';
+  }
+  return s + '.';
 }
 
 // Order matters: what goes on everything, then the three kinds of job that
