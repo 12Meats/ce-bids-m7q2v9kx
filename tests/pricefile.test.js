@@ -535,16 +535,26 @@ test('newParts: no generic means no variantOf key', () => {
 });
 
 // The price is converted into the unit the part is actually counted in, the
-// same arithmetic an update goes through. A per QED sells by that cannot cross
-// into his unit leaves the part with no bill-at price rather than a guess.
-test('newParts: the price crosses into the part unit, or does not come at all', () => {
-  const perC = creatableFor({ unit: 'ft', name: '1" EMT · 101543',
+// same arithmetic an update goes through.
+//
+// The second case is the one row that comes with NO price: per thousand feet,
+// on a part counted by the roll, off a title that says no length at all. What
+// one roll of it costs depends on how long the roll is, and nothing here knows.
+// A title that DOES say "500ft Spool" crosses fine, through the length plan()
+// reads off it, and the plan/newParts test further down pins that; this case
+// used to be written with a spool title and a hand-built creatable missing the
+// length plan() would have put on it, so it asserted the opposite of what the
+// app does. Guessing is what the walk's price keypad is for.
+test('newParts: the price crosses into the part unit, and cut wire on a roll part has none to cross', () => {
+  const perC = creatableFor({ unit: 'ft', name: '1" EMT · 101543', rollFt: null,
     row: { sku: '3362', name: "1\" x 10' Steel EMT Conduit", listCents: 7679, per: 'c' } });
-  const perRoll = creatableFor({ unit: 'roll', name: '#12 THHN · B07827',
-    row: { sku: 'x', name: 'THHN #12 (500ft Spool)', listCents: 18000, per: 'm' } });
-  const made = P.newParts([perC, perRoll], '2026-09-09', counter());
+  const cutOnRoll = creatableFor({ unit: 'roll', name: '#12 THHN · B08002', rollFt: null,
+    row: { sku: 'x', name: 'THHN #12 Stranded BLACK Wire, Copper Conductor (Cut to Length)', listCents: 18000, per: 'm' } });
+  const made = P.newParts([perC, cutOnRoll], '2026-09-09', counter());
   assert.strictEqual(made[0].lastListCents, 77);
-  assert.strictEqual(made[1].lastListCents, null);
+  assert.strictEqual(made[1].lastListCents, null, 'no roll length, so no price for one roll');
+  assert.strictEqual(made[1].rollFt, null);
+  assert.strictEqual(made[1].lastListPerM, 18000, "QED's basis is QED's basis either way");
 });
 
 // The supplier's own title is what prints on the paper, and it wears the same
@@ -719,6 +729,32 @@ test('a roll length is only ever taken for a part counted by the foot or the rol
   assert.strictEqual(made[0].unit, 'ea');
   assert.strictEqual(made[0].rollFt, null);
   assert.strictEqual(made[0].lastListPerM, null);
+});
+
+// AND NEITHER IS THE BASIS. "Cents per thousand feet" is a fact about wire,
+// cable and cord. QED quotes half the fittings in the real file per hundred,
+// and per-hundred converts on anything counted, so the basis was landing on
+// connectors and breakers: a number that means nothing, which suggestedUnit
+// and the foot/roll flip would both go on to read. Same rule as the roll
+// length, same gate.
+test('the per-thousand basis is only ever written on a length, whichever door the part came through', () => {
+  const made = P.newParts([creatableFor({ unit: 'ea', name: '1" EMT connector · 101543', rollFt: null,
+    row: { sku: '3362', name: '1" Steel EMT Setscrew Connector', listCents: 7679, per: 'c' } })], '2026-09-14', counter());
+  assert.strictEqual(made[0].lastListCents, 77, 'the price still crosses into his unit');
+  assert.strictEqual(made[0].lastListPerM, null);
+
+  // And the same row landing on a part he already has. match still works the
+  // number out (it is the row's own arithmetic); apply is what refuses to put
+  // it on a counted part, and it leaves the key OFF rather than writing a null
+  // onto a part that never had one.
+  const d = catalogWith([{ name: '1" EMT connector', unit: 'ea', sku: '3362' }]);
+  const m = P.match([{ sku: '3362', name: '1" Steel EMT Setscrew Connector', listCents: 9528, per: 'm' }], d.catalog);
+  assert.strictEqual(m.matched.length, 1);
+  assert.strictEqual(m.matched[0].newPerM, 9528);
+  P.apply(m.matched, '2026-09-14');
+  assert.strictEqual('lastListPerM' in d.catalog[0], false);
+  assert.strictEqual(d.catalog[0].lastListCents, 10, 'the price came through');
+  assert.ok(S.validateImport(JSON.stringify(d)));
 });
 
 test('perMOf: cents per thousand feet off any way QED quotes a length', () => {

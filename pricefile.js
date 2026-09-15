@@ -216,7 +216,12 @@
       p.supplierName = m.row.name;
       if (!(typeof p.sku === 'string' && p.sku.trim() !== '')) p.sku = m.row.sku;
       p.priceCheckedISO = checkedISO;
-      if (Number.isInteger(m.newPerM)) p.lastListPerM = m.newPerM;
+      // AND ONLY A LENGTH KEEPS A BASIS. "Cents per thousand feet" is a fact
+      // about wire, cable and cord; on a connector QED quotes per hundred it
+      // is a number with no meaning, and it is read by suggestedUnit and by
+      // the foot/roll flip, neither of which a connector has any business
+      // reaching. The same rule the roll length has always had.
+      if (Number.isInteger(m.newPerM) && isLengthUnit(p.unit)) p.lastListPerM = m.newPerM;
       if (!(Number.isInteger(p.rollFt) && p.rollFt > 0) && Number.isInteger(m.newRollFt)) p.rollFt = m.newRollFt;
     });
     return { changed, unchanged };
@@ -484,7 +489,12 @@
         priceCheckedISO: checkedISO,
         lastPriceCents: null, lastPriceISO: null,
         rollFt: Number.isInteger(c.rollFt) ? c.rollFt : null,
-        lastListPerM: perMOf(c.row, c.rollFt),
+        // The basis only on a part that is a LENGTH, the same rule the roll
+        // length above it follows: QED quotes half the fittings in the file
+        // per hundred, and "cents per thousand feet" on a setscrew connector
+        // is a number that means nothing and that the suggestion and the
+        // foot/roll flip would both go on to read.
+        lastListPerM: isLengthUnit(c.unit) ? perMOf(c.row, c.rollFt) : null,
       };
       if (c.seedPart && typeof c.seedPart.id === 'string' && c.seedPart.id !== '') p.variantOf = c.seedPart.id;
       p.source = { kind: 'qed', checkedISO };
