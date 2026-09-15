@@ -102,11 +102,59 @@
     const unit = it.priceCents != null ? it.priceCents : unitPrice(itemBillBase(it), markupPct);
     return { unit, cents: r(it.qty * unit) };
   }
-  // What the Price keypad proposes per unit: QED's list plus the markup. Only
-  // a list makes a suggestion; a cost never does, because the cost is not a
-  // number he sees any more (v3.4). Null means "nothing to suggest".
+  // WIRE, CABLE AND CORD come by the foot and by the roll, and QED prices
+  // them per thousand feet (or per spool, which is the same number divided
+  // through the spool). That per-thousand figure is the exact basis a length
+  // keeps (lastListPerM on the part, listPerM on the line); per foot and per
+  // roll are read off it here, so neither is a rounding of the other.
+  //   listForUnit(perM, unit, rollFt) -> cents per that unit, or null
+  function isLength(unit) { return unit === 'ft' || unit === 'roll'; }
+  function listForUnit(perM, unit, rollFt) {
+    if (!Number.isInteger(perM) || !isLength(unit)) return null;
+    if (unit === 'ft') return r(perM / 1000);
+    return Number.isInteger(rollFt) && rollFt > 0 ? r(perM * rollFt / 1000) : null;
+  }
+
+  // What the Price keypad proposes per unit: QED's list plus the markup. A
+  // length line with the exact basis is figured off it: by the foot rounded
+  // UP to the cent (the paper prints whole cents, and rounding 39.71 down to
+  // 39 gives the wire away over a 2,500 ft pull); by the roll rounded to the
+  // nearest, off the spool price. Everything else is the line's list, as in
+  // v3.4. Only a list makes a suggestion; a cost never does.
   function suggestedUnit(it, markupPct) {
+    const f = 1 + markupPct / 100;
+    if (isLength(it.unit) && Number.isInteger(it.listPerM) && it.listPerM > 0) {
+      if (it.unit === 'ft') return Math.ceil(it.listPerM * f / 1000);
+      if (Number.isInteger(it.rollFt) && it.rollFt > 0) return r(it.listPerM * it.rollFt / 1000 * f);
+    }
     return Number.isInteger(it.listCents) && it.listCents > 0 ? unitPrice(it.listCents, markupPct) : null;
+  }
+
+  // ONE LINE, THE OTHER WAY OF COUNTING IT. Feet to rolls divides the count
+  // by the roll length and multiplies every per-unit figure by it; rolls to
+  // feet the reverse. His price is rounded UP to the cent on the way to feet
+  // (the customer's number never rounds in the customer's favor by accident);
+  // the cost rounds to nearest (his own figure); the list is re-read off the
+  // exact basis when the line has one, and divided or multiplied through when
+  // it has not. The count keeps three decimals, the same as the keypad. A lot
+  // is a lot: the whole line's price, and it does not move. Returns a NEW
+  // line, the handed-in one untouched, so the caller can write it back under
+  // a save with an exact restore. Null when there is nothing to do: no
+  // length, the same unit, or a unit that is not a length at all.
+  function convertLineUnit(it, toUnit, rollFt) {
+    if (!(Number.isInteger(rollFt) && rollFt > 0)) return null;
+    if (!isLength(toUnit) || !isLength(it.unit) || it.unit === toUnit) return null;
+    const toRoll = toUnit === 'roll';
+    const q3 = (x) => Math.round(x * 1000) / 1000;
+    const scale = (cents, up) => (toRoll ? r(cents * rollFt) : (up ? Math.ceil(cents / rollFt) : r(cents / rollFt)));
+    const out = Object.assign({}, it, { unit: toUnit, rollFt });
+    out.qty = toRoll ? q3(it.qty / rollFt) : q3(it.qty * rollFt);
+    if (Number.isInteger(it.priceCents)) out.priceCents = scale(it.priceCents, true);
+    if (Number.isInteger(it.costCents)) out.costCents = scale(it.costCents, false);
+    const exact = listForUnit(it.listPerM, toUnit, rollFt);
+    if (exact != null) out.listCents = exact;
+    else if (Number.isInteger(it.listCents)) out.listCents = scale(it.listCents, false);
+    return out;
   }
   function rentalPrice(x, markupPct) { return x.markup ? unitPrice(x.cents, markupPct) : x.cents; }
   function equipmentLine(x) { return r(x.days * x.dayCents); }
@@ -713,7 +761,7 @@
     marginPctOf, belowFloor, atYourRate, fmt,
     changeOrderScratch, changeOrderStack, changeOrderPrice, jobActuals,
     estimatingStats,
-    resolveMarkup, itemBillBase, itemPrice, itemCostCents, suggestedUnit, rentalPrice, equipmentLine, changeOrderIsEmpty,
+    resolveMarkup, itemBillBase, itemPrice, itemCostCents, suggestedUnit, listForUnit, convertLineUnit, rentalPrice, equipmentLine, changeOrderIsEmpty,
     qtyNum, unitText, fileNameSegment,
   };
 });

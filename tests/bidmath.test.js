@@ -695,3 +695,62 @@ test('a line with neither a cost nor a list prices at nothing, never at NaN', ()
   assert.strictEqual(B.itemPrice({ qty: 3, unit: 'ea', costCents: null, priceCents: null }, 15).cents, 0);
   assert.strictEqual(B.fmt(B.itemPrice({ qty: 3, unit: 'ea' }, 15).cents), '$0.00');
 });
+
+// ---------------------------------------------------------------------------
+// v3.5: ONE WIRE PART, BY THE FOOT OR BY THE ROLL
+// ---------------------------------------------------------------------------
+// QED prices a length per thousand feet, and a spool price is that same figure
+// multiplied through the spool. That per-thousand number is the exact basis a
+// length line keeps, so per foot and per roll are each read off it once rather
+// than one of them being a rounding of the other.
+test('listForUnit: QED\'s per-thousand basis read per foot or per roll', () => {
+  assert.strictEqual(B.listForUnit(34534, 'ft', 500), 35, 'per foot rounds to the cent for the row');
+  assert.strictEqual(B.listForUnit(34534, 'roll', 500), 17267, 'per roll is exact: the spool price');
+  assert.strictEqual(B.listForUnit(95284, 'roll', 500), 47642);
+  assert.strictEqual(B.listForUnit(95284, 'ft', null), 95);
+  assert.strictEqual(B.listForUnit(34534, 'roll', null), null, 'a roll with no length is no price');
+  assert.strictEqual(B.listForUnit(null, 'ft', 500), null);
+  assert.strictEqual(B.listForUnit(34534, 'ea', 500), null, 'not a length');
+});
+
+test('suggestedUnit: a length line suggests off the exact basis, feet rounded up', () => {
+  assert.strictEqual(B.suggestedUnit({ unit: 'ft', listCents: 35, listPerM: 34534 }, 15), 40, '39.71 cents a foot rounds up');
+  assert.strictEqual(B.suggestedUnit({ unit: 'ft', listCents: 30, listPerM: 30000 }, 15), 35, '34.5 rounds up, never down');
+  assert.strictEqual(B.suggestedUnit({ unit: 'roll', listCents: 17267, listPerM: 34534, rollFt: 500 }, 15), 19857);
+  assert.strictEqual(B.suggestedUnit({ unit: 'roll', listCents: 17267, listPerM: 34534, rollFt: null }, 15), 19857, 'no length: the row\'s own per-roll list');
+  assert.strictEqual(B.suggestedUnit({ unit: 'ft', listCents: 35 }, 15), 40, 'no basis: the rounded list, as v3.4');
+  assert.strictEqual(B.suggestedUnit({ unit: 'ea', listCents: 1800, listPerM: 34534 }, 15), 2070, 'a basis on a counted part is ignored');
+});
+
+test('convertLineUnit: feet to rolls multiplies the prices and divides the count', () => {
+  const it = { catalogId: 'p1', name: '#12 THHN', unit: 'ft', qty: 750, costCents: null, priceCents: 40, listCents: 35, listPerM: 34534, rollFt: 500, supplierName: 'x' };
+  const out = B.convertLineUnit(it, 'roll', 500);
+  assert.deepStrictEqual(out, { catalogId: 'p1', name: '#12 THHN', unit: 'roll', qty: 1.5, costCents: null, priceCents: 20000, listCents: 17267, listPerM: 34534, rollFt: 500, supplierName: 'x' });
+  assert.strictEqual(it.unit, 'ft', 'the line handed in is untouched; the caller writes the result back');
+});
+
+test('convertLineUnit: rolls to feet divides, his price rounded up to the cent', () => {
+  const it = { unit: 'roll', qty: 1, costCents: 15000, priceCents: 19857, listCents: 17267, listPerM: 34534, rollFt: 500 };
+  const out = B.convertLineUnit(it, 'ft', 500);
+  assert.strictEqual(out.unit, 'ft');
+  assert.strictEqual(out.qty, 500);
+  assert.strictEqual(out.priceCents, 40, '39.714 up to 40');
+  assert.strictEqual(out.listCents, 35, 'off the exact basis');
+  assert.strictEqual(out.costCents, 30, 'cost rounds to nearest: it is his own figure, not the customer\'s');
+  const noBasis = B.convertLineUnit({ unit: 'roll', qty: 2, costCents: null, priceCents: null, listCents: 17267 }, 'ft', 500);
+  assert.strictEqual(noBasis.listCents, 35, 'no basis: the per-roll list divided through');
+  assert.strictEqual(noBasis.priceCents, null);
+  assert.strictEqual(noBasis.qty, 1000);
+  assert.strictEqual(noBasis.rollFt, 500, 'the length rides on the line from now on');
+});
+
+test('convertLineUnit: a lot keeps its lot; nothing converts without a length or between other units', () => {
+  const lot = B.convertLineUnit({ unit: 'ft', qty: 500, costCents: null, priceCents: null, listCents: 35, lotCents: 21600 }, 'roll', 500);
+  assert.strictEqual(lot.lotCents, 21600);
+  assert.strictEqual(lot.qty, 1);
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 500 }, 'roll', null), null);
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 500 }, 'roll', 0), null);
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 500 }, 'ft', 500), null, 'same unit');
+  assert.strictEqual(B.convertLineUnit({ unit: 'ea', qty: 2 }, 'roll', 500), null, 'not a length');
+  assert.strictEqual(B.convertLineUnit({ unit: 'ft', qty: 500 }, 'box', 500), null);
+});
